@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient as createBrowserClientSSR } from '@supabase/ssr';
 import type { Conversation, Message, Product, AgentProduct, Handoff, KnowledgeEntry } from './types';
 
 // ── Server-side client (service role — full access) ─────────
@@ -16,25 +17,24 @@ export function createServiceClient() {
 }
 
 // ── Browser client (anon key — for frontend auth) ──────────
-// Uses @supabase/supabase-js directly for browser pages.
-// @supabase/ssr is only needed in the middleware for server-side cookie handling.
-// Placeholder fallbacks let `next build` succeed without real env vars configured.
+// Uses @supabase/ssr's createBrowserClient so sessions are persisted as
+// cookies (not localStorage). This is REQUIRED because the Next.js middleware
+// reads auth from cookies — storing the session only in localStorage caused
+// signInWithPassword() to succeed silently but then /dashboard would bounce
+// back to /login forever (spinner-stuck UX).
 //
-// IMPORTANT: cached as a module-level singleton. Calling createClient() on every
-// React render spawns multiple GoTrueClient instances that fight over the same
-// localStorage auth key, which can hang signInWithPassword() indefinitely.
-let _browserClient: ReturnType<typeof createClient> | null = null;
+// Cached as a module-level singleton to avoid "Multiple GoTrueClient instances"
+// warnings when React re-renders.
+let _browserClient: ReturnType<typeof createBrowserClientSSR> | null = null;
 export function createBrowserClient() {
-  if (typeof window === 'undefined') {
-    // On the server (SSR), always create fresh — no persistence.
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-anon-key';
-    return createClient(url, key);
-  }
-  if (_browserClient) return _browserClient;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-anon-key';
-  _browserClient = createClient(url, key);
+  if (typeof window === 'undefined') {
+    // Called during SSR — return a fresh (un-cached) instance.
+    return createBrowserClientSSR(url, key);
+  }
+  if (_browserClient) return _browserClient;
+  _browserClient = createBrowserClientSSR(url, key);
   return _browserClient;
 }
 
