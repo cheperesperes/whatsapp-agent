@@ -1,39 +1,49 @@
 // ============================================================
-// WhatsApp / Meta Cloud API helpers
+// WhatsApp / Twilio API helpers
 // ============================================================
 
-const META_API_VERSION = 'v21.0';
-
 /**
- * Send a text message via Meta Cloud API.
+ * Send a text message via Twilio WhatsApp API.
  */
 export async function sendWhatsAppMessage(to: string, body: string): Promise<void> {
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER;
 
-  if (!phoneNumberId || !accessToken) {
-    throw new Error('Missing WhatsApp environment variables');
+  if (!accountSid || !authToken || !twilioWhatsAppNumber) {
+    throw new Error('Missing Twilio environment variables');
   }
 
-  const url = `https://graph.facebook.com/${META_API_VERSION}/${phoneNumberId}/messages`;
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+
+  // Ensure phone numbers have the whatsapp: prefix
+  const normalizedTo = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+  const normalizedFrom = twilioWhatsAppNumber.startsWith('whatsapp:')
+    ? twilioWhatsAppNumber
+    : `whatsapp:${twilioWhatsAppNumber}`;
+
+  // Create form-urlencoded body
+  const params = new URLSearchParams({
+    To: normalizedTo,
+    From: normalizedFrom,
+    Body: body,
+  });
+
+  // Create basic auth header
+  const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to,
-      type: 'text',
-      text: { body },
-    }),
+    body: params.toString(),
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`WhatsApp API error ${response.status}: ${err}`);
+    throw new Error(`Twilio API error ${response.status}: ${err}`);
   }
 }
 
@@ -71,7 +81,14 @@ export async function sendEscalatedMessageAlert(
 }
 
 /**
- * Extract text and sender info from an incoming Meta webhook payload.
+ * Extract text and sender info from an incoming Twilio webhook payload.
+ * Twilio sends form-urlencoded data with fields like:
+ * - From: "whatsapp:+1234567890"
+ * - To: "whatsapp:+16175551234" (our business number)
+ * - Body: message text
+ * - MessageSid: unique ID
+ * - ProfileName: sender's name
+ * - etc.
  * Returns null if the message is not a text message we should handle.
  */
 export interface ParsedIncomingMessage {
@@ -85,38 +102,27 @@ export interface ParsedIncomingMessage {
 
 export function parseIncomingMessage(body: unknown): ParsedIncomingMessage | null {
   try {
-    const payload = body as {
-      entry?: Array<{
-        changes?: Array<{
-          value?: {
-            contacts?: Array<{ wa_id: string; profile?: { name?: string } }>;
-            messages?: Array<{
-              from: string;
-              id: string;
-              timestamp: string;
-              type: string;
-              text?: { body: string };
-            }>;
-          };
-        }>;
-      }>;
-    };
+    const payload = body as Record<string, string | undefined>;
 
-    const messages = payload?.entry?.[0]?.changes?.[0]?.value?.messages;
-    const contacts = payload?.entry?.[0]?.changes?.[0]?.value?.contacts;
+    // Extract Twilio webhook fields
+    const from = payload.From; // e.g., "whatsapp:+1234567890"
+    const messageText = payload.Body ?? '';
+    const messageSid = payload.MessageSid ?? '';
+    const profileName = payload.ProfileName ?? null;
+    const numMedia = payload.NumMedia ?? '0';
 
-    if (!messages || messages.length === 0) return null;
+    if (!from || !messageText.trim()) return null;
 
-    const msg = messages[0];
-    const contact = contacts?.[0];
+    // Strip "whatsapp:" prefix from phone number
+    const senderPhone = from.startsWith('whatsapp:') ? from.substring(9) : from;
 
     return {
-      senderPhone: msg.from,
-      senderName: contact?.profile?.name ?? null,
-      messageText: msg.text?.body ?? '',
-      messageType: msg.type,
-      messageId: msg.id,
-      timestamp: parseInt(msg.timestamp, 10),
+      senderPhone,
+      senderName: profileName,
+      messageText,
+      messageType: 'text', // Twilio form-data indicates this is text (media would have NumMedia > 0)
+      messageId: messageSid,
+      timestamp: Math.floor(Date.now() / 1000), // Twilio doesn't include timestamp, use current time
     };
   } catch {
     return null;

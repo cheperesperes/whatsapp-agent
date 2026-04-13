@@ -69,7 +69,7 @@ export default function ProductsPage() {
     setEditingId(product.id);
     setEditValues({
       price_usd: product.price_usd.toString(),
-      in_stock: product.in_stock,
+      in_stock: product.in_stock ?? true,
       description_es: product.description_es ?? '',
       ideal_for: product.ideal_for ?? '',
     });

@@ -60,22 +60,47 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   console.log('[WEBHOOK POST] Incoming webhook payload received');
 
-  // Always return 200 immediately to Meta (avoid retries)
-  const body = await request.json().catch(() => null);
+  // Parse form-urlencoded body from Twilio
+  const contentType = request.headers.get('content-type') || '';
+  let body: Record<string, string> = {};
 
-  if (!body) {
-    return NextResponse.json({ status: 'ok' }, { status: 200 });
+  if (contentType.includes('application/x-www-form-urlencoded')) {
+    try {
+      const formData = await request.formData();
+      // Convert FormData to plain object
+      for (const [key, value] of formData.entries()) {
+        body[key] = String(value);
+      }
+    } catch {
+      console.warn('[WEBHOOK POST] Failed to parse form data');
+    }
+  } else if (contentType.includes('application/json')) {
+    try {
+      body = await request.json();
+    } catch {
+      console.warn('[WEBHOOK POST] Failed to parse JSON');
+    }
+  }
+
+  if (!body || Object.keys(body).length === 0) {
+    return new NextResponse('<Response></Response>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/xml' },
+    });
   }
 
   // Use waitUntil to keep the serverless function alive for background processing
-  // This returns 200 immediately to Meta while continuing to process the message
+  // This returns 200 immediately to Twilio while continuing to process the message
   waitUntil(
     processWebhook(body).catch((err) => {
       console.error('[WEBHOOK POST] Processing error:', err);
     })
   );
 
-  return NextResponse.json({ status: 'ok' }, { status: 200 });
+  return new NextResponse('<Response></Response>', {
+    status: 200,
+    headers: { 'Content-Type': 'text/xml' },
+  });
 }
 
 // ============================================================
@@ -94,7 +119,11 @@ async function processWebhook(body: unknown) {
   console.log(`[WEBHOOK] Message from ${senderPhone} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`);
 
   // ── Operator commands ───────────────────────────────────
-  if (senderPhone === OPERATOR_PHONE.replace(/\D/g, '')) {
+  // Normalize phone numbers for comparison (remove non-digits)
+  const normalizedOperatorPhone = OPERATOR_PHONE.replace(/\D/g, '');
+  const normalizedSenderPhone = senderPhone.replace(/\D/g, '');
+
+  if (normalizedSenderPhone === normalizedOperatorPhone) {
     const command = parseOwnerCommand(messageText);
     if (command) {
       await handleOwnerCommand(command.command, command.args, senderPhone);
