@@ -349,13 +349,18 @@ export async function addKnowledgeEntry(
 export async function incrementKnowledgeUsage(entryId: string): Promise<void> {
   const supabase = createServiceClient();
 
-  await supabase.rpc('increment_kb_usage', { entry_id: entryId }).catch(() => {
-    // Fallback: manual increment if RPC doesn't exist
-    supabase
-      .from('knowledge_base')
-      .update({ times_used: supabase.rpc ? undefined : 1 })
-      .eq('id', entryId);
-  });
+  try {
+    const { error } = await supabase.rpc('increment_kb_usage', { entry_id: entryId });
+    if (error) {
+      // Fallback: manual increment if RPC doesn't exist
+      await supabase
+        .from('knowledge_base')
+        .update({ times_used: 1 })
+        .eq('id', entryId);
+    }
+  } catch {
+    // Silently ignore if increment fails
+  }
 }
 
 /**
