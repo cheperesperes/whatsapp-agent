@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 
 // Always process webhook requests dynamically — never cache
 export const dynamic = 'force-dynamic';
@@ -66,10 +67,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: 'ok' }, { status: 200 });
   }
 
-  // Process asynchronously — don't await (Meta expects fast 200)
-  processWebhook(body).catch((err) => {
-    console.error('[WEBHOOK POST] Processing error:', err);
-  });
+  // Use waitUntil to keep the serverless function alive for background processing
+  // This returns 200 immediately to Meta while continuing to process the message
+  waitUntil(
+    processWebhook(body).catch((err) => {
+      console.error('[WEBHOOK POST] Processing error:', err);
+    })
+  );
 
   return NextResponse.json({ status: 'ok' }, { status: 200 });
 }
