@@ -19,12 +19,23 @@ export function createServiceClient() {
 // Uses @supabase/supabase-js directly for browser pages.
 // @supabase/ssr is only needed in the middleware for server-side cookie handling.
 // Placeholder fallbacks let `next build` succeed without real env vars configured.
+//
+// IMPORTANT: cached as a module-level singleton. Calling createClient() on every
+// React render spawns multiple GoTrueClient instances that fight over the same
+// localStorage auth key, which can hang signInWithPassword() indefinitely.
+let _browserClient: ReturnType<typeof createClient> | null = null;
 export function createBrowserClient() {
-  const url =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-anon-key';
-  return createClient(url, key);
+  if (typeof window === 'undefined') {
+    // On the server (SSR), always create fresh — no persistence.
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-anon-key';
+    return createClient(url, key);
+  }
+  if (_browserClient) return _browserClient;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-anon-key';
+  _browserClient = createClient(url, key);
+  return _browserClient;
 }
 
 // ============================================================
