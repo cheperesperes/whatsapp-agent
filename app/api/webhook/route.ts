@@ -12,6 +12,9 @@ import {
   loadProducts,
   formatProductCatalogForPrompt,
   getDashboardStats,
+  loadKnowledgeBase,
+  formatKnowledgeBaseForPrompt,
+  addKnowledgeEntry,
 } from '@/lib/supabase';
 import { generateSolResponse } from '@/lib/anthropic';
 import {
@@ -128,19 +131,22 @@ async function processWebhook(body: unknown) {
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products] = await Promise.all([
+    const [history, products, knowledgeEntries] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadProducts(),
+      loadKnowledgeBase(),
     ]);
 
     // Remove the last message we just stored (we pass it separately)
     const historyWithoutLast = history.slice(0, -1);
 
     const catalog = formatProductCatalogForPrompt(products);
+    const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const { message: aiMessage, handoffReason } = await generateSolResponse(
       historyWithoutLast,
       messageText,
-      catalog
+      catalog,
+      kbPrompt
     );
 
     // ── Handle HANDOFF ───────────────────────────────────
@@ -219,6 +225,33 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
         targetPhone,
         'Hola, vuelve a estar con Sol 🌟 ¿En qué más le puedo ayudar?'
       );
+      break;
+    }
+
+    case 'teach': {
+      // /teach pregunta | respuesta
+      const separator = args.indexOf('|');
+      if (separator === -1) {
+        await sendWhatsAppMessage(
+          operatorPhone,
+          '⚠️ Formato: /teach pregunta | respuesta\nEjemplo: /teach ¿Cuánto tarda el envío a Cuba? | El envío a Cuba tarda entre 2-4 semanas.'
+        );
+        return;
+      }
+      const question = args.slice(0, separator).trim();
+      const answer = args.slice(separator + 1).trim();
+
+      if (!question || !answer) {
+        await sendWhatsAppMessage(operatorPhone, '⚠️ Tanto la pregunta como la respuesta son requeridas.');
+        return;
+      }
+
+      const entry = await addKnowledgeEntry(question, answer);
+      if (entry) {
+        await sendWhatsAppMessage(operatorPhone, `✅ Sol aprendió:\nP: ${question}\nR: ${answer}`);
+      } else {
+        await sendWhatsAppMessage(operatorPhone, '❌ Error guardando la entrada. Intente de nuevo.');
+      }
       break;
     }
 

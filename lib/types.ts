@@ -64,6 +64,17 @@ export interface Handoff {
   created_at: string;
 }
 
+export interface KnowledgeEntry {
+  id: string;
+  question: string;
+  answer: string;
+  category: string;
+  source: string;
+  times_used: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── WhatsApp / Meta Cloud API types ────────────────────────
 
 export interface WhatsAppWebhookBody {

@@ -38,14 +38,16 @@ export interface SolResponse {
 export async function generateSolResponse(
   conversationHistory: Message[],
   newUserMessage: string,
-  productCatalog: string
+  productCatalog: string,
+  knowledgeBase = ''
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
-  // Build the full system prompt including current product catalog
+  // Build the full system prompt including current product catalog and knowledge base
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
+${knowledgeBase}
 
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 `;

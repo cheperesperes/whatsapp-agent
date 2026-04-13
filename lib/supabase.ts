@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { Conversation, Message, Product, Handoff } from './types';
+import type { Conversation, Message, Product, Handoff, KnowledgeEntry } from './types';
 
 // ── Server-side client (service role — full access) ─────────
 export function createServiceClient() {
@@ -293,4 +293,87 @@ export async function getDashboardStats() {
     closed_conversations: closed ?? 0,
     messages_today: msgsToday ?? 0,
   };
+}
+
+// ============================================================
+// Knowledge Base helpers (agent learning)
+// ============================================================
+
+/**
+ * Load all knowledge base entries for Sol's context.
+ */
+export async function loadKnowledgeBase(): Promise<KnowledgeEntry[]> {
+  const supabase = createServiceClient();
+
+  const { data, error } = await supabase
+    .from('knowledge_base')
+    .select('*')
+    .order('times_used', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error('[KB] Failed to load knowledge base:', error.message);
+    return [];
+  }
+
+  return data ?? [];
+}
+
+/**
+ * Add a new knowledge base entry (from operator /teach command).
+ */
+export async function addKnowledgeEntry(
+  question: string,
+  answer: string,
+  category = 'general'
+): Promise<KnowledgeEntry | null> {
+  const supabase = createServiceClient();
+
+  const { data, error } = await supabase
+    .from('knowledge_base')
+    .insert({ question, answer, category, source: 'operator' })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[KB] Failed to add knowledge entry:', error.message);
+    return null;
+  }
+
+  return data;
+}
+
+/**
+ * Increment the times_used counter for a knowledge entry.
+ */
+export async function incrementKnowledgeUsage(entryId: string): Promise<void> {
+  const supabase = createServiceClient();
+
+  await supabase.rpc('increment_kb_usage', { entry_id: entryId }).catch(() => {
+    // Fallback: manual increment if RPC doesn't exist
+    supabase
+      .from('knowledge_base')
+      .update({ times_used: supabase.rpc ? undefined : 1 })
+      .eq('id', entryId);
+  });
+}
+
+/**
+ * Format knowledge base entries for Sol's system prompt.
+ */
+export function formatKnowledgeBaseForPrompt(entries: KnowledgeEntry[]): string {
+  if (entries.length === 0) return '';
+
+  const lines: string[] = [
+    '\n=== BASE DE CONOCIMIENTO (preguntas frecuentes aprendidas) ===',
+    'Usa esta información para responder preguntas similares:\n',
+  ];
+
+  for (const entry of entries) {
+    lines.push(`P: ${entry.question}`);
+    lines.push(`R: ${entry.answer}`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
 }

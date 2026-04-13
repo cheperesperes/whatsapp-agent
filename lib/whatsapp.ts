@@ -141,6 +141,11 @@ export function parseOwnerCommand(
     return { command: 'bot', args: botMatch[1] };
   }
 
+  const teachMatch = trimmed.match(/^\/teach\s+([\s\S]+)$/i);
+  if (teachMatch) {
+    return { command: 'teach', args: teachMatch[1].trim() };
+  }
+
   const broadcastMatch = trimmed.match(/^\/broadcast\s+([\s\S]+)$/i);
   if (broadcastMatch) {
     return { command: 'broadcast', args: broadcastMatch[1].trim() };
