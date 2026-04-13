@@ -62,23 +62,24 @@ export default function AnalyticsPage() {
       const now = new Date();
       const weekAgo = new Date(now.getTime() - 7 * 86400000);
 
+      // Fetch all conversations + messages + handoffs in parallel.
+      // We compute counts client-side from the full rowset to avoid head:true
+      // count queries, which sometimes return null under RLS.
       const [
-        { count: total },
-        { count: active },
-        { count: escalated },
-        { count: closed },
-        { count: messagesTotal },
-        { count: messagesLastWeek },
-        { data: convs },
-        { data: handoffs },
+        { data: allConvs },
+        { data: allMsgs },
+        { data: handoffsRaw },
       ] = await Promise.all([
-        supabase.from('conversations').select('*', { count: 'exact', head: true }),
-        supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-        supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('status', 'escalated'),
-        supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('status', 'closed'),
-        supabase.from('messages').select('*', { count: 'exact', head: true }),
-        supabase.from('messages').select('*', { count: 'exact', head: true }).gte('created_at', weekAgo.toISOString()),
-        supabase.from('conversations').select('product_interest, created_at').order('created_at', { ascending: false }).limit(500),
+        supabase
+          .from('conversations')
+          .select('id, status, product_interest, created_at, phone_number')
+          .order('created_at', { ascending: false })
+          .limit(2000),
+        supabase
+          .from('messages')
+          .select('id, created_at')
+          .order('created_at', { ascending: false })
+          .limit(5000),
         supabase
           .from('handoffs')
           .select('id, reason, last_customer_message, created_at, resolved, conversation_id')
@@ -86,9 +87,20 @@ export default function AnalyticsPage() {
           .limit(20),
       ]);
 
+      const convs = allConvs ?? [];
+      const msgs = allMsgs ?? [];
+      const handoffs = handoffsRaw ?? [];
+
+      const total = convs.length;
+      const active = convs.filter((c) => c.status === 'active').length;
+      const escalated = convs.filter((c) => c.status === 'escalated').length;
+      const closed = convs.filter((c) => c.status === 'closed').length;
+      const messagesTotal = msgs.length;
+      const messagesLastWeek = msgs.filter((m) => m.created_at >= weekAgo.toISOString()).length;
+
       // Top products
       const productCounts: Record<string, number> = {};
-      (convs ?? []).forEach((c) => {
+      convs.forEach((c) => {
         if (c.product_interest) {
           productCounts[c.product_interest] = (productCounts[c.product_interest] ?? 0) + 1;
         }
@@ -106,36 +118,32 @@ export default function AnalyticsPage() {
       }).reverse();
 
       days.forEach((d) => { dayMap[d] = 0; });
-      (convs ?? []).forEach((c) => {
+      convs.forEach((c) => {
         const day = c.created_at?.split('T')[0];
         if (day && dayMap[day] !== undefined) dayMap[day]++;
       });
 
       const conversationsByDay = days.map((date) => ({ date, count: dayMap[date] }));
 
-      // Get phone numbers for recent handoffs
-      const handoffList = await Promise.all(
-        (handoffs ?? []).map(async (h) => {
-          const { data: conv } = await supabase
-            .from('conversations')
-            .select('phone_number')
-            .eq('id', h.conversation_id)
-            .single();
-          return { ...h, phone_number: conv?.phone_number };
-        })
-      );
+      // Build phone-number lookup from already-fetched conversations (no N+1)
+      const phoneById: Record<string, string> = {};
+      convs.forEach((c) => {
+        if (c.id && c.phone_number) phoneById[c.id] = c.phone_number;
+      });
+      const handoffList = handoffs.map((h) => ({
+        ...h,
+        phone_number: phoneById[h.conversation_id],
+      }));
 
-      const escalationRate = (total ?? 0) > 0
-        ? Math.round(((escalated ?? 0) / (total ?? 1)) * 100)
-        : 0;
+      const escalationRate = total > 0 ? Math.round((escalated / total) * 100) : 0;
 
       setStats({
-        total: total ?? 0,
-        active: active ?? 0,
-        escalated: escalated ?? 0,
-        closed: closed ?? 0,
-        messagesTotal: messagesTotal ?? 0,
-        messagesLastWeek: messagesLastWeek ?? 0,
+        total,
+        active,
+        escalated,
+        closed,
+        messagesTotal,
+        messagesLastWeek,
         escalationRate,
         topProducts,
         conversationsByDay,

@@ -4,24 +4,28 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useCallback } from 'react';
 import { createBrowserClient } from '@/lib/supabase';
-import type { Product } from '@/lib/types';
+import type { AgentProduct } from '@/lib/types';
 
 const CATEGORY_LABELS: Record<string, string> = {
+  kit: 'Estación Portátil',
   portable_station: 'Estación Portátil',
   battery: 'Batería',
   inverter: 'Inversor',
   panel: 'Panel Solar',
   all_in_one: 'Todo-en-Uno',
+  'sistemas-solares-todo-en-uno': 'Todo-en-Uno',
   accessory: 'Accesorio',
 };
 
 function CategoryBadge({ category }: { category: string }) {
   const colors: Record<string, string> = {
+    kit: 'bg-brand-900/50 text-brand-300 border-brand-800',
     portable_station: 'bg-brand-900/50 text-brand-300 border-brand-800',
     battery: 'bg-blue-900/50 text-blue-300 border-blue-800',
     inverter: 'bg-purple-900/50 text-purple-300 border-purple-800',
     panel: 'bg-green-900/50 text-green-300 border-green-800',
     all_in_one: 'bg-orange-900/50 text-orange-300 border-orange-800',
+    'sistemas-solares-todo-en-uno': 'bg-orange-900/50 text-orange-300 border-orange-800',
     accessory: 'bg-gray-800 text-gray-400 border-gray-700',
   };
   const color = colors[category] ?? 'bg-gray-800 text-gray-400 border-gray-700';
@@ -33,14 +37,25 @@ function CategoryBadge({ category }: { category: string }) {
 }
 
 interface EditingProduct {
-  price_usd: string;
+  sell_price: string;
   in_stock: boolean;
-  description_es: string;
+  description_short: string;
   ideal_for: string;
 }
 
+function formatCapacity(p: AgentProduct): string {
+  const parts: string[] = [];
+  if (p.battery_capacity_wh) parts.push(`${p.battery_capacity_wh.toLocaleString()} Wh`);
+  if (p.battery_capacity_ah) parts.push(`${p.battery_capacity_ah} Ah`);
+  if (p.inverter_watts) parts.push(`${p.inverter_watts.toLocaleString()} W inv.`);
+  if (p.panel_watts) parts.push(`${p.panel_watts} W panel`);
+  if (p.solar_input_watts && !p.panel_watts) parts.push(`${p.solar_input_watts.toLocaleString()} W solar`);
+  if (p.output_watts && !p.inverter_watts) parts.push(`${p.output_watts.toLocaleString()} W`);
+  return parts.length ? parts.join(' · ') : '—';
+}
+
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<AgentProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<EditingProduct | null>(null);
@@ -48,16 +63,17 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [region, setRegion] = useState<'cuba' | 'usa'>('cuba');
 
   const supabase = createBrowserClient();
 
   const loadProducts = useCallback(async () => {
     const { data } = await supabase
-      .from('products')
+      .from('agent_product_catalog')
       .select('*')
       .order('category')
-      .order('price_usd');
-    setProducts(data ?? []);
+      .order('sell_price');
+    setProducts((data as AgentProduct[] | null) ?? []);
     setLoading(false);
   }, [supabase]);
 
@@ -65,12 +81,12 @@ export default function ProductsPage() {
     loadProducts();
   }, [loadProducts]);
 
-  function startEdit(product: Product) {
+  function startEdit(product: AgentProduct) {
     setEditingId(product.id);
     setEditValues({
-      price_usd: product.price_usd.toString(),
+      sell_price: product.sell_price?.toString() ?? '0',
       in_stock: product.in_stock ?? true,
-      description_es: product.description_es ?? '',
+      description_short: product.description_short ?? '',
       ideal_for: product.ideal_for ?? '',
     });
   }
@@ -84,7 +100,7 @@ export default function ProductsPage() {
     if (!editValues) return;
     setSaving(true);
 
-    const price = parseFloat(editValues.price_usd);
+    const price = parseFloat(editValues.sell_price);
     if (isNaN(price) || price < 0) {
       alert('Precio inválido');
       setSaving(false);
@@ -92,11 +108,11 @@ export default function ProductsPage() {
     }
 
     await supabase
-      .from('products')
+      .from('agent_product_catalog')
       .update({
-        price_usd: price,
+        sell_price: price,
         in_stock: editValues.in_stock,
-        description_es: editValues.description_es || null,
+        description_short: editValues.description_short || null,
         ideal_for: editValues.ideal_for || null,
         updated_at: new Date().toISOString(),
       })
@@ -114,11 +130,12 @@ export default function ProductsPage() {
 
   const filtered = products.filter((p) => {
     const matchesCat = categoryFilter === 'all' || p.category === categoryFilter;
+    const q = search.toLowerCase();
     const matchesSearch =
       !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.sku.toLowerCase().includes(search.toLowerCase()) ||
-      p.brand.toLowerCase().includes(search.toLowerCase());
+      p.name.toLowerCase().includes(q) ||
+      p.sku.toLowerCase().includes(q) ||
+      (p.brand ?? '').toLowerCase().includes(q);
     return matchesCat && matchesSearch;
   });
 
@@ -133,6 +150,24 @@ export default function ProductsPage() {
           <p className="text-xs text-gray-500 mt-0.5">
             {products.length} productos · {inStockCount} en stock
           </p>
+        </div>
+        <div className="flex items-center gap-1 bg-surface-700 rounded-lg p-1">
+          <button
+            onClick={() => setRegion('cuba')}
+            className={`text-xs px-3 py-1 rounded transition-colors ${
+              region === 'cuba' ? 'bg-brand-500 text-white' : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Precio Cuba
+          </button>
+          <button
+            onClick={() => setRegion('usa')}
+            className={`text-xs px-3 py-1 rounded transition-colors ${
+              region === 'usa' ? 'bg-brand-500 text-white' : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Precio USA
+          </button>
         </div>
       </div>
 
@@ -174,7 +209,9 @@ export default function ProductsPage() {
                 <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Producto</th>
                 <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Categoría</th>
                 <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Capacidad</th>
-                <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Precio (USD)</th>
+                <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">
+                  Precio {region === 'cuba' ? 'Cuba (final)' : 'USA'}
+                </th>
                 <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Stock</th>
                 <th className="text-left text-xs font-medium text-gray-400 px-4 py-3 w-64">Ideal para</th>
                 <th className="text-right text-xs font-medium text-gray-400 px-4 py-3">Acciones</th>
@@ -184,6 +221,10 @@ export default function ProductsPage() {
               {filtered.map((product) => {
                 const isEditing = editingId === product.id;
                 const isSaved = savedId === product.id;
+                const displayPrice =
+                  region === 'cuba'
+                    ? (product.cuba_total_price ?? product.sell_price ?? 0)
+                    : (product.sell_price ?? 0);
 
                 return (
                   <tr
@@ -204,10 +245,7 @@ export default function ProductsPage() {
                     </td>
 
                     <td className="px-4 py-3 text-gray-400 text-xs">
-                      {product.capacity_wh ? `${product.capacity_wh.toLocaleString()} Wh` : '—'}
-                      {product.output_watts ? (
-                        <div>{product.output_watts.toLocaleString()} W</div>
-                      ) : null}
+                      {formatCapacity(product)}
                     </td>
 
                     <td className="px-4 py-3">
@@ -216,20 +254,25 @@ export default function ProductsPage() {
                           type="number"
                           step="0.01"
                           min="0"
-                          value={editValues?.price_usd ?? ''}
+                          value={editValues?.sell_price ?? ''}
                           onChange={(e) =>
-                            setEditValues((prev) => prev ? { ...prev, price_usd: e.target.value } : prev)
+                            setEditValues((prev) => prev ? { ...prev, sell_price: e.target.value } : prev)
                           }
                           className="input w-24 text-xs"
                         />
                       ) : (
                         <div>
                           <span className="font-medium text-gray-200">
-                            ${product.price_usd.toFixed(2)}
+                            ${Number(displayPrice).toFixed(2)}
                           </span>
-                          {product.price_includes_cuba_shipping && (
-                            <p className="text-xs text-green-500">+ envío Cuba</p>
-                          )}
+                          {region === 'cuba' && (product.cuba_shipping_fee || product.cuba_handling_fee) ? (
+                            <p className="text-xs text-gray-500">
+                              ${Number(product.sell_price).toFixed(2)} + $
+                              {Number(
+                                (product.cuba_shipping_fee ?? 0) + (product.cuba_handling_fee ?? 0)
+                              ).toFixed(2)} envío
+                            </p>
+                          ) : null}
                         </div>
                       )}
                     </td>
