@@ -10,7 +10,7 @@ import {
   escalateConversation,
   deescalateConversation,
   getConversationByPhone,
-  loadProducts,
+  loadAgentCatalog,
   formatProductCatalogForPrompt,
   getDashboardStats,
   loadKnowledgeBase,
@@ -166,7 +166,7 @@ async function processWebhook(body: unknown) {
   try {
     const [history, products, knowledgeEntries] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
-      loadProducts(),
+      loadAgentCatalog(),
       loadKnowledgeBase(),
     ]);
 

@@ -37,6 +37,8 @@ export interface Message {
   created_at: string;
 }
 
+// ── DEPRECATED: Use AgentProduct instead ──────────────────
+// Kept for backward compatibility with existing code
 export interface Product {
   id: string;
   sku: string;
@@ -52,6 +54,42 @@ export interface Product {
   ideal_for: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ── Agent Product (from agent_product_catalog table) ──────
+// This is the new interface for the WhatsApp agent catalog
+export interface AgentProduct {
+  id: string;
+  product_id: string | null;
+  sku: string;
+  name: string;
+  category: string;
+  brand: string;
+  sell_price: number;
+  cuba_shipping_fee: number;
+  cuba_handling_fee: number;
+  cuba_total_price: number; // GENERATED: sell_price + cuba_shipping_fee + cuba_handling_fee
+  usa_shipping_fee: number;
+  battery_capacity_ah: number | null;
+  battery_capacity_wh: number | null;
+  battery_voltage: number | null;
+  battery_type: string | null;
+  inverter_watts: number | null;
+  inverter_type: string | null;
+  mppt_channels: number | null;
+  solar_input_watts: number | null;
+  panel_watts: number | null;
+  panel_type: string | null;
+  output_watts: number | null;
+  peak_watts: number | null;
+  weight_lbs: number;
+  in_stock: boolean;
+  stock_quantity: number;
+  description_short: string | null;
+  ideal_for: string | null;
+  compatible_with: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Handoff {

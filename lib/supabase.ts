@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { Conversation, Message, Product, Handoff, KnowledgeEntry } from './types';
+import type { Conversation, Message, Product, AgentProduct, Handoff, KnowledgeEntry } from './types';
 
 // ── Server-side client (service role — full access) ─────────
 export function createServiceClient() {
@@ -211,36 +211,40 @@ export async function getConversationByPhone(phone: string): Promise<Conversatio
 // ============================================================
 
 /**
- * Load all in-stock products for Sol's context window.
+ * Load all in-stock products from agent_product_catalog for Sol's context window.
  */
-export async function loadProducts(): Promise<Product[]> {
+export async function loadAgentCatalog(): Promise<AgentProduct[]> {
   const supabase = createServiceClient();
 
   const { data, error } = await supabase
-    .from('products')
+    .from('agent_product_catalog')
     .select('*')
+    .eq('in_stock', true)
     .order('category')
-    .order('price_usd');
+    .order('sell_price');
 
-  if (error) throw new Error(`Failed to load products: ${error.message}`);
+  if (error) throw new Error(`Failed to load agent catalog: ${error.message}`);
 
   return data ?? [];
 }
 
 /**
- * Format products into a concise catalog string for Sol's system prompt.
+ * Format agent products into a concise catalog string for Sol's system prompt.
+ * Shows customer-facing prices: cuba_total_price for Cuba customers, sell_price for USA.
+ * @param products Array of AgentProduct from agent_product_catalog
+ * @param region 'cuba' or 'usa' - determines which price to show
  */
-export function formatProductCatalogForPrompt(products: Product[]): string {
+export function formatProductCatalogForPrompt(products: AgentProduct[], region: 'cuba' | 'usa' = 'cuba'): string {
   const categoryNames: Record<string, string> = {
-    portable_station: 'ESTACIONES PORTÁTILES PECRON',
-    battery: 'BATERÍAS DE LITIO (requieren inversor)',
+    kit: 'ESTACIONES PORTÁTILES',
+    battery: 'BATERÍAS DE LITIO',
     inverter: 'INVERSORES SOLARES',
     panel: 'PANELES SOLARES',
-    all_in_one: 'SISTEMAS TODO-EN-UNO',
+    'sistemas-solares-todo-en-uno': 'SISTEMAS TODO-EN-UNO',
     accessory: 'ACCESORIOS',
   };
 
-  const grouped: Record<string, Product[]> = {};
+  const grouped: Record<string, AgentProduct[]> = {};
   for (const p of products) {
     if (!grouped[p.category]) grouped[p.category] = [];
     grouped[p.category].push(p);
@@ -252,12 +256,23 @@ export function formatProductCatalogForPrompt(products: Product[]): string {
     lines.push(`\n${categoryNames[cat] ?? cat.toUpperCase()}`);
     for (const p of prods) {
       const specs: string[] = [];
-      if (p.capacity_wh) specs.push(`${p.capacity_wh.toLocaleString()}Wh`);
-      if (p.output_watts) specs.push(`${p.output_watts.toLocaleString()}W salida`);
+
+      // Add relevant specs based on product type
+      if (p.battery_capacity_wh) specs.push(`${p.battery_capacity_wh.toLocaleString()}Wh`);
+      if (p.battery_capacity_ah) specs.push(`${p.battery_capacity_ah}Ah`);
+      if (p.inverter_watts) specs.push(`${p.inverter_watts.toLocaleString()}W inversor`);
+      if (p.output_watts && p.category === 'kit') specs.push(`${p.output_watts.toLocaleString()}W salida`);
+      if (p.panel_watts) specs.push(`${p.panel_watts}W panel`);
+      if (p.solar_input_watts) specs.push(`${p.solar_input_watts.toLocaleString()}W solar`);
+
       const specsStr = specs.length ? ` (${specs.join(', ')})` : '';
-      const shipping = p.price_includes_cuba_shipping ? ' — envío a Cuba incluido' : '';
+
+      // Show region-specific price
+      const price = region === 'cuba' ? p.cuba_total_price : p.sell_price;
+      const priceLabel = region === 'cuba' ? 'Precio Final Cuba' : 'Precio USA';
+
       lines.push(
-        `• ${p.name}${specsStr}: $${p.price_usd.toFixed(2)} USD${shipping}`
+        `• ${p.name}${specsStr}: $${price.toFixed(2)} USD (${priceLabel})`
       );
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
     }
