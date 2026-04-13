@@ -47,7 +47,7 @@ export interface Product {
   output_watts: number | null;
   price_usd: number;
   price_includes_cuba_shipping: boolean;
-  in_stock: boolean;
+  in_stock?: boolean;
   description_es: string | null;
   ideal_for: string | null;
   created_at: string;

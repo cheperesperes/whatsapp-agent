@@ -219,7 +219,6 @@ export async function loadProducts(): Promise<Product[]> {
   const { data, error } = await supabase
     .from('products')
     .select('*')
-    .eq('in_stock', true)
     .order('category')
     .order('price_usd');
 
