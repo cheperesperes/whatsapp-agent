@@ -3,7 +3,6 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from 'react';
-import { createBrowserClient } from '@/lib/supabase';
 
 interface Stats {
   total: number;
@@ -55,105 +54,26 @@ function StatCard({
 export default function AnalyticsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createBrowserClient();
 
   useEffect(() => {
+    let cancelled = false;
     async function load() {
-      const now = new Date();
-      const weekAgo = new Date(now.getTime() - 7 * 86400000);
-
-      // Fetch all conversations + messages + handoffs in parallel.
-      // We compute counts client-side from the full rowset to avoid head:true
-      // count queries, which sometimes return null under RLS.
-      const [
-        { data: allConvs },
-        { data: allMsgs },
-        { data: handoffsRaw },
-      ] = await Promise.all([
-        supabase
-          .from('conversations')
-          .select('id, status, product_interest, created_at, phone_number')
-          .order('created_at', { ascending: false })
-          .limit(2000),
-        supabase
-          .from('messages')
-          .select('id, created_at')
-          .order('created_at', { ascending: false })
-          .limit(5000),
-        supabase
-          .from('handoffs')
-          .select('id, reason, last_customer_message, created_at, resolved, conversation_id')
-          .order('created_at', { ascending: false })
-          .limit(20),
-      ]);
-
-      const convs = allConvs ?? [];
-      const msgs = allMsgs ?? [];
-      const handoffs = handoffsRaw ?? [];
-
-      const total = convs.length;
-      const active = convs.filter((c) => c.status === 'active').length;
-      const escalated = convs.filter((c) => c.status === 'escalated').length;
-      const closed = convs.filter((c) => c.status === 'closed').length;
-      const messagesTotal = msgs.length;
-      const messagesLastWeek = msgs.filter((m) => m.created_at >= weekAgo.toISOString()).length;
-
-      // Top products
-      const productCounts: Record<string, number> = {};
-      convs.forEach((c) => {
-        if (c.product_interest) {
-          productCounts[c.product_interest] = (productCounts[c.product_interest] ?? 0) + 1;
+      try {
+        const res = await fetch('/api/stats', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`stats ${res.status}`);
+        const data = (await res.json()) as Stats;
+        if (!cancelled) {
+          setStats(data);
+          setLoading(false);
         }
-      });
-      const topProducts = Object.entries(productCounts)
-        .map(([product_interest, count]) => ({ product_interest, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5);
-
-      // Conversations by day (last 7 days)
-      const dayMap: Record<string, number> = {};
-      const days = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(now.getTime() - i * 86400000);
-        return d.toISOString().split('T')[0];
-      }).reverse();
-
-      days.forEach((d) => { dayMap[d] = 0; });
-      convs.forEach((c) => {
-        const day = c.created_at?.split('T')[0];
-        if (day && dayMap[day] !== undefined) dayMap[day]++;
-      });
-
-      const conversationsByDay = days.map((date) => ({ date, count: dayMap[date] }));
-
-      // Build phone-number lookup from already-fetched conversations (no N+1)
-      const phoneById: Record<string, string> = {};
-      convs.forEach((c) => {
-        if (c.id && c.phone_number) phoneById[c.id] = c.phone_number;
-      });
-      const handoffList = handoffs.map((h) => ({
-        ...h,
-        phone_number: phoneById[h.conversation_id],
-      }));
-
-      const escalationRate = total > 0 ? Math.round((escalated / total) * 100) : 0;
-
-      setStats({
-        total,
-        active,
-        escalated,
-        closed,
-        messagesTotal,
-        messagesLastWeek,
-        escalationRate,
-        topProducts,
-        conversationsByDay,
-        recentHandoffs: handoffList,
-      });
-      setLoading(false);
+      } catch (err) {
+        console.error('[analytics] failed to load stats:', err);
+        if (!cancelled) setLoading(false);
+      }
     }
-
     load();
-  }, [supabase]);
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">

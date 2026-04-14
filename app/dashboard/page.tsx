@@ -3,8 +3,13 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { createBrowserClient } from '@/lib/supabase';
 import type { Conversation, Message } from '@/lib/types';
+
+// Poll the API routes every N ms. The dashboard used to subscribe to Supabase
+// postgres_changes directly with the anon key, but RLS (correctly) filters
+// those rows to zero for the logged-in admin, so realtime events never fired.
+// Server-side API routes + polling keep this simple and RLS-safe.
+const POLL_MS = 5000;
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -245,89 +250,51 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const supabase = createBrowserClient();
-
-  // Load conversations
-  const loadConversations = useCallback(async () => {
-    setLoading(true);
+  // Load conversations via server API (service-role, RLS-bypassing)
+  const loadConversations = useCallback(async (opts?: { showSpinner?: boolean }) => {
+    if (opts?.showSpinner) setLoading(true);
     try {
-      const { data: convs } = await supabase
-        .from('conversations')
-        .select('*')
-        .order('updated_at', { ascending: false });
+      const res = await fetch('/api/conversations', { cache: 'no-store' });
+      if (!res.ok) return;
+      const { conversations: convs } = (await res.json()) as { conversations: ConvWithLast[] };
+      setConversations(convs ?? []);
 
-      if (!convs) return;
-
-      // Load last message for each conversation
-      const withLast: ConvWithLast[] = await Promise.all(
-        convs.map(async (conv) => {
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('*')
-            .eq('conversation_id', conv.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-          return { ...conv, last_message: lastMsg ?? undefined };
-        })
-      );
-
-      setConversations(withLast);
-
-      // Auto-select first escalated, or first overall
-      if (!selectedId) {
-        const firstEscalated = withLast.find((c) => c.escalated);
-        if (firstEscalated) setSelectedId(firstEscalated.id);
-        else if (withLast.length > 0) setSelectedId(withLast[0].id);
-      }
+      // Auto-select first escalated, or first overall — only on initial load
+      setSelectedId((current) => {
+        if (current) return current;
+        const firstEscalated = convs?.find((c) => c.escalated);
+        if (firstEscalated) return firstEscalated.id;
+        if (convs && convs.length > 0) return convs[0].id;
+        return null;
+      });
     } finally {
-      setLoading(false);
+      if (opts?.showSpinner) setLoading(false);
     }
-  }, [supabase, selectedId]);
+  }, []);
 
   // Load messages for selected conversation
   const loadMessages = useCallback(async (convId: string) => {
-    const { data } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', convId)
-      .order('created_at', { ascending: true });
+    const res = await fetch(`/api/conversations/${convId}/messages`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const { messages: data } = (await res.json()) as { messages: Message[] };
     setMessages(data ?? []);
-  }, [supabase]);
+  }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadConversations(); }, []);
+  // Initial load
+  useEffect(() => { loadConversations({ showSpinner: true }); }, [loadConversations]);
 
   useEffect(() => {
     if (selectedId) loadMessages(selectedId);
   }, [selectedId, loadMessages]);
 
-  // Realtime subscriptions
+  // Polling — refresh conversations list and the open thread
   useEffect(() => {
-    const convChannel = supabase
-      .channel('conversations-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => {
-        loadConversations();
-      })
-      .subscribe();
-
-    const msgChannel = supabase
-      .channel('messages-changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        const newMsg = payload.new as Message;
-        if (newMsg.conversation_id === selectedId) {
-          setMessages((prev) => [...prev, newMsg]);
-        }
-        // Refresh conversation list to update last message preview
-        loadConversations();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(convChannel);
-      supabase.removeChannel(msgChannel);
-    };
-  }, [supabase, selectedId, loadConversations]);
+    const t = setInterval(() => {
+      loadConversations();
+      if (selectedId) loadMessages(selectedId);
+    }, POLL_MS);
+    return () => clearInterval(t);
+  }, [loadConversations, loadMessages, selectedId]);
 
   // Selected conversation object
   const selectedConv = conversations.find((c) => c.id === selectedId) ?? null;
@@ -348,32 +315,35 @@ export default function DashboardPage() {
     return matchesFilter && matchesSearch;
   });
 
-  // Actions
+  // Actions — POST to server API which uses service role
   async function handleDeescalate() {
     if (!selectedConv) return;
     setActionLoading(true);
-    await supabase
-      .from('conversations')
-      .update({ escalated: false, status: 'active', escalation_reason: null, updated_at: new Date().toISOString() })
-      .eq('id', selectedConv.id);
-    await supabase
-      .from('handoffs')
-      .update({ resolved: true, resolved_at: new Date().toISOString() })
-      .eq('conversation_id', selectedConv.id)
-      .eq('resolved', false);
-    setActionLoading(false);
-    loadConversations();
+    try {
+      await fetch(`/api/conversations/${selectedConv.id}/action`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'deescalate' }),
+      });
+    } finally {
+      setActionLoading(false);
+      loadConversations();
+    }
   }
 
   async function handleClose() {
     if (!selectedConv) return;
     setActionLoading(true);
-    await supabase
-      .from('conversations')
-      .update({ status: 'closed', updated_at: new Date().toISOString() })
-      .eq('id', selectedConv.id);
-    setActionLoading(false);
-    loadConversations();
+    try {
+      await fetch(`/api/conversations/${selectedConv.id}/action`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'close' }),
+      });
+    } finally {
+      setActionLoading(false);
+      loadConversations();
+    }
   }
 
   // Stats bar
