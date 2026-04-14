@@ -316,34 +316,38 @@ export default function DashboardPage() {
   });
 
   // Actions — POST to server API which uses service role
-  async function handleDeescalate() {
+  async function postAction(action: 'deescalate' | 'close') {
     if (!selectedConv) return;
     setActionLoading(true);
     try {
-      await fetch(`/api/conversations/${selectedConv.id}/action`, {
+      const res = await fetch(`/api/conversations/${selectedConv.id}/action`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'deescalate' }),
+        body: JSON.stringify({ action }),
       });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.error(`[DASHBOARD] ${action} failed: ${res.status}`, text);
+        alert(
+          `No se pudo ${action === 'close' ? 'cerrar' : 'devolver a Sol'} la conversación.\n` +
+            `Status: ${res.status}\n${text.slice(0, 200)}`
+        );
+      }
+    } catch (err) {
+      console.error(`[DASHBOARD] ${action} network error:`, err);
+      alert(`Error de red al ${action === 'close' ? 'cerrar' : 'devolver a Sol'}. Revise la consola.`);
     } finally {
       setActionLoading(false);
       loadConversations();
     }
   }
 
+  async function handleDeescalate() {
+    await postAction('deescalate');
+  }
+
   async function handleClose() {
-    if (!selectedConv) return;
-    setActionLoading(true);
-    try {
-      await fetch(`/api/conversations/${selectedConv.id}/action`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'close' }),
-      });
-    } finally {
-      setActionLoading(false);
-      loadConversations();
-    }
+    await postAction('close');
   }
 
   // Stats bar

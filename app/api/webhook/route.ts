@@ -101,13 +101,38 @@ export async function POST(request: NextRequest) {
   if (!SKIP_SIG_VERIFY) {
     const authToken = process.env.TWILIO_AUTH_TOKEN ?? '';
     const sigHeader = request.headers.get('x-twilio-signature');
-    // Twilio signs the FULL external URL. Behind Vercel this is the request URL.
-    const url = request.url;
-    const ok = verifyTwilioSignature(authToken, sigHeader, url, body);
+
+    // Twilio signs the FULL external URL configured on the number. Behind
+    // Vercel the internal request.url may not match (protocol stripped,
+    // or internal alias). Try every plausible candidate and accept the first
+    // one whose HMAC matches. This is still safe: the signature has to match
+    // SOME form of the same endpoint using the same auth token.
+    const candidates = buildSignatureUrlCandidates(request);
+    let ok = false;
+    let matchedUrl = '';
+    for (const candidate of candidates) {
+      if (verifyTwilioSignature(authToken, sigHeader, candidate, body)) {
+        ok = true;
+        matchedUrl = candidate;
+        break;
+      }
+    }
+
     if (!ok) {
-      console.warn('[WEBHOOK POST] Signature mismatch — rejecting');
+      console.warn(
+        '[WEBHOOK POST] Signature mismatch — rejecting. Tried URLs:',
+        candidates,
+        '| hasAuthToken:',
+        Boolean(authToken),
+        '| hasSigHeader:',
+        Boolean(sigHeader)
+      );
       return new NextResponse('Forbidden', { status: 403 });
     }
+
+    console.log('[WEBHOOK POST] Signature OK (matched URL:', matchedUrl, ')');
+  } else {
+    console.log('[WEBHOOK POST] SKIP_TWILIO_SIGNATURE=1 — verification bypassed');
   }
 
   // ── Idempotency: short-circuit Twilio retries for the same MessageSid ──
@@ -131,6 +156,66 @@ function twimlOk() {
     status: 200,
     headers: { 'Content-Type': 'text/xml' },
   });
+}
+
+// Build every plausible version of the external URL Twilio may have signed.
+// Vercel terminates TLS at the edge, so request.url may come through as
+// http:// or with an internal host. We try request.url first, then
+// reconstruct from x-forwarded-* headers with both https and http, and
+// also try with and without a trailing slash.
+function buildSignatureUrlCandidates(request: NextRequest): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (u: string | null | undefined) => {
+    if (!u) return;
+    if (seen.has(u)) return;
+    seen.add(u);
+    out.push(u);
+  };
+
+  // 1) Raw request.url as Next.js sees it
+  add(request.url);
+
+  // 2) Reconstructed from forwarded headers
+  const xfProto = request.headers.get('x-forwarded-proto');
+  const xfHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
+  if (xfHost) {
+    try {
+      const u = new URL(request.url);
+      const path = u.pathname + (u.search || '');
+      add(`https://${xfHost}${path}`);
+      add(`http://${xfHost}${path}`);
+      if (xfProto) add(`${xfProto}://${xfHost}${path}`);
+    } catch {
+      // ignore
+    }
+  }
+
+  // 3) Also try toggling trailing slash on each candidate
+  const withSlashToggled = out.flatMap((u) => {
+    try {
+      const parsed = new URL(u);
+      const p = parsed.pathname;
+      if (p.endsWith('/')) {
+        return [u, u.replace(p, p.slice(0, -1))];
+      } else {
+        return [u, u.replace(p, p + '/')];
+      }
+    } catch {
+      return [u];
+    }
+  });
+
+  // Dedupe while preserving order
+  const final: string[] = [];
+  const seenFinal = new Set<string>();
+  for (const u of withSlashToggled) {
+    if (!seenFinal.has(u)) {
+      seenFinal.add(u);
+      final.push(u);
+    }
+  }
+  return final;
 }
 
 // ============================================================
@@ -202,7 +287,13 @@ async function processWebhook(body: unknown) {
   }
 
   // ── Store user message (idempotent on MessageSid) ────────
-  await storeMessage(conversation.id, 'user', messageText, false, messageId);
+  try {
+    await storeMessage(conversation.id, 'user', messageText, false, messageId);
+    console.log(`[WEBHOOK] Stored inbound message | conv=${conversation.id} | sid=${messageId}`);
+  } catch (err) {
+    console.error(`[WEBHOOK] storeMessage FAILED | conv=${conversation.id} | sid=${messageId}:`, err);
+    throw err;
+  }
 
   // ── Opt-out keywords (STOP, BAJA, CANCELAR, …) ───────────
   const trimmed = messageText.trim().toLowerCase();
