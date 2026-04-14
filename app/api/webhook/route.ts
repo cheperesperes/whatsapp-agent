@@ -23,6 +23,7 @@ import {
 import { generateSolResponse } from '@/lib/anthropic';
 import {
   sendWhatsAppMessage,
+  sendMessage,
   sendHandoffAlert,
   sendEscalatedMessageAlert,
   parseIncomingMessage,
@@ -229,13 +230,13 @@ async function processWebhook(body: unknown) {
     return;
   }
 
-  const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId } = parsed;
+  const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId, channel } = parsed;
   // Canonical E.164 ("+" + digits). Prevents duplicate conversation rows.
   const senderPhone = rawSenderPhone.startsWith('+')
     ? '+' + rawSenderPhone.slice(1).replace(/[^\d]/g, '')
     : '+' + rawSenderPhone.replace(/[^\d]/g, '');
 
-  console.log(`[WEBHOOK] Message from ${senderPhone} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`);
+  console.log(`[WEBHOOK] Message from ${senderPhone} | channel: ${channel} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`);
 
   // ── Operator commands ───────────────────────────────────
   // Normalize phone numbers for comparison (remove non-digits)
@@ -252,9 +253,10 @@ async function processWebhook(body: unknown) {
 
   // ── Non-text messages ───────────────────────────────────
   if (messageType !== 'text' || !messageText.trim()) {
-    await sendWhatsAppMessage(
+    await sendMessage(
       senderPhone,
-      'Por ahora solo puedo leer mensajes de texto. ¿Podría escribirme su pregunta?'
+      'Por ahora solo puedo leer mensajes de texto. ¿Podría escribirme su pregunta?',
+      channel
     );
     return;
   }
@@ -279,9 +281,10 @@ async function processWebhook(body: unknown) {
     await storeMessage(conversation.id, 'user', messageText, false, messageId);
     if (recentCount === HOURLY_MESSAGE_CAP) {
       // Only send the warning once when crossing the threshold
-      await sendWhatsAppMessage(
+      await sendMessage(
         senderPhone,
-        'Ha alcanzado el límite de mensajes por hora. Un especialista le contactará pronto si es urgente.'
+        'Ha alcanzado el límite de mensajes por hora. Un especialista le contactará pronto si es urgente.',
+        channel
       );
       await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'rate_cap_exceeded', messageText);
       await escalateConversation(conversation.id, 'rate_cap_exceeded', messageText);
@@ -304,9 +307,10 @@ async function processWebhook(body: unknown) {
   if (OPT_OUT_KEYWORDS.has(trimmed)) {
     console.log(`[WEBHOOK] Opt-out from ${senderPhone}`);
     await optOutConversation(conversation.id);
-    await sendWhatsAppMessage(
+    await sendMessage(
       senderPhone,
-      'Entendido. No recibirá más mensajes automáticos de Oiikon Sol. Para reactivar, escriba "HOLA". Gracias.'
+      'Entendido. No recibirá más mensajes automáticos de Oiikon Sol. Para reactivar, escriba "HOLA". Gracias.',
+      channel
     );
     await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'user_opt_out', messageText);
     processingPhones.delete(senderPhone);
@@ -350,14 +354,14 @@ async function processWebhook(body: unknown) {
       await storeMessage(conversation.id, 'assistant', aiMessage, true);
 
       // Send customer-facing message (tag already stripped)
-      await sendWhatsAppMessage(senderPhone, aiMessage);
+      await sendMessage(senderPhone, aiMessage, channel);
 
-      // Alert operator
+      // Alert operator (always via WhatsApp — that's where Ed works from)
       await sendHandoffAlert(OPERATOR_PHONE, senderPhone, handoffReason, messageText);
     } else {
       // ── Normal AI response ──────────────────────────────
       await storeMessage(conversation.id, 'assistant', aiMessage);
-      await sendWhatsAppMessage(senderPhone, aiMessage);
+      await sendMessage(senderPhone, aiMessage, channel);
     }
 
     // Remove from rate limit map early (processing done)
@@ -368,9 +372,10 @@ async function processWebhook(body: unknown) {
     processingPhones.delete(senderPhone);
 
     // Graceful fallback message to customer
-    await sendWhatsAppMessage(
+    await sendMessage(
       senderPhone,
-      'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.'
+      'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.',
+      channel
     );
   }
 }
