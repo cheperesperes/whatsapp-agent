@@ -412,8 +412,10 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
 
       await deescalateConversation(conv.id);
       await sendWhatsAppMessage(operatorPhone, `✅ ${args} devuelto a Sol (modo AI).`);
+      // Use the conversation's canonical phone_number for the outbound message
+      // (targetPhone is the raw no-plus form from the command args).
       await sendWhatsAppMessage(
-        targetPhone,
+        conv.phone_number,
         'Hola, vuelve a estar con Sol 🌟 ¿En qué más le puedo ayudar?'
       );
       break;

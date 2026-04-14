@@ -317,11 +317,17 @@ export async function deescalateConversation(conversationId: string): Promise<vo
 export async function getConversationByPhone(phone: string): Promise<Conversation | null> {
   const supabase = createServiceClient();
 
+  // Tolerant of both canonical ("+15551234567") and legacy no-plus ("15551234567") forms.
+  const canonical = normalizePhone(phone);
+  const noPlus = canonical.startsWith('+') ? canonical.slice(1) : canonical;
+
   const { data } = await supabase
     .from('conversations')
     .select('*')
-    .eq('phone_number', phone)
-    .single();
+    .in('phone_number', [canonical, noPlus])
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   return data ?? null;
 }
