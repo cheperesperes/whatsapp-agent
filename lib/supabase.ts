@@ -117,23 +117,28 @@ export async function loadRecentMessages(
 
 /**
  * Store a message in the messages table.
+ * Optionally pass a Twilio MessageSid for idempotent inserts.
  */
 export async function storeMessage(
   conversationId: string,
   role: 'user' | 'assistant' | 'system',
   content: string,
-  handoffDetected = false
+  handoffDetected = false,
+  twilioMessageSid?: string | null
 ): Promise<Message> {
   const supabase = createServiceClient();
 
+  const payload: Record<string, unknown> = {
+    conversation_id: conversationId,
+    role,
+    content,
+    handoff_detected: handoffDetected,
+  };
+  if (twilioMessageSid) payload.twilio_message_sid = twilioMessageSid;
+
   const { data, error } = await supabase
     .from('messages')
-    .insert({
-      conversation_id: conversationId,
-      role,
-      content,
-      handoff_detected: handoffDetected,
-    })
+    .insert(payload)
     .select()
     .single();
 
@@ -148,6 +153,72 @@ export async function storeMessage(
     .eq('id', conversationId);
 
   return data;
+}
+
+/**
+ * Returns true if we've already persisted a message with this Twilio SID.
+ * Used for webhook idempotency against retries.
+ */
+export async function hasProcessedMessageSid(sid: string): Promise<boolean> {
+  if (!sid) return false;
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('messages')
+    .select('id')
+    .eq('twilio_message_sid', sid)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    // If the column doesn't exist yet (migration not applied), fail open.
+    console.warn('[IDEMPOTENCY] sid check failed:', error.message);
+    return false;
+  }
+  return !!data;
+}
+
+/**
+ * Count how many user messages came from a given phone number in the past `minutes`.
+ * Used for per-phone rolling-window rate limiting.
+ */
+export async function countRecentUserMessagesFromPhone(
+  phoneNumber: string,
+  minutes: number
+): Promise<number> {
+  const supabase = createServiceClient();
+  const since = new Date(Date.now() - minutes * 60_000).toISOString();
+
+  // Join via conversations
+  const { data: conv } = await supabase
+    .from('conversations')
+    .select('id')
+    .eq('phone_number', phoneNumber)
+    .maybeSingle();
+  if (!conv?.id) return 0;
+
+  const { count } = await supabase
+    .from('messages')
+    .select('*', { count: 'exact', head: true })
+    .eq('conversation_id', conv.id)
+    .eq('role', 'user')
+    .gte('created_at', since);
+
+  return count ?? 0;
+}
+
+/**
+ * Mark a conversation as opted-out. The webhook should refuse to send
+ * further AI messages to this phone until the operator clears the flag.
+ */
+export async function optOutConversation(conversationId: string): Promise<void> {
+  const supabase = createServiceClient();
+  await supabase
+    .from('conversations')
+    .update({
+      status: 'closed',
+      escalation_reason: 'user_opt_out',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId);
 }
 
 /**

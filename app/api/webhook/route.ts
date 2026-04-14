@@ -16,6 +16,9 @@ import {
   loadKnowledgeBase,
   formatKnowledgeBaseForPrompt,
   addKnowledgeEntry,
+  hasProcessedMessageSid,
+  countRecentUserMessagesFromPhone,
+  optOutConversation,
 } from '@/lib/supabase';
 import { generateSolResponse } from '@/lib/anthropic';
 import {
@@ -25,12 +28,23 @@ import {
   parseIncomingMessage,
   parseOwnerCommand,
 } from '@/lib/whatsapp';
+import { verifyTwilioSignature } from '@/lib/twilio-signature';
 
 // ── Rate limiting: per-phone debounce ──────────────────────
 const processingPhones = new Set<string>();
 const RATE_LIMIT_MS = 3000; // 3 seconds
 
+// Rolling-hour hard cap per phone (abuse guard)
+const HOURLY_MESSAGE_CAP = Number(process.env.HOURLY_MESSAGE_CAP ?? 40);
+
 const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
+
+// Allow signature verification to be disabled ONLY via explicit env flag,
+// so local/dev can post without Twilio headers. Production must not set this.
+const SKIP_SIG_VERIFY = process.env.SKIP_TWILIO_SIGNATURE === '1';
+
+// Opt-out keywords (case-insensitive, whole message match after trim)
+const OPT_OUT_KEYWORDS = new Set(['stop', 'baja', 'cancelar', 'cancel', 'unsubscribe', 'desuscribir']);
 
 // ============================================================
 // GET — Webhook Verification
@@ -67,10 +81,7 @@ export async function POST(request: NextRequest) {
   if (contentType.includes('application/x-www-form-urlencoded')) {
     try {
       const formData = await request.formData();
-      // Convert FormData to plain object
-      for (const [key, value] of formData.entries()) {
-        body[key] = String(value);
-      }
+      for (const [key, value] of formData.entries()) body[key] = String(value);
     } catch {
       console.warn('[WEBHOOK POST] Failed to parse form data');
     }
@@ -83,20 +94,39 @@ export async function POST(request: NextRequest) {
   }
 
   if (!body || Object.keys(body).length === 0) {
-    return new NextResponse('<Response></Response>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/xml' },
-    });
+    return twimlOk();
   }
 
-  // Use waitUntil to keep the serverless function alive for background processing
-  // This returns 200 immediately to Twilio while continuing to process the message
+  // ── Signature verification (rejects spoofed posts) ────────────────
+  if (!SKIP_SIG_VERIFY) {
+    const authToken = process.env.TWILIO_AUTH_TOKEN ?? '';
+    const sigHeader = request.headers.get('x-twilio-signature');
+    // Twilio signs the FULL external URL. Behind Vercel this is the request URL.
+    const url = request.url;
+    const ok = verifyTwilioSignature(authToken, sigHeader, url, body);
+    if (!ok) {
+      console.warn('[WEBHOOK POST] Signature mismatch — rejecting');
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+  }
+
+  // ── Idempotency: short-circuit Twilio retries for the same MessageSid ──
+  const sid = body.MessageSid;
+  if (sid && (await hasProcessedMessageSid(sid))) {
+    console.log(`[WEBHOOK POST] Duplicate MessageSid ${sid} — ack without reprocess`);
+    return twimlOk();
+  }
+
   waitUntil(
     processWebhook(body).catch((err) => {
       console.error('[WEBHOOK POST] Processing error:', err);
     })
   );
 
+  return twimlOk();
+}
+
+function twimlOk() {
   return new NextResponse('<Response></Response>', {
     status: 200,
     headers: { 'Content-Type': 'text/xml' },
@@ -152,8 +182,41 @@ async function processWebhook(body: unknown) {
   // ── Conversation setup ──────────────────────────────────
   const conversation = await getOrCreateConversation(senderPhone, senderName ?? undefined);
 
-  // ── Store user message ──────────────────────────────────
-  await storeMessage(conversation.id, 'user', messageText);
+  // ── Hourly abuse cap (per phone) ─────────────────────────
+  const recentCount = await countRecentUserMessagesFromPhone(senderPhone, 60);
+  if (recentCount >= HOURLY_MESSAGE_CAP) {
+    console.warn(`[WEBHOOK] Rate cap hit for ${senderPhone}: ${recentCount} msgs in last hour`);
+    // Still persist the inbound message so we can investigate, then stop.
+    await storeMessage(conversation.id, 'user', messageText, false, messageId);
+    if (recentCount === HOURLY_MESSAGE_CAP) {
+      // Only send the warning once when crossing the threshold
+      await sendWhatsAppMessage(
+        senderPhone,
+        'Ha alcanzado el límite de mensajes por hora. Un especialista le contactará pronto si es urgente.'
+      );
+      await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'rate_cap_exceeded', messageText);
+      await escalateConversation(conversation.id, 'rate_cap_exceeded', messageText);
+    }
+    processingPhones.delete(senderPhone);
+    return;
+  }
+
+  // ── Store user message (idempotent on MessageSid) ────────
+  await storeMessage(conversation.id, 'user', messageText, false, messageId);
+
+  // ── Opt-out keywords (STOP, BAJA, CANCELAR, …) ───────────
+  const trimmed = messageText.trim().toLowerCase();
+  if (OPT_OUT_KEYWORDS.has(trimmed)) {
+    console.log(`[WEBHOOK] Opt-out from ${senderPhone}`);
+    await optOutConversation(conversation.id);
+    await sendWhatsAppMessage(
+      senderPhone,
+      'Entendido. No recibirá más mensajes automáticos de Oiikon Sol. Para reactivar, escriba "HOLA". Gracias.'
+    );
+    await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'user_opt_out', messageText);
+    processingPhones.delete(senderPhone);
+    return;
+  }
 
   // ── Human mode: notify operator, skip AI ───────────────
   if (conversation.escalated) {
