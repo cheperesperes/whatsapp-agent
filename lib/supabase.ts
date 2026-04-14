@@ -43,8 +43,25 @@ export function createBrowserClient() {
 // ============================================================
 
 /**
+ * Normalize a phone number to E.164 with leading '+'. Tolerant of Twilio
+ * variants like "whatsapp:+15551234567" or bare digits "15551234567".
+ */
+export function normalizePhone(raw: string): string {
+  if (!raw) return raw;
+  let p = raw.trim();
+  if (p.startsWith('whatsapp:')) p = p.slice('whatsapp:'.length);
+  p = p.replace(/\s+/g, '');
+  if (!p.startsWith('+')) p = '+' + p.replace(/[^\d]/g, '');
+  else p = '+' + p.slice(1).replace(/[^\d]/g, '');
+  return p;
+}
+
+/**
  * Get or create a conversation by phone number.
  * Returns the conversation row.
+ *
+ * Matching is tolerant of legacy rows that were stored without a leading '+'.
+ * New rows are always written in canonical E.164 form ('+' + digits).
  */
 export async function getOrCreateConversation(
   phone: string,
@@ -52,32 +69,46 @@ export async function getOrCreateConversation(
 ): Promise<Conversation> {
   const supabase = createServiceClient();
 
-  // Try to find existing
-  const { data: existing } = await supabase
+  const canonical = normalizePhone(phone);
+  const noPlus = canonical.startsWith('+') ? canonical.slice(1) : canonical;
+
+  // Try both canonical and no-plus forms so we collapse onto existing rows
+  // even if they were inserted under a different normalization.
+  const { data: matches, error: matchErr } = await supabase
     .from('conversations')
     .select('*')
-    .eq('phone_number', phone)
-    .single();
+    .in('phone_number', [canonical, noPlus])
+    .order('updated_at', { ascending: false })
+    .limit(1);
 
+  if (matchErr) {
+    console.warn('[getOrCreateConversation] lookup error:', matchErr.message);
+  }
+
+  const existing = matches?.[0];
   if (existing) {
-    // Update name if provided and not already set
-    if (customerName && !existing.customer_name) {
-      const { data: updated } = await supabase
+    const patch: Record<string, unknown> = {};
+    if (existing.phone_number !== canonical) patch.phone_number = canonical;
+    if (customerName && !existing.customer_name) patch.customer_name = customerName;
+    if (Object.keys(patch).length > 0) {
+      patch.updated_at = new Date().toISOString();
+      const { data: updated, error: updErr } = await supabase
         .from('conversations')
-        .update({ customer_name: customerName, updated_at: new Date().toISOString() })
+        .update(patch)
         .eq('id', existing.id)
         .select()
         .single();
+      if (updErr) console.warn('[getOrCreateConversation] update error:', updErr.message);
       return updated ?? existing;
     }
     return existing;
   }
 
-  // Create new
+  // Create new (canonical form)
   const { data: created, error } = await supabase
     .from('conversations')
     .insert({
-      phone_number: phone,
+      phone_number: canonical,
       customer_name: customerName ?? null,
       customer_segment: 'unknown',
       status: 'active',
@@ -90,6 +121,7 @@ export async function getOrCreateConversation(
     throw new Error(`Failed to create conversation: ${error?.message}`);
   }
 
+  console.log(`[getOrCreateConversation] created new | phone=${canonical} | id=${created.id}`);
   return created;
 }
 
@@ -146,11 +178,17 @@ export async function storeMessage(
     throw new Error(`Failed to store message: ${error?.message}`);
   }
 
-  // Update conversation's updated_at
-  await supabase
+  // Update conversation's updated_at. If this fails the dashboard ordering
+  // will stale; log it so we don't silently drift.
+  const { error: bumpErr } = await supabase
     .from('conversations')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', conversationId);
+  if (bumpErr) {
+    console.warn(
+      `[storeMessage] updated_at bump failed | conv=${conversationId}: ${bumpErr.message}`
+    );
+  }
 
   return data;
 }

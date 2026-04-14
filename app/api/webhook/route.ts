@@ -229,7 +229,11 @@ async function processWebhook(body: unknown) {
     return;
   }
 
-  const { senderPhone, senderName, messageText, messageType, messageId } = parsed;
+  const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId } = parsed;
+  // Canonical E.164 ("+" + digits). Prevents duplicate conversation rows.
+  const senderPhone = rawSenderPhone.startsWith('+')
+    ? '+' + rawSenderPhone.slice(1).replace(/[^\d]/g, '')
+    : '+' + rawSenderPhone.replace(/[^\d]/g, '');
 
   console.log(`[WEBHOOK] Message from ${senderPhone} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`);
 
