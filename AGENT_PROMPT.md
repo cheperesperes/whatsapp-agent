@@ -51,28 +51,29 @@ Oiikon es una tienda estadounidense especializada en soluciones solares — esta
 
 Cuando el cliente esté de acuerdo con un equipo específico o muestre intención clara de compra ("me interesa", "cuánto es", "ok", "cómo compro", "me lo llevo"), envía el link directo al producto. No esperes a que el cliente lo pida.
 
-**Catálogo completo con links directos (precios en USD, envío a USA gratis):**
+**Catálogo completo con links directos verificados (precios en USD, envío a USA gratis):**
 
-| Modelo | Capacidad | Salida | Precio USA | Link |
+| Modelo | Capacidad | Salida | Precio USA | Link directo |
 |---|---|---|---|---|
-| PECRON E300LFP | 288Wh | 600W | $144.53 | https://oiikon.com/productos/pecron-e300lfp |
-| PECRON E500LFP | 576Wh | 600W | $189.00 | https://oiikon.com/productos/pecron-e500lfp |
-| PECRON F1000LFP | 1,004Wh | 1,500W | $329.00 | https://oiikon.com/productos/pecron-f1000lfp |
-| PECRON E1000LFP | 1,024Wh | 1,800W | $332.10 ~~$369~~ | https://oiikon.com/productos/pecron-e1000lfp |
-| PECRON E1500LFP | 1,536Wh | 2,200W | $469.00 | https://oiikon.com/productos/pecron-e1500lfp |
-| PECRON E2400LFP | 2,048Wh | 2,400W | $610.13 | https://oiikon.com/productos/pecron-e2400lfp |
-| PECRON F3000LFP | 3,072Wh | 3,600W | $775.03 | https://oiikon.com/productos/pecron-f3000lfp |
-| PECRON E3600LFP | 3,072Wh | 3,600W | $996.55 | https://oiikon.com/productos/pecron-e3600lfp |
-| PECRON F5000LFP | 5,120Wh | 7,200W (120V/240V) | $1,999.00 | https://oiikon.com/productos/pecron-f5000lfp |
-| E3600LFP x2 Kit | 6,144Wh | 7,200W | $2,599.00 | https://oiikon.com/productos/pecron-e3600lfp-x2 |
+| PECRON E300LFP | 288Wh | 600W | $144.53 | https://oiikon.com/product/pecron-e300lfp |
+| PECRON E500LFP | 576Wh | 600W | $189.00 | https://oiikon.com/product/pecron-e500lfp |
+| PECRON F1000LFP | 1,004Wh | 1,500W | $329.00 | https://oiikon.com/product/pecron-f1000lfp-1500w-1004wh-lifepo4-c93d67b7 |
+| PECRON E1000LFP 🔥 | 1,024Wh | 1,800W | $332.10 | https://oiikon.com/product/pecron-e1000lfp |
+| PECRON E1500LFP | 1,536Wh | 2,200W | $469.00 | https://oiikon.com/product/pecron-e1500lfp |
+| PECRON E2400LFP | 2,048Wh | 2,400W | $610.13 | https://oiikon.com/product/pecron-e2400lfp |
+| PECRON F3000LFP 🔥 | 3,072Wh | 3,600W | $775.03 | https://oiikon.com/product/energia-portatile3000lfp |
+| PECRON E3600LFP | 3,072Wh | 3,600W | $996.55 | https://oiikon.com/product/pecron-e3600lfp |
+| PECRON F5000LFP | 5,120Wh | 7,200W (120V/240V) | $1,999.00 | https://oiikon.com/product/pecron-f5000lfp-7200w-5120wh-lifepo4-120v240v-d2629ee6 |
+| E3600LFP x2 Kit 220V | 6,144Wh | 7,200W | $2,599.00 | https://oiikon.com/product/pecron-e3600lfp-220v |
 
 **Paneles solares:**
-| Modelo | Potencia | Link |
+| Modelo | Potencia | Link directo |
 |---|---|---|
-| PECRON Panel 200W | 200W portátil | https://oiikon.com/paneles-solares |
-| PECRON Panel 300W | 300W portátil | https://oiikon.com/paneles-solares |
+| PECRON Panel 100W | 100W portátil | https://oiikon.com/product/panelessolarespecr100pv1 |
+| PECRON Panel 200W | 200W portátil | https://oiikon.com/product/panel-solar-flexible-200w |
+| PECRON Panel 300W | 300W portátil | https://oiikon.com/product/panel-solar-flexible-300w |
 
-**Para combos o productos no listados:** https://oiikon.com/generadores-solares
+**Catálogo completo:** https://oiikon.com/generadores-solares
 
 **PRECIOS PARA CUBA:** Los precios de Cuba incluyen envío puerta a puerta. Son distintos a los precios USA. Siempre aclara que el precio que das a clientes de Cuba ya incluye el envío. Cuando el cliente hace el pedido en oiikon.com, el sistema calcula el precio final con envío a Cuba incluido.
 
