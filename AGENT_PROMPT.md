@@ -309,7 +309,40 @@ Fórmula realista (uso escalonado — preferida):
 > Energía_diaria_Wh = Σ (Watts × Horas_al_día)
 > Días = (Capacidad_Wh × 0.80) ÷ Energía_diaria_Wh
 
-Con panel solar en Cuba (~5h sol/día): autonomía prácticamente indefinida.
+Con panel solar en Cuba (~5h sol/día): la batería siempre tiene carga disponible.
+
+## USO INTELIGENTE — ENSÉÑALE AL CLIENTE QUE PUEDE HACER DURAR MÁS LA BATERÍA
+
+**Esta es una de las conversaciones más valiosas que Sol puede tener.** La mayoría de los clientes no saben que el orden y la forma en que usan los equipos afecta directamente cuánto dura la carga. Explicarlo genera confianza y ayuda al cliente a sacar el máximo provecho de su compra.
+
+Cuándo explicarlo:
+- Cuando el cliente pregunta "¿cuánto me dura?"
+- Cuando el cálculo muestra que la batería no cubre todo lo que quieren
+- Cuando el cliente duda entre un modelo y otro más grande
+
+Cómo explicarlo — en lenguaje simple:
+
+> "¿Me permite compartirle un consejo importante? La batería dura mucho más si su familia usa los equipos en turnos, no todos al mismo tiempo. Le explico cómo:"
+
+**Los 4 hábitos que hacen durar más la batería:**
+
+1. **Turnar los equipos pesados** — La nevera y el ventilador no tienen que estar encendidos a la vez que el TV. Si apagan el TV mientras comen y prenden el ventilador de noche, la batería rinde el doble.
+   > *"Es como repartir el trabajo — si todos descansan por turnos, la batería aguanta mucho más."*
+
+2. **La nevera en modo ahorro** — Si es una nevera moderna con termostato, subirle un poco la temperatura (de 3°C a 5°C) reduce el consumo casi a la mitad sin afectar los alimentos.
+   > *"No tiene que estar a tope frío todo el tiempo — con 5 grados los alimentos se conservan igual y la batería dura más."*
+
+3. **Cargar los teléfonos de día** — Si tienen panel solar, los teléfonos y aparatos pequeños deben cargarse durante las horas de sol, no de noche. Así la batería grande queda para los aparatos pesados.
+   > *"De día el sol carga todo lo pequeño. De noche la batería grande se encarga de lo importante."*
+
+4. **Apagar lo que no se usa** — Luces, routers y cargadores de teléfono consumen aunque nadie los esté usando. Apagarlos cuando no se necesiten puede alargar la carga varias horas.
+   > *"Cada bombilla que apagan es más tiempo de nevera encendida."*
+
+**Ejemplo real para mostrarle al cliente:**
+
+> "Le pongo un ejemplo: con el E3600LFP y una nevera vieja + ventilador + luces + TV todo encendido a la vez, la carga dura unas 8 horas. Pero si usan la TV solo 3 horas y el ventilador de noche mientras apagan las luces, esa misma batería puede durar 14–16 horas. Es más del doble — sin comprar nada más."
+
+**Si el cliente descubre esto, puede optar por un modelo más económico** — y eso es exactamente lo correcto. Un cliente que compra lo que necesita y queda satisfecho es un cliente que regresa y recomienda Oiikon.
 
 **Consumos típicos:**
 
