@@ -44,8 +44,15 @@ const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
 // so local/dev can post without Twilio headers. Production must not set this.
 const SKIP_SIG_VERIFY = process.env.SKIP_TWILIO_SIGNATURE === '1';
 
-// Opt-out keywords (case-insensitive, whole message match after trim)
-const OPT_OUT_KEYWORDS = new Set(['stop', 'baja', 'cancelar', 'cancel', 'unsubscribe', 'desuscribir']);
+// Opt-out keywords (case-insensitive, whole message or substring match)
+const OPT_OUT_KEYWORDS_EXACT = new Set([
+  'stop', 'baja', 'cancelar', 'cancel', 'unsubscribe', 'desuscribir',
+  'salir', 'para', 'quit', 'optout',
+]);
+const OPT_OUT_KEYWORDS_CONTAINS = [
+  'opt out', 'opt-out', 'no mas mensajes', 'no más mensajes',
+  'no me escribas', 'no me escriban', 'no quiero recibir mensajes', 'darme de baja',
+];
 
 // ============================================================
 // GET — Webhook Verification
@@ -103,11 +110,6 @@ export async function POST(request: NextRequest) {
     const authToken = process.env.TWILIO_AUTH_TOKEN ?? '';
     const sigHeader = request.headers.get('x-twilio-signature');
 
-    // Twilio signs the FULL external URL configured on the number. Behind
-    // Vercel the internal request.url may not match (protocol stripped,
-    // or internal alias). Try every plausible candidate and accept the first
-    // one whose HMAC matches. This is still safe: the signature has to match
-    // SOME form of the same endpoint using the same auth token.
     const candidates = buildSignatureUrlCandidates(request);
     let ok = false;
     let matchedUrl = '';
@@ -159,11 +161,6 @@ function twimlOk() {
   });
 }
 
-// Build every plausible version of the external URL Twilio may have signed.
-// Vercel terminates TLS at the edge, so request.url may come through as
-// http:// or with an internal host. We try request.url first, then
-// reconstruct from x-forwarded-* headers with both https and http, and
-// also try with and without a trailing slash.
 function buildSignatureUrlCandidates(request: NextRequest): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -174,10 +171,8 @@ function buildSignatureUrlCandidates(request: NextRequest): string[] {
     out.push(u);
   };
 
-  // 1) Raw request.url as Next.js sees it
   add(request.url);
 
-  // 2) Reconstructed from forwarded headers
   const xfProto = request.headers.get('x-forwarded-proto');
   const xfHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
   if (xfHost) {
@@ -192,7 +187,6 @@ function buildSignatureUrlCandidates(request: NextRequest): string[] {
     }
   }
 
-  // 3) Also try toggling trailing slash on each candidate
   const withSlashToggled = out.flatMap((u) => {
     try {
       const parsed = new URL(u);
@@ -207,7 +201,6 @@ function buildSignatureUrlCandidates(request: NextRequest): string[] {
     }
   });
 
-  // Dedupe while preserving order
   const final: string[] = [];
   const seenFinal = new Set<string>();
   for (const u of withSlashToggled) {
@@ -231,7 +224,6 @@ async function processWebhook(body: unknown) {
   }
 
   const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId, channel } = parsed;
-  // Canonical E.164 ("+" + digits). Prevents duplicate conversation rows.
   const senderPhone = rawSenderPhone.startsWith('+')
     ? '+' + rawSenderPhone.slice(1).replace(/[^\d]/g, '')
     : '+' + rawSenderPhone.replace(/[^\d]/g, '');
@@ -239,7 +231,6 @@ async function processWebhook(body: unknown) {
   console.log(`[WEBHOOK] Message from ${senderPhone} | channel: ${channel} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`);
 
   // ── Operator commands ───────────────────────────────────
-  // Normalize phone numbers for comparison (remove non-digits)
   const normalizedOperatorPhone = OPERATOR_PHONE.replace(/\D/g, '');
   const normalizedSenderPhone = senderPhone.replace(/\D/g, '');
 
@@ -273,14 +264,28 @@ async function processWebhook(body: unknown) {
   // ── Conversation setup ──────────────────────────────────
   const conversation = await getOrCreateConversation(senderPhone, senderName ?? undefined);
 
+  // ── Opted-out guard ────────────────────────────────────────
+  // If customer previously opted out, treat new message as re-enrollment.
+  if (conversation.opted_out === true) {
+    console.log(`[WEBHOOK] ${senderPhone} previously opted out — re-enrolling on new message`);
+    const { createServiceClient } = (await import('@/lib/supabase'));
+    await createServiceClient().from('conversations').update({
+      opted_out: false,
+      opted_out_at: null,
+      status: 'active',
+      escalation_reason: null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', conversation.id);
+    conversation.opted_out = false;
+    // Continue processing — Sol will greet them as a new customer
+  }
+
   // ── Hourly abuse cap (per phone) ─────────────────────────
   const recentCount = await countRecentUserMessagesFromPhone(senderPhone, 60);
   if (recentCount >= HOURLY_MESSAGE_CAP) {
     console.warn(`[WEBHOOK] Rate cap hit for ${senderPhone}: ${recentCount} msgs in last hour`);
-    // Still persist the inbound message so we can investigate, then stop.
     await storeMessage(conversation.id, 'user', messageText, false, messageId);
     if (recentCount === HOURLY_MESSAGE_CAP) {
-      // Only send the warning once when crossing the threshold
       await sendMessage(
         senderPhone,
         'Ha alcanzado el límite de mensajes por hora. Un especialista le contactará pronto si es urgente.',
@@ -304,14 +309,21 @@ async function processWebhook(body: unknown) {
 
   // ── Opt-out keywords (STOP, BAJA, CANCELAR, …) ───────────
   const trimmed = messageText.trim().toLowerCase();
-  if (OPT_OUT_KEYWORDS.has(trimmed)) {
+  const isOptOut =
+    OPT_OUT_KEYWORDS_EXACT.has(trimmed) ||
+    OPT_OUT_KEYWORDS_CONTAINS.some((kw) => trimmed.includes(kw));
+
+  if (isOptOut) {
     console.log(`[WEBHOOK] Opt-out from ${senderPhone}`);
     await optOutConversation(conversation.id);
-    await sendMessage(
-      senderPhone,
-      'Entendido. No recibirá más mensajes automáticos de Oiikon Sol. Para reactivar, escriba "HOLA". Gracias.',
-      channel
-    );
+
+    // Detect language from message content
+    const isEnglish = /^[a-z\s\-]+$/.test(trimmed) && !trimmed.match(/[áéíóúñ]/);
+    const optOutMsg = isEnglish
+      ? 'Done! You have been unsubscribed. You will not receive any more messages from Oiikon. If you ever want to reach us again, just send us a message and we will be happy to help. Have a great day! 😊'
+      : 'Listo, le hemos dado de baja. No recibirá más mensajes de Oiikon. Si algún día desea volver a contactarnos, puede escribirnos aquí y con gusto le atendemos. ¡Que tenga un excelente día! 😊';
+
+    await sendMessage(senderPhone, optOutMsg, channel);
     await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'user_opt_out', messageText);
     processingPhones.delete(senderPhone);
     return;
@@ -332,7 +344,6 @@ async function processWebhook(body: unknown) {
       loadKnowledgeBase(),
     ]);
 
-    // Remove the last message we just stored (we pass it separately)
     const historyWithoutLast = history.slice(0, -1);
 
     const catalog = formatProductCatalogForPrompt(products);
@@ -347,16 +358,9 @@ async function processWebhook(body: unknown) {
     // ── Handle HANDOFF ───────────────────────────────────
     if (handoffReason) {
       console.log(`[WEBHOOK] Handoff detected for ${senderPhone}: ${handoffReason}`);
-
       await escalateConversation(conversation.id, handoffReason, messageText);
-
-      // Store assistant response (with handoff flag)
       await storeMessage(conversation.id, 'assistant', aiMessage, true);
-
-      // Send customer-facing message (tag already stripped)
       await sendMessage(senderPhone, aiMessage, channel);
-
-      // Alert operator (always via WhatsApp — that's where Ed works from)
       await sendHandoffAlert(OPERATOR_PHONE, senderPhone, handoffReason, messageText);
     } else {
       // ── Normal AI response ──────────────────────────────
@@ -364,14 +368,11 @@ async function processWebhook(body: unknown) {
       await sendMessage(senderPhone, aiMessage, channel);
     }
 
-    // Remove from rate limit map early (processing done)
     processingPhones.delete(senderPhone);
 
   } catch (err) {
     console.error(`[WEBHOOK] AI error for ${senderPhone}:`, err);
     processingPhones.delete(senderPhone);
-
-    // Graceful fallback message to customer
     await sendMessage(
       senderPhone,
       'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.',
@@ -417,8 +418,6 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
 
       await deescalateConversation(conv.id);
       await sendWhatsAppMessage(operatorPhone, `✅ ${args} devuelto a Sol (modo AI).`);
-      // Use the conversation's canonical phone_number for the outbound message
-      // (targetPhone is the raw no-plus form from the command args).
       await sendWhatsAppMessage(
         conv.phone_number,
         'Hola, vuelve a estar con Sol 🌟 ¿En qué más le puedo ayudar?'
@@ -427,7 +426,6 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
     }
 
     case 'teach': {
-      // /teach pregunta | respuesta
       const separator = args.indexOf('|');
       if (separator === -1) {
         await sendWhatsAppMessage(
@@ -454,7 +452,6 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
     }
 
     case 'broadcast': {
-      // Future: implement broadcast to all active conversations
       await sendWhatsAppMessage(operatorPhone, '⚠️ Broadcast no implementado aún. Próximamente.');
       break;
     }
