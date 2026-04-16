@@ -254,6 +254,8 @@ export async function optOutConversation(conversationId: string): Promise<void> 
     .update({
       status: 'closed',
       escalation_reason: 'user_opt_out',
+      opted_out: true,
+      opted_out_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversationId);
