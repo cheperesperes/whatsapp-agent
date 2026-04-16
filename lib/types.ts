@@ -24,6 +24,8 @@ export interface Conversation {
   escalated: boolean;
   escalation_reason: string | null;
   product_interest: string | null;
+  opted_out: boolean;
+  opted_out_at: string | null;
   created_at: string;
   updated_at: string;
 }
