@@ -262,6 +262,23 @@ export async function optOutConversation(conversationId: string): Promise<void> 
 }
 
 /**
+ * Clear opt-out flag to re-enroll a customer who writes again after opting out.
+ */
+export async function clearOptOut(conversationId: string): Promise<void> {
+  const supabase = createServiceClient();
+  await supabase
+    .from('conversations')
+    .update({
+      opted_out: false,
+      opted_out_at: null,
+      status: 'active',
+      escalation_reason: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId);
+}
+
+/**
  * Mark a conversation as escalated and log the handoff.
  */
 export async function escalateConversation(
