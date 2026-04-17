@@ -82,7 +82,13 @@ function ConvItem({ conv, isSelected, onClick }: ConvItemProps) {
 
 // ── Chat Thread ──────────────────────────────────────────────
 
-function ChatThread({ messages }: { messages: Message[] }) {
+function ChatThread({
+  messages,
+  onAddToKB,
+}: {
+  messages: Message[];
+  onAddToKB: (msg: Message, suggestedAnswer: string) => void;
+}) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,6 +101,16 @@ function ChatThread({ messages }: { messages: Message[] }) {
         No hay mensajes aún
       </div>
     );
+  }
+
+  // For each user message, find the next assistant message as suggested answer
+  const suggestedAnswers: Record<string, string> = {};
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg.role === 'user') {
+      const next = messages.slice(i + 1).find((m) => m.role === 'assistant');
+      if (next) suggestedAnswers[msg.id] = next.content;
+    }
   }
 
   return (
@@ -112,16 +128,36 @@ function ChatThread({ messages }: { messages: Message[] }) {
 
         if (msg.role === 'user') {
           return (
-            <div key={msg.id} className="flex flex-col items-start gap-1">
-              <div className="bubble-user">{msg.content}</div>
+            <div key={msg.id} className="flex flex-col items-start gap-1 group">
+              <div className="flex items-end gap-2">
+                <div className="bubble-user">{msg.content}</div>
+                <button
+                  type="button"
+                  onClick={() => onAddToKB(msg, suggestedAnswers[msg.id] ?? '')}
+                  title="Agregar a la base de conocimiento"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 rounded-md bg-surface-700 hover:bg-brand-600 text-gray-300 hover:text-white border border-surface-500 shrink-0"
+                >
+                  + KB
+                </button>
+              </div>
               <span className="text-xs text-gray-600 ml-1">{formatFull(msg.created_at)}</span>
             </div>
           );
         }
 
         return (
-          <div key={msg.id} className="flex flex-col items-end gap-1">
-            <div className="bubble-assistant">{msg.content}</div>
+          <div key={msg.id} className="flex flex-col items-end gap-1 group">
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={() => onAddToKB(msg, msg.content)}
+                title="Agregar respuesta a la base de conocimiento"
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 rounded-md bg-surface-700 hover:bg-brand-600 text-gray-300 hover:text-white border border-surface-500 shrink-0"
+              >
+                + KB
+              </button>
+              <div className="bubble-assistant">{msg.content}</div>
+            </div>
             {msg.handoff_detected && (
               <span className="text-xs text-yellow-500">⚠️ Handoff detectado</span>
             )}
@@ -130,6 +166,131 @@ function ChatThread({ messages }: { messages: Message[] }) {
         );
       })}
       <div ref={bottomRef} />
+    </div>
+  );
+}
+
+// ── Add-to-KB Modal ─────────────────────────────────────────
+
+function KBModal({
+  initialQuestion,
+  initialAnswer,
+  onSave,
+  onClose,
+}: {
+  initialQuestion: string;
+  initialAnswer: string;
+  onSave: (question: string, answer: string, category: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [question, setQuestion] = useState(initialQuestion);
+  const [answer, setAnswer] = useState(initialAnswer);
+  const [category, setCategory] = useState('general');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    if (!question.trim() || !answer.trim()) {
+      setError('Pregunta y respuesta son requeridas.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(question.trim(), answer.trim(), category.trim() || 'general');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="card w-full max-w-lg p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-white">
+            Agregar a la base de conocimiento
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-300 text-xl leading-none"
+            aria-label="Cerrar"
+          >
+            ×
+          </button>
+        </div>
+
+        <p className="text-xs text-gray-500">
+          Sol usará esta pregunta/respuesta como referencia para futuras conversaciones.
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Pregunta</label>
+            <textarea
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              rows={2}
+              className="input w-full resize-none"
+              placeholder="¿Cuánto tarda el envío a Cuba?"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Respuesta</label>
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              rows={5}
+              className="input w-full resize-none"
+              placeholder="El envío a Cuba tarda entre 2-4 semanas..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Categoría</label>
+            <input
+              type="text"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="input w-full"
+              placeholder="general, envio, precios..."
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div className="text-xs text-red-400 bg-red-900/30 border border-red-800 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="btn-secondary text-xs"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="btn-primary text-xs"
+          >
+            {saving ? 'Guardando...' : 'Guardar en KB'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -249,6 +410,8 @@ export default function DashboardPage() {
   const [filter, setFilter] = useState<'all' | 'active' | 'escalated' | 'closed'>('all');
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [kbModal, setKbModal] = useState<{ question: string; answer: string } | null>(null);
+  const [kbToast, setKbToast] = useState<string | null>(null);
 
   // Load conversations via server API (service-role, RLS-bypassing)
   const loadConversations = useCallback(async (opts?: { showSpinner?: boolean }) => {
@@ -350,6 +513,29 @@ export default function DashboardPage() {
     await postAction('close');
   }
 
+  function openKBModal(msg: Message, suggestedAnswer: string) {
+    const isUserMsg = msg.role === 'user';
+    setKbModal({
+      question: isUserMsg ? msg.content : '',
+      answer: isUserMsg ? suggestedAnswer : msg.content,
+    });
+  }
+
+  async function handleSaveKB(question: string, answer: string, category: string) {
+    const res = await fetch('/api/knowledge', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ question, answer, category }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`No se pudo guardar: ${res.status} ${text.slice(0, 120)}`);
+    }
+    setKbModal(null);
+    setKbToast('✓ Agregado a la base de conocimiento');
+    setTimeout(() => setKbToast(null), 2500);
+  }
+
   // Stats bar
   const escalatedCount = conversations.filter((c) => c.escalated).length;
   const activeCount = conversations.filter((c) => c.status === 'active').length;
@@ -434,7 +620,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Messages */}
-              <ChatThread messages={messages} />
+              <ChatThread messages={messages} onAddToKB={openKBModal} />
             </div>
 
             {/* Customer Card */}
@@ -457,6 +643,21 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {kbModal && (
+        <KBModal
+          initialQuestion={kbModal.question}
+          initialAnswer={kbModal.answer}
+          onSave={handleSaveKB}
+          onClose={() => setKbModal(null)}
+        />
+      )}
+
+      {kbToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50">
+          {kbToast}
+        </div>
+      )}
     </div>
   );
 }
