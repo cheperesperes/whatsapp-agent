@@ -130,6 +130,19 @@ export interface KBSuggestion {
   created_at: string;
 }
 
+// ── Customer question feed (derived from messages) ─────────
+export interface CustomerQuestion {
+  message_id: string;
+  conversation_id: string;
+  phone_number: string;
+  customer_name: string | null;
+  content: string;
+  created_at: string;
+  conversation_status: ConversationStatus;
+  escalated: boolean;
+  handoff_detected: boolean;
+}
+
 export interface Handoff {
   id: string;
   conversation_id: string;

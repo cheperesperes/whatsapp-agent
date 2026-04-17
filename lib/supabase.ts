@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createBrowserClient as createBrowserClientSSR } from '@supabase/ssr';
 import type {
   Conversation,
+  ConversationStatus,
   Message,
   Product,
   AgentProduct,
@@ -9,6 +10,7 @@ import type {
   KnowledgeEntry,
   CustomerProfile,
   CustomerProfileFact,
+  CustomerQuestion,
   KBSuggestion,
   KBSuggestionStatus,
 } from './types';
@@ -688,4 +690,70 @@ export async function rejectKBSuggestion(id: string, reviewer?: string): Promise
     })
     .eq('id', id);
   return !error;
+}
+
+// ============================================================
+// Customer question feed (derived from messages table)
+// Surfaces every user message so the operator can spot gaps in Sol's training.
+// ============================================================
+
+type QuestionRow = {
+  id: string;
+  conversation_id: string;
+  content: string;
+  created_at: string;
+  handoff_detected: boolean;
+  conversations: {
+    phone_number: string;
+    customer_name: string | null;
+    status: ConversationStatus;
+    escalated: boolean;
+  } | null;
+};
+
+export async function listCustomerQuestions(opts: {
+  mode?: 'questions' | 'all';
+  limit?: number;
+  sinceDays?: number | null;
+} = {}): Promise<CustomerQuestion[]> {
+  const supabase = createServiceClient();
+  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+  const mode = opts.mode ?? 'questions';
+
+  let query = supabase
+    .from('messages')
+    .select(
+      'id, conversation_id, content, created_at, handoff_detected, conversations!inner(phone_number, customer_name, status, escalated)'
+    )
+    .eq('role', 'user')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (mode === 'questions') {
+    query = query.like('content', '%?%');
+  }
+
+  if (opts.sinceDays && opts.sinceDays > 0) {
+    const since = new Date(Date.now() - opts.sinceDays * 24 * 60 * 60 * 1000).toISOString();
+    query = query.gte('created_at', since);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[listCustomerQuestions] error:', error.message);
+    return [];
+  }
+
+  const rows = (data as unknown as QuestionRow[]) ?? [];
+  return rows.map((r) => ({
+    message_id: r.id,
+    conversation_id: r.conversation_id,
+    phone_number: r.conversations?.phone_number ?? '',
+    customer_name: r.conversations?.customer_name ?? null,
+    content: r.content,
+    created_at: r.created_at,
+    conversation_status: r.conversations?.status ?? 'active',
+    escalated: r.conversations?.escalated ?? false,
+    handoff_detected: r.handoff_detected,
+  }));
 }
