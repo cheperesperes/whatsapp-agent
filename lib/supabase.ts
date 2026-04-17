@@ -13,6 +13,7 @@ import type {
   CustomerQuestion,
   KBSuggestion,
   KBSuggestionStatus,
+  LostCustomer,
 } from './types';
 
 // ── Server-side client (service role — full access) ─────────
@@ -756,4 +757,72 @@ export async function listCustomerQuestions(opts: {
     escalated: r.conversations?.escalated ?? false,
     handoff_detected: r.handoff_detected,
   }));
+}
+
+// ============================================================
+// Lost customers — engaged conversations that went silent.
+// "Engaged" = 3+ user messages; "silent" = updated_at older than N hours.
+// These are the most recoverable leads.
+// ============================================================
+export async function listLostCustomers(opts: {
+  minUserMessages?: number;
+  silentHours?: number;
+  limit?: number;
+} = {}): Promise<LostCustomer[]> {
+  const supabase = createServiceClient();
+  const minUserMessages = Math.max(opts.minUserMessages ?? 3, 1);
+  const silentHours = Math.max(opts.silentHours ?? 24, 1);
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+
+  const cutoff = new Date(Date.now() - silentHours * 60 * 60 * 1000).toISOString();
+
+  const { data: convs, error } = await supabase
+    .from('conversations')
+    .select('id, phone_number, customer_name, escalated, opted_out, status, updated_at')
+    .eq('opted_out', false)
+    .neq('status', 'closed')
+    .lt('updated_at', cutoff)
+    .order('updated_at', { ascending: false })
+    .limit(limit * 3);
+  if (error || !convs) {
+    console.error('[listLostCustomers] conv fetch error:', error?.message);
+    return [];
+  }
+
+  const results: LostCustomer[] = [];
+  for (const c of convs) {
+    const { data: lastMsgs } = await supabase
+      .from('messages')
+      .select('role, content, created_at')
+      .eq('conversation_id', c.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const last = lastMsgs?.[0];
+    if (!last) continue;
+
+    const { count: userCount } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', c.id)
+      .eq('role', 'user');
+    if ((userCount ?? 0) < minUserMessages) continue;
+
+    const hoursSilent = Math.round(
+      (Date.now() - new Date(last.created_at).getTime()) / (60 * 60 * 1000)
+    );
+
+    results.push({
+      conversation_id: c.id,
+      phone_number: c.phone_number,
+      customer_name: c.customer_name,
+      user_message_count: userCount ?? 0,
+      last_message_at: last.created_at,
+      last_message_role: last.role,
+      last_message_snippet: last.content.slice(0, 160),
+      hours_silent: hoursSilent,
+      escalated: c.escalated,
+    });
+    if (results.length >= limit) break;
+  }
+  return results;
 }

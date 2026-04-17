@@ -130,6 +130,19 @@ export interface KBSuggestion {
   created_at: string;
 }
 
+// ── Lost customers (engaged then went silent) ──────────────
+export interface LostCustomer {
+  conversation_id: string;
+  phone_number: string;
+  customer_name: string | null;
+  user_message_count: number;
+  last_message_at: string;
+  last_message_role: MessageRole;
+  last_message_snippet: string;
+  hours_silent: number;
+  escalated: boolean;
+}
+
 // ── Customer question feed (derived from messages) ─────────
 export interface CustomerQuestion {
   message_id: string;
