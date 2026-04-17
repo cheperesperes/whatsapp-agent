@@ -183,29 +183,34 @@ export interface KBSuggestionDraft {
  * came up where the operator or Sol's answer could be reused across customers.
  */
 export async function extractKBSuggestions(history: Message[]): Promise<KBSuggestionDraft[]> {
-  if (history.length < 4) return [];
+  if (history.length < 2) return [];
 
   const thread = history
     .map((m) => `${m.role === 'user' ? 'CLIENTE' : 'SOL'}: ${m.content}`)
     .join('\n');
 
-  const prompt = `Eres un analista de calidad para un agente de ventas llamado Sol. Revisa esta conversación y propone entradas de base de conocimiento que servirán para FUTUROS clientes distintos.
+  const prompt = `Eres un analista de calidad para un agente de ventas llamado Sol. Revisa esta conversación y propone entradas de base de conocimiento (KB) que servirán para FUTUROS clientes distintos.
 
-Reglas estrictas:
-- Solo propón preguntas que son genéricas y reutilizables (no nombres personales, no direcciones, no datos específicos del cliente).
-- La respuesta debe ser clara, correcta y útil — basada en lo que Sol respondió Y que efectivamente resolvió la duda, O en lo que el cliente aclaró y Sol podría haber respondido mejor.
-- Si Sol dijo algo inventado o incorrecto, NO lo propongas.
-- Si no hay ninguna entrada digna, devuelve array vacío.
+IMPORTANTE — propón activamente en estos 4 casos:
+1. Sol respondió bien y esa respuesta se reutilizará para otros clientes con la misma duda.
+2. Sol NO pudo responder (dijo "déjame confirmar con el equipo" o similar) — propón la pregunta con "answer" vacío y rationale "GAP: Sol no tiene este dato". El operador completará la respuesta.
+3. El cliente aclaró o corrigió a Sol — propón la versión correcta.
+4. La pregunta es común y merece una respuesta estándar aunque Sol no la haya contestado aún.
+
+Reglas:
+- Solo propón preguntas genéricas y reutilizables (sin nombres, direcciones, datos personales).
+- Si Sol inventó algo, NO propongas esa respuesta inventada — marca como GAP.
 - Máximo 3 propuestas por conversación.
+- Si no hay nada digno, devuelve array vacío.
 
 Devuelve SOLO JSON válido con esta forma:
 {
   "suggestions": [
     {
       "question": "pregunta en español, genérica, bien formulada",
-      "answer": "respuesta concisa y correcta (max 300 caracteres)",
+      "answer": "respuesta concisa y correcta (max 300 caracteres) — deja vacío si es GAP",
       "category": "shipping" | "pricing" | "product" | "compatibility" | "warranty" | "payment" | "general",
-      "rationale": "por qué esta entrada es útil (max 120 caracteres)"
+      "rationale": "por qué esta entrada es útil (max 120 caracteres) — incluye 'GAP:' si Sol no pudo responder"
     }
   ]
 }
