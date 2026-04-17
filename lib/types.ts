@@ -130,6 +130,29 @@ export interface KBSuggestion {
   created_at: string;
 }
 
+// ── Weekly overview / digest ───────────────────────────────
+export interface OverviewMetrics {
+  window_days: number;
+  conversations_new: number;
+  messages_customer: number;
+  messages_sol: number;
+  escalated: number;
+  deep_conversations: number;
+}
+
+export interface RepeatedQuestion {
+  sample: string;
+  count: number;
+  distinct_phones: number;
+  last_seen: string;
+}
+
+export interface OverviewResponse {
+  metrics: OverviewMetrics;
+  top_questions: RepeatedQuestion[];
+  lost_customers: LostCustomer[];
+}
+
 // ── Lost customers (engaged then went silent) ──────────────
 export interface LostCustomer {
   conversation_id: string;

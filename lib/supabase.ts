@@ -14,6 +14,8 @@ import type {
   KBSuggestion,
   KBSuggestionStatus,
   LostCustomer,
+  OverviewMetrics,
+  RepeatedQuestion,
 } from './types';
 
 // ── Server-side client (service role — full access) ─────────
@@ -825,4 +827,99 @@ export async function listLostCustomers(opts: {
     if (results.length >= limit) break;
   }
   return results;
+}
+
+// ============================================================
+// Weekly overview — metrics + repeated questions.
+// ============================================================
+
+function normalizeQuestionKey(content: string): string {
+  return content
+    .toLowerCase()
+    .replace(/[¿?¡!.,:;]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 50);
+}
+
+export async function getOverviewMetrics(windowDays = 7): Promise<OverviewMetrics> {
+  const supabase = createServiceClient();
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const [
+    { count: convsNew },
+    { count: msgsUser },
+    { count: msgsSol },
+    { count: escalated },
+    { data: deepData },
+  ] = await Promise.all([
+    supabase.from('conversations').select('*', { count: 'exact', head: true }).gte('created_at', since),
+    supabase.from('messages').select('*', { count: 'exact', head: true }).eq('role', 'user').gte('created_at', since),
+    supabase.from('messages').select('*', { count: 'exact', head: true }).eq('role', 'assistant').gte('created_at', since),
+    supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('escalated', true).gte('updated_at', since),
+    supabase
+      .from('messages')
+      .select('conversation_id')
+      .eq('role', 'user')
+      .gte('created_at', since),
+  ]);
+
+  const convCounts = new Map<string, number>();
+  for (const row of (deepData ?? []) as { conversation_id: string }[]) {
+    convCounts.set(row.conversation_id, (convCounts.get(row.conversation_id) ?? 0) + 1);
+  }
+  const deep = [...convCounts.values()].filter((n) => n >= 5).length;
+
+  return {
+    window_days: windowDays,
+    conversations_new: convsNew ?? 0,
+    messages_customer: msgsUser ?? 0,
+    messages_sol: msgsSol ?? 0,
+    escalated: escalated ?? 0,
+    deep_conversations: deep,
+  };
+}
+
+export async function listTopQuestions(windowDays = 7, limit = 10): Promise<RepeatedQuestion[]> {
+  const supabase = createServiceClient();
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('messages')
+    .select('content, created_at, conversations!inner(phone_number)')
+    .eq('role', 'user')
+    .gte('created_at', since)
+    .limit(2000);
+  if (error || !data) {
+    console.error('[listTopQuestions] error:', error?.message);
+    return [];
+  }
+
+  type Row = { content: string; created_at: string; conversations: { phone_number: string } | null };
+  const buckets = new Map<string, { samples: string[]; phones: Set<string>; last: string }>();
+  for (const r of data as unknown as Row[]) {
+    if (!r.content || r.content.length < 6) continue;
+    const key = normalizeQuestionKey(r.content);
+    if (!key) continue;
+    const phone = r.conversations?.phone_number ?? '';
+    const b = buckets.get(key);
+    if (b) {
+      b.samples.push(r.content);
+      if (phone) b.phones.add(phone);
+      if (r.created_at > b.last) b.last = r.created_at;
+    } else {
+      buckets.set(key, { samples: [r.content], phones: new Set(phone ? [phone] : []), last: r.created_at });
+    }
+  }
+
+  return [...buckets.entries()]
+    .map(([, v]) => ({
+      sample: v.samples[0].slice(0, 140),
+      count: v.samples.length,
+      distinct_phones: v.phones.size,
+      last_seen: v.last,
+    }))
+    .filter((q) => q.count >= 2 || q.distinct_phones >= 2)
+    .sort((a, b) => b.distinct_phones - a.distinct_phones || b.count - a.count)
+    .slice(0, limit);
 }
