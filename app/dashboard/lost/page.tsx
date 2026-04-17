@@ -12,6 +12,12 @@ function formatFull(iso: string) {
   });
 }
 
+function buildFollowUp(l: LostCustomer): string {
+  const firstName = l.customer_name?.split(' ')[0] ?? '';
+  const greeting = firstName ? `Hola ${firstName}` : 'Hola';
+  return `${greeting} 👋 Soy Sol de Oiikon. Vi que estábamos conversando y quería saber si sigue interesado en su equipo solar para Cuba, o si tiene alguna duda que podamos resolver. Estoy aquí cuando guste.`;
+}
+
 type SilentFilter = '24' | '48' | '168';
 
 export default function LostCustomersPage() {
@@ -19,6 +25,8 @@ export default function LostCustomersPage() {
   const [loading, setLoading] = useState(true);
   const [silent, setSilent] = useState<SilentFilter>('24');
   const [minMsgs, setMinMsgs] = useState(3);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,15 +132,53 @@ export default function LostCustomersPage() {
               </p>
               <div className="flex items-center gap-3 text-xs text-gray-500">
                 <span>{formatFull(l.last_message_at)}</span>
-                <a
-                  href={`https://wa.me/${l.phone_number.replace(/^\+/, '')}`}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(editingId === l.conversation_id ? null : l.conversation_id);
+                    if (!(l.conversation_id in drafts)) {
+                      setDrafts((d) => ({ ...d, [l.conversation_id]: buildFollowUp(l) }));
+                    }
+                  }}
                   className="ml-auto text-brand-400 hover:text-brand-300"
                 >
-                  Contactar por WhatsApp →
-                </a>
+                  {editingId === l.conversation_id ? 'Cerrar' : 'Preparar seguimiento →'}
+                </button>
               </div>
+              {editingId === l.conversation_id && (
+                <div className="pt-2 space-y-2 border-t border-surface-700">
+                  <textarea
+                    value={drafts[l.conversation_id] ?? buildFollowUp(l)}
+                    onChange={(e) =>
+                      setDrafts((d) => ({ ...d, [l.conversation_id]: e.target.value }))
+                    }
+                    rows={3}
+                    className="w-full text-sm px-3 py-2 rounded bg-surface-700 text-gray-200 border border-surface-600 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`https://wa.me/${l.phone_number.replace(/^\+/, '')}?text=${encodeURIComponent(drafts[l.conversation_id] ?? buildFollowUp(l))}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-primary text-xs"
+                    >
+                      Abrir en WhatsApp
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(drafts[l.conversation_id] ?? buildFollowUp(l));
+                      }}
+                      className="text-xs px-3 py-1.5 rounded bg-surface-700 text-gray-300 hover:bg-surface-600"
+                    >
+                      Copiar
+                    </button>
+                    <span className="text-xs text-gray-500">
+                      Revisa antes de enviar — estás dentro de la ventana de 24h si el cliente respondió recientemente.
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           ))
         )}
