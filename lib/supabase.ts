@@ -1,6 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import { createBrowserClient as createBrowserClientSSR } from '@supabase/ssr';
-import type { Conversation, Message, Product, AgentProduct, Handoff, KnowledgeEntry } from './types';
+import type {
+  Conversation,
+  Message,
+  Product,
+  AgentProduct,
+  Handoff,
+  KnowledgeEntry,
+  CustomerProfile,
+  CustomerProfileFact,
+  KBSuggestion,
+  KBSuggestionStatus,
+} from './types';
 
 // ── Server-side client (service role — full access) ─────────
 export function createServiceClient() {
@@ -409,6 +420,7 @@ export function formatProductCatalogForPrompt(products: AgentProduct[], region: 
       if (p.output_watts && p.category === 'kit') specs.push(`${p.output_watts.toLocaleString()}W salida`);
       if (p.panel_watts) specs.push(`${p.panel_watts}W panel`);
       if (p.solar_input_watts) specs.push(`${p.solar_input_watts.toLocaleString()}W solar`);
+      if (p.supports_external_battery) specs.push('expandible con batería externa');
 
       const specsStr = specs.length ? ` (${specs.join(', ')})` : '';
 
@@ -540,4 +552,140 @@ export function formatKnowledgeBaseForPrompt(entries: KnowledgeEntry[]): string 
   }
 
   return lines.join('\n');
+}
+
+// ============================================================
+// Customer profiles (auto-learned per-contact facts)
+// ============================================================
+
+export async function loadCustomerProfile(phone: string): Promise<CustomerProfile | null> {
+  const supabase = createServiceClient();
+  const canonical = normalizePhone(phone);
+  const { data } = await supabase
+    .from('customer_profiles')
+    .select('*')
+    .eq('phone_number', canonical)
+    .maybeSingle();
+  return (data as CustomerProfile | null) ?? null;
+}
+
+export async function upsertCustomerProfile(
+  phone: string,
+  patch: {
+    display_name?: string | null;
+    language?: string | null;
+    summary?: string | null;
+    facts?: CustomerProfileFact[];
+  }
+): Promise<void> {
+  const supabase = createServiceClient();
+  const canonical = normalizePhone(phone);
+  const payload: Record<string, unknown> = {
+    phone_number: canonical,
+    last_extracted_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (patch.display_name !== undefined) payload.display_name = patch.display_name;
+  if (patch.language !== undefined) payload.language = patch.language;
+  if (patch.summary !== undefined) payload.summary = patch.summary;
+  if (patch.facts !== undefined) payload.facts = patch.facts;
+
+  const { error } = await supabase
+    .from('customer_profiles')
+    .upsert(payload, { onConflict: 'phone_number' });
+  if (error) console.warn('[profile] upsert error:', error.message);
+}
+
+export function formatCustomerProfileForPrompt(profile: CustomerProfile | null): string {
+  if (!profile) return '';
+  const facts = (profile.facts ?? []).map((f) => `• ${f.fact}`).join('\n');
+  const lines: string[] = ['\n=== LO QUE SABEMOS DE ESTE CLIENTE ==='];
+  if (profile.display_name) lines.push(`Nombre: ${profile.display_name}`);
+  if (profile.language) lines.push(`Idioma preferido: ${profile.language}`);
+  if (profile.summary) lines.push(`Resumen: ${profile.summary}`);
+  if (facts) lines.push(`Datos confirmados:\n${facts}`);
+  lines.push('Usa estos datos para personalizar la conversación; nunca los repitas como si los leyeras de una lista.');
+  if (lines.length === 2) return '';
+  return lines.join('\n');
+}
+
+// ============================================================
+// KB suggestion queue (cross-conversation learning)
+// ============================================================
+
+export async function listKBSuggestions(status: KBSuggestionStatus | 'all' = 'pending'): Promise<KBSuggestion[]> {
+  const supabase = createServiceClient();
+  let query = supabase.from('kb_suggestions').select('*').order('created_at', { ascending: false });
+  if (status !== 'all') query = query.eq('status', status);
+  const { data, error } = await query;
+  if (error) {
+    console.error('[kb_suggestions] list error:', error.message);
+    return [];
+  }
+  return (data as KBSuggestion[]) ?? [];
+}
+
+export async function createKBSuggestion(input: {
+  question: string;
+  answer: string;
+  category?: string;
+  conversation_id?: string | null;
+  rationale?: string | null;
+}): Promise<KBSuggestion | null> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('kb_suggestions')
+    .insert({
+      question: input.question.trim(),
+      answer: input.answer.trim(),
+      category: input.category?.trim() || 'general',
+      source_conversation_id: input.conversation_id ?? null,
+      rationale: input.rationale ?? null,
+      status: 'pending',
+    })
+    .select()
+    .single();
+  if (error) {
+    console.warn('[kb_suggestions] insert error:', error.message);
+    return null;
+  }
+  return data as KBSuggestion;
+}
+
+export async function approveKBSuggestion(id: string, reviewer?: string): Promise<KnowledgeEntry | null> {
+  const supabase = createServiceClient();
+  const { data: suggestion, error: selErr } = await supabase
+    .from('kb_suggestions')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (selErr || !suggestion) return null;
+
+  const entry = await addKnowledgeEntry(suggestion.question, suggestion.answer, suggestion.category);
+  if (!entry) return null;
+
+  await supabase
+    .from('kb_suggestions')
+    .update({
+      status: 'approved',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewer ?? null,
+      promoted_entry_id: entry.id,
+    })
+    .eq('id', id);
+
+  return entry;
+}
+
+export async function rejectKBSuggestion(id: string, reviewer?: string): Promise<boolean> {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from('kb_suggestions')
+    .update({
+      status: 'rejected',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewer ?? null,
+    })
+    .eq('id', id);
+  return !error;
 }

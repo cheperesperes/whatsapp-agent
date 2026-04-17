@@ -19,8 +19,12 @@ import {
   hasProcessedMessageSid,
   countRecentUserMessagesFromPhone,
   optOutConversation,
+  loadCustomerProfile,
+  upsertCustomerProfile,
+  formatCustomerProfileForPrompt,
+  createKBSuggestion,
 } from '@/lib/supabase';
-import { generateSolResponse } from '@/lib/anthropic';
+import { generateSolResponse, extractCustomerFacts, extractKBSuggestions } from '@/lib/anthropic';
 import {
   sendWhatsAppMessage,
   sendMessage,
@@ -30,6 +34,7 @@ import {
   parseOwnerCommand,
 } from '@/lib/whatsapp';
 import { verifyTwilioSignature } from '@/lib/twilio-signature';
+import type { CustomerProfile, Message } from '@/lib/types';
 
 // ── Rate limiting: per-phone debounce ──────────────────────
 const processingPhones = new Set<string>();
@@ -338,21 +343,24 @@ async function processWebhook(body: unknown) {
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
+      loadCustomerProfile(senderPhone),
     ]);
 
     const historyWithoutLast = history.slice(0, -1);
 
     const catalog = formatProductCatalogForPrompt(products);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
+    const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
     const { message: aiMessage, handoffReason } = await generateSolResponse(
       historyWithoutLast,
       messageText,
       catalog,
-      kbPrompt
+      kbPrompt,
+      profilePrompt
     );
 
     // ── Handle HANDOFF ───────────────────────────────────
@@ -368,6 +376,17 @@ async function processWebhook(body: unknown) {
       await sendMessage(senderPhone, aiMessage, channel);
     }
 
+    // ── Background learning: profile facts + KB suggestions ─
+    const fullHistory = [
+      ...history,
+      { id: '', conversation_id: conversation.id, role: 'assistant' as const, content: aiMessage, handoff_detected: !!handoffReason, created_at: new Date().toISOString() },
+    ];
+    waitUntil(
+      runBackgroundLearning(conversation.id, senderPhone, fullHistory, customerProfile).catch((err) =>
+        console.warn('[learning] background job failed:', err)
+      )
+    );
+
     processingPhones.delete(senderPhone);
 
   } catch (err) {
@@ -378,6 +397,42 @@ async function processWebhook(body: unknown) {
       'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.',
       channel
     );
+  }
+}
+
+// ============================================================
+// Background learning (customer profile + KB suggestions)
+// ============================================================
+async function runBackgroundLearning(
+  conversationId: string,
+  phone: string,
+  history: Message[],
+  existingProfile: CustomerProfile | null
+) {
+  if (history.length < 3) return;
+
+  const [facts, suggestions] = await Promise.all([
+    extractCustomerFacts(history, existingProfile),
+    extractKBSuggestions(history),
+  ]);
+
+  if (facts) {
+    await upsertCustomerProfile(phone, {
+      display_name: facts.display_name ?? null,
+      language: facts.language ?? null,
+      summary: facts.summary ?? null,
+      facts: facts.facts ?? [],
+    });
+  }
+
+  for (const s of suggestions) {
+    await createKBSuggestion({
+      question: s.question,
+      answer: s.answer,
+      category: s.category,
+      conversation_id: conversationId,
+      rationale: s.rationale,
+    });
   }
 }
 
