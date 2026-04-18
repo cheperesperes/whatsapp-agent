@@ -75,6 +75,58 @@ export async function sendWhatsAppMessage(to: string, body: string): Promise<voi
 }
 
 /**
+ * Send a media message (image/video/pdf) via Twilio. Caption is optional.
+ * Twilio fetches `mediaUrl` server-side, so it must be a public HTTPS URL.
+ * SMS channel is rejected — MMS pricing differs and this product uses WA only.
+ */
+export async function sendImage(
+  to: string,
+  mediaUrl: string,
+  caption?: string,
+  channel: MessageChannel = 'whatsapp'
+): Promise<void> {
+  if (channel !== 'whatsapp') {
+    throw new Error('sendImage only supports the whatsapp channel');
+  }
+
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER;
+
+  if (!accountSid || !authToken || !twilioWhatsAppNumber) {
+    throw new Error('Missing Twilio environment variables');
+  }
+
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+  const bareTo = to.startsWith('whatsapp:') ? to.slice('whatsapp:'.length) : to;
+  const bareFrom = twilioWhatsAppNumber.startsWith('whatsapp:')
+    ? twilioWhatsAppNumber.slice('whatsapp:'.length)
+    : twilioWhatsAppNumber;
+
+  const params = new URLSearchParams();
+  if (caption && caption.trim()) params.set('Body', caption.trim());
+  params.set('MediaUrl', mediaUrl);
+  params.set('To', `whatsapp:${bareTo}`);
+  params.set('From', `whatsapp:${bareFrom}`);
+
+  const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: params.toString(),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Twilio media API error ${response.status}: ${err}`);
+  }
+}
+
+/**
  * Format and send the HANDOFF alert to the operator.
  */
 export async function sendHandoffAlert(

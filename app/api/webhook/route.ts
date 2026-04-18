@@ -23,11 +23,13 @@ import {
   upsertCustomerProfile,
   formatCustomerProfileForPrompt,
   createKBSuggestion,
+  getProductImage,
 } from '@/lib/supabase';
 import { generateSolResponse, extractCustomerFacts, extractKBSuggestions } from '@/lib/anthropic';
 import {
   sendWhatsAppMessage,
   sendMessage,
+  sendImage,
   sendHandoffAlert,
   sendEscalatedMessageAlert,
   parseIncomingMessage,
@@ -363,23 +365,35 @@ async function processWebhook(body: unknown) {
       profilePrompt
     );
 
+    // ── Extract [SEND_IMAGE:SKU] tags and strip from text ──
+    const { text: cleanMessage, skus: imageSkus } = extractImageTags(aiMessage);
+
     // ── Handle HANDOFF ───────────────────────────────────
     if (handoffReason) {
       console.log(`[WEBHOOK] Handoff detected for ${senderPhone}: ${handoffReason}`);
       await escalateConversation(conversation.id, handoffReason, messageText);
-      await storeMessage(conversation.id, 'assistant', aiMessage, true);
-      await sendMessage(senderPhone, aiMessage, channel);
+      await storeMessage(conversation.id, 'assistant', cleanMessage, true);
+      await sendMessage(senderPhone, cleanMessage, channel);
       await sendHandoffAlert(OPERATOR_PHONE, senderPhone, handoffReason, messageText);
     } else {
       // ── Normal AI response ──────────────────────────────
-      await storeMessage(conversation.id, 'assistant', aiMessage);
-      await sendMessage(senderPhone, aiMessage, channel);
+      await storeMessage(conversation.id, 'assistant', cleanMessage);
+      await sendMessage(senderPhone, cleanMessage, channel);
+
+      // ── Dispatch product images (WhatsApp only, best-effort) ──
+      if (channel === 'whatsapp' && imageSkus.length > 0) {
+        waitUntil(
+          dispatchProductImages(senderPhone, imageSkus).catch((err) =>
+            console.warn('[WEBHOOK] image dispatch failed:', err)
+          )
+        );
+      }
     }
 
     // ── Background learning: profile facts + KB suggestions ─
     const fullHistory = [
       ...history,
-      { id: '', conversation_id: conversation.id, role: 'assistant' as const, content: aiMessage, handoff_detected: !!handoffReason, created_at: new Date().toISOString() },
+      { id: '', conversation_id: conversation.id, role: 'assistant' as const, content: cleanMessage, handoff_detected: !!handoffReason, created_at: new Date().toISOString() },
     ];
     waitUntil(
       runBackgroundLearning(conversation.id, senderPhone, fullHistory, customerProfile).catch((err) =>
@@ -513,5 +527,49 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
 
     default:
       await sendWhatsAppMessage(operatorPhone, `❓ Comando desconocido: /${command}`);
+  }
+}
+
+// ============================================================
+// Product-image dispatch ([SEND_IMAGE:SKU] tag handler)
+// ============================================================
+
+const IMAGE_TAG_REGEX = /\[SEND_IMAGE:\s*([A-Z0-9][A-Z0-9_\-]*)\s*\]/gi;
+const MAX_IMAGES_PER_REPLY = 3;
+
+/**
+ * Strip `[SEND_IMAGE:SKU]` tags from Sol's reply and return the list of SKUs
+ * (de-duplicated, capped at MAX_IMAGES_PER_REPLY, upper-cased).
+ */
+function extractImageTags(message: string): { text: string; skus: string[] } {
+  const seen = new Set<string>();
+  const skus: string[] = [];
+
+  for (const match of message.matchAll(IMAGE_TAG_REGEX)) {
+    const sku = match[1].toUpperCase();
+    if (!seen.has(sku)) {
+      seen.add(sku);
+      skus.push(sku);
+      if (skus.length >= MAX_IMAGES_PER_REPLY) break;
+    }
+  }
+
+  const text = message.replace(IMAGE_TAG_REGEX, '').replace(/[ \t]+\n/g, '\n').trim();
+  return { text, skus };
+}
+
+async function dispatchProductImages(phone: string, skus: string[]): Promise<void> {
+  for (const sku of skus) {
+    try {
+      const url = await getProductImage(sku);
+      if (!url) {
+        console.log(`[WEBHOOK] No image URL for SKU ${sku} — skipping`);
+        continue;
+      }
+      await sendImage(phone, url);
+      console.log(`[WEBHOOK] Sent product image for ${sku}`);
+    } catch (err) {
+      console.warn(`[WEBHOOK] Failed to send image for ${sku}:`, err);
+    }
   }
 }
