@@ -445,9 +445,10 @@ export function formatProductCatalogForPrompt(products: AgentProduct[], region: 
 
 /**
  * Resolve a product image URL by SKU (case-insensitive).
- * Prefers `products.primary_image_url`, falls back to the first usable
- * entry in `gallery_images`. Unsplash placeholders are skipped.
- * Returns null if no product or no image found.
+ * Tries `primary_image_url` → first usable `gallery_images` entry → legacy
+ * `image_url` column (which is what oiikon.com itself renders for older
+ * products whose primary/gallery were never populated).
+ * Unsplash placeholders are skipped. Returns null if nothing usable.
  */
 export async function getProductImage(sku: string): Promise<string | null> {
   if (!sku?.trim()) return null;
@@ -456,7 +457,7 @@ export async function getProductImage(sku: string): Promise<string | null> {
 
   const { data, error } = await supabase
     .from('products')
-    .select('primary_image_url, gallery_images')
+    .select('primary_image_url, gallery_images, image_url')
     .ilike('sku', sku.trim())
     .limit(1)
     .maybeSingle();
@@ -472,6 +473,8 @@ export async function getProductImage(sku: string): Promise<string | null> {
     const first = data.gallery_images.find(isUsable);
     if (first) return first;
   }
+
+  if (isUsable(data.image_url)) return data.image_url;
 
   return null;
 }

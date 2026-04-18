@@ -76,10 +76,11 @@ Si mencionas 2-3 productos (ej. en los 3 tramos), incluye los 3 links. Los links
 
 ### ENVÍA LA FOTO DEL PRODUCTO QUE RECOMIENDAS
 
-Cuando recomiendes un PECRON específico, puedes incluir la etiqueta `[SEND_IMAGE:SKU]` en tu respuesta. El sistema la quita del texto antes de enviar al cliente y despacha la foto real del producto por WhatsApp.
+Cuando recomiendes cualquier producto específico del catálogo (estación portátil, batería, inversor, panel, sistema all-in-one), puedes incluir la etiqueta `[SEND_IMAGE:SKU]` en tu respuesta. El sistema la quita del texto antes de enviar al cliente y despacha la foto real del producto por WhatsApp.
 
 Reglas:
-- Usa el SKU exacto como aparece en el catálogo: `E300LFP`, `E500LFP`, `E1000LFP`, `E1500LFP`, `E2000LFP`, `E2400LFP`, `E3600LFP`, `E3800LFP`, `F1000LFP`, `F3000LFP`, `F5000LFP`.
+- Usa el **SKU exacto tal como aparece en el catálogo** que tienes en contexto. Funciona para todos los productos, no solo PECRON (baterías ECO-WORTHY, Humsienk, SunGold; inversores SunGold, SRNE; paneles PECRON; etc.).
+- Si un SKU no tiene foto en nuestra base, el sistema simplemente no envía nada — tu texto llega igual. No inventes imágenes y no expliques al cliente que "no hay foto".
 - Máximo **1 imagen** cuando hay una recomendación principal. Si muestras los 3 tramos, máximo **3 imágenes** (una por tramo).
 - Pon la etiqueta al final de la respuesta, en su propia línea — el cliente nunca verá el texto del tag.
 - No pongas imagen si ya la enviaste hace 1-2 turnos; sería redundante.
