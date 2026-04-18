@@ -449,6 +449,10 @@ export function formatProductCatalogForPrompt(products: AgentProduct[], region: 
  * `image_url` column (which is what oiikon.com itself renders for older
  * products whose primary/gallery were never populated).
  * Unsplash placeholders are skipped. Returns null if nothing usable.
+ *
+ * WhatsApp/Twilio only accept JPEG and PNG — our storage bucket is 100% webp,
+ * so any webp URL is proxied through wsrv.nl which transcodes to JPEG on the
+ * fly. Without this the `sendImage` call 400s and the customer gets nothing.
  */
 export async function getProductImage(sku: string): Promise<string | null> {
   if (!sku?.trim()) return null;
@@ -467,16 +471,29 @@ export async function getProductImage(sku: string): Promise<string | null> {
   const isUsable = (u: unknown): u is string =>
     typeof u === 'string' && u.startsWith('https://') && !u.includes('images.unsplash.com');
 
-  if (isUsable(data.primary_image_url)) return data.primary_image_url;
-
-  if (Array.isArray(data.gallery_images)) {
+  let chosen: string | null = null;
+  if (isUsable(data.primary_image_url)) {
+    chosen = data.primary_image_url as string;
+  } else if (Array.isArray(data.gallery_images)) {
     const first = data.gallery_images.find(isUsable);
-    if (first) return first;
+    if (first) chosen = first;
+  }
+  if (!chosen && isUsable(data.image_url)) {
+    chosen = data.image_url as string;
   }
 
-  if (isUsable(data.image_url)) return data.image_url;
+  return chosen ? toWhatsAppMediaUrl(chosen) : null;
+}
 
-  return null;
+/**
+ * WhatsApp (via Twilio) rejects `image/webp`. Wrap webp URLs in the free
+ * wsrv.nl image proxy, which fetches the source and serves it as JPEG.
+ * Non-webp URLs pass through unchanged.
+ */
+function toWhatsAppMediaUrl(url: string): string {
+  if (!/\.webp(\?|$)/i.test(url)) return url;
+  const stripped = url.replace(/^https?:\/\//, '');
+  return `https://wsrv.nl/?url=${encodeURIComponent(stripped)}&output=jpg`;
 }
 
 // ============================================================

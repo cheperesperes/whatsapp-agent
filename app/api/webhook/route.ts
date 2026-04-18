@@ -534,7 +534,9 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
 // Product-image dispatch ([SEND_IMAGE:SKU] tag handler)
 // ============================================================
 
-const IMAGE_TAG_REGEX = /\[SEND_IMAGE:\s*([A-Z0-9][A-Z0-9_\-]*)\s*\]/gi;
+// SKUs in the catalog can include dots and slashes (e.g. `L13SR48100BV3.0-1`),
+// so accept `.` `/` in addition to `A-Z0-9_-`.
+const IMAGE_TAG_REGEX = /\[SEND_IMAGE:\s*([A-Z0-9][A-Z0-9_\-./]*)\s*\]/gi;
 const MAX_IMAGES_PER_REPLY = 3;
 
 /**
