@@ -443,6 +443,39 @@ export function formatProductCatalogForPrompt(products: AgentProduct[], region: 
   return lines.join('\n');
 }
 
+/**
+ * Resolve a product image URL by SKU (case-insensitive).
+ * Prefers `products.primary_image_url`, falls back to the first usable
+ * entry in `gallery_images`. Unsplash placeholders are skipped.
+ * Returns null if no product or no image found.
+ */
+export async function getProductImage(sku: string): Promise<string | null> {
+  if (!sku?.trim()) return null;
+
+  const supabase = createServiceClient();
+
+  const { data, error } = await supabase
+    .from('products')
+    .select('primary_image_url, gallery_images')
+    .ilike('sku', sku.trim())
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const isUsable = (u: unknown): u is string =>
+    typeof u === 'string' && u.startsWith('https://') && !u.includes('images.unsplash.com');
+
+  if (isUsable(data.primary_image_url)) return data.primary_image_url;
+
+  if (Array.isArray(data.gallery_images)) {
+    const first = data.gallery_images.find(isUsable);
+    if (first) return first;
+  }
+
+  return null;
+}
+
 // ============================================================
 // Dashboard helpers (used by frontend API routes)
 // ============================================================
