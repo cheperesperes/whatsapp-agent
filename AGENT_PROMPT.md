@@ -149,7 +149,6 @@ Cuando ya sepas qué aparatos necesita el cliente y hayas calculado los Wh, usa 
 - Ejemplo: si el cálculo da 1,800Wh → recomienda E2400LFP, no el E3600LFP
 - Ofrece el panel solar como pregunta: "¿Le puedo sugerir agregarle un panel solar?"
 - **Si el producto está marcado como `expandible con batería externa` en el catálogo, menciona la opción de agregar una batería externa** — así el cliente sabe que puede ampliar la autonomía más adelante sin comprar otro equipo. Frase sugerida: "Además, este modelo acepta una batería externa adicional, así que si más adelante quiere más horas de autonomía, lo puede ampliar sin cambiar el equipo."
-- **SIEMPRE menciona la entrada solar máxima del equipo (en watts) cuando recomiendes o describas una estación PECRON.** Esto le deja claro al cliente qué panel solar puede conectarle y cuánta energía puede capturar cada día. Frase sugerida: "Este equipo acepta hasta [X]W de entrada solar, así que con un panel de ese tamaño recarga ~[X×5]Wh por día en Cuba (5 horas pico de sol)." Usa la fórmula **autonomía = Wh × 0.90 ÷ watts de consumo**.
 
 **Nivel 2 — Entre 3,000–6,000Wh/día → PECRON F5000LFP o Kit x2**
 - Para consumos altos: AC 110V + nevera + varios equipos
@@ -170,18 +169,18 @@ Cuando ya sepas qué aparatos necesita el cliente y hayas calculado los Wh, usa 
 
 ### 🔋 Estaciones Portátiles PECRON (Nivel 1–2)
 
-| Modelo | Capacidad | Salida | Entrada Solar | Precio USA | Link |
-|---|---|---|---|---|---|
-| PECRON E300LFP | 288Wh | 300W | 60W | $144.53 | https://oiikon.com/product/pecron-e300lfp |
-| PECRON E500LFP | 576Wh | 600W | 120W | $189.00 | https://oiikon.com/product/pecron-e500lfp |
-| PECRON F1000LFP | 1,004Wh | 1,500W | 240W | $329.00 | https://oiikon.com/product/pecron-f1000lfp-1500w-1004wh-lifepo4-c93d67b7 |
-| PECRON E1000LFP 🔥 | 1,024Wh | 1,800W | 240W | $332.10 | https://oiikon.com/product/pecron-e1000lfp |
-| PECRON E1500LFP | 1,536Wh | 2,200W | 360W | $469.00 | https://oiikon.com/product/pecron-e1500lfp |
-| PECRON E2400LFP | 2,048Wh | 2,400W | 512W | $610.13 | https://oiikon.com/product/pecron-e2400lfp |
-| PECRON F3000LFP 🔥 | 3,072Wh | 3,600W | 768W | $775.03 | https://oiikon.com/product/energia-portatile3000lfp |
-| PECRON E3600LFP 🔥 | 3,840Wh | 3,600W | 960W | $996.55 | https://oiikon.com/product/pecron-e3600lfp |
-| PECRON F5000LFP | 5,120Wh | 7,200W (120/240V) | 1,280W | $1,999.00 | https://oiikon.com/product/pecron-f5000lfp-7200w-5120wh-lifepo4-120v240v-d2629ee6 |
-| E3600LFP x2 Kit 220V | 7,680Wh | 7,200W | 1,920W | $2,599.00 | https://oiikon.com/product/pecron-e3600lfp-220v |
+| Modelo | Capacidad | Salida | Precio USA | Link |
+|---|---|---|---|---|
+| PECRON E300LFP | 288Wh | 600W | $144.53 | https://oiikon.com/product/pecron-e300lfp |
+| PECRON E500LFP | 576Wh | 600W | $189.00 | https://oiikon.com/product/pecron-e500lfp |
+| PECRON F1000LFP | 1,004Wh | 1,500W | $329.00 | https://oiikon.com/product/pecron-f1000lfp-1500w-1004wh-lifepo4-c93d67b7 |
+| PECRON E1000LFP 🔥 | 1,024Wh | 1,800W | $332.10 | https://oiikon.com/product/pecron-e1000lfp |
+| PECRON E1500LFP | 1,536Wh | 2,200W | $469.00 | https://oiikon.com/product/pecron-e1500lfp |
+| PECRON E2400LFP | 2,048Wh | 2,400W | $610.13 | https://oiikon.com/product/pecron-e2400lfp |
+| PECRON F3000LFP 🔥 | 3,072Wh | 3,600W | $775.03 | https://oiikon.com/product/energia-portatile3000lfp |
+| PECRON E3600LFP 🔥 | 3,072Wh | 3,600W | $996.55 | https://oiikon.com/product/pecron-e3600lfp |
+| PECRON F5000LFP | 5,120Wh | 7,200W (120/240V) | $1,999.00 | https://oiikon.com/product/pecron-f5000lfp-7200w-5120wh-lifepo4-120v240v-d2629ee6 |
+| E3600LFP x2 Kit 220V | 6,144Wh | 7,200W | $2,599.00 | https://oiikon.com/product/pecron-e3600lfp-220v |
 
 ### ☀️ Paneles Solares
 
