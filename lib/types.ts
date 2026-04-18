@@ -90,8 +90,93 @@ export interface AgentProduct {
   description_short: string | null;
   ideal_for: string | null;
   compatible_with: string | null;
+  supports_external_battery: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+// ── Customer profile (auto-learned per contact) ─────────────
+export interface CustomerProfileFact {
+  fact: string;
+  source_msg_id: string | null;
+  verified_at: string;
+}
+
+export interface CustomerProfile {
+  phone_number: string;
+  display_name: string | null;
+  language: string | null;
+  summary: string | null;
+  facts: CustomerProfileFact[];
+  last_extracted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── KB suggestion queue ────────────────────────────────────
+export type KBSuggestionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface KBSuggestion {
+  id: string;
+  question: string;
+  answer: string;
+  category: string;
+  status: KBSuggestionStatus;
+  source_conversation_id: string | null;
+  rationale: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  promoted_entry_id: string | null;
+  created_at: string;
+}
+
+// ── Weekly overview / digest ───────────────────────────────
+export interface OverviewMetrics {
+  window_days: number;
+  conversations_new: number;
+  messages_customer: number;
+  messages_sol: number;
+  escalated: number;
+  deep_conversations: number;
+}
+
+export interface RepeatedQuestion {
+  sample: string;
+  count: number;
+  distinct_phones: number;
+  last_seen: string;
+}
+
+export interface OverviewResponse {
+  metrics: OverviewMetrics;
+  top_questions: RepeatedQuestion[];
+  lost_customers: LostCustomer[];
+}
+
+// ── Lost customers (engaged then went silent) ──────────────
+export interface LostCustomer {
+  conversation_id: string;
+  phone_number: string;
+  customer_name: string | null;
+  user_message_count: number;
+  last_message_at: string;
+  last_message_role: MessageRole;
+  last_message_snippet: string;
+  hours_silent: number;
+  escalated: boolean;
+}
+
+// ── Customer question feed (derived from messages) ─────────
+export interface CustomerQuestion {
+  message_id: string;
+  conversation_id: string;
+  phone_number: string;
+  customer_name: string | null;
+  content: string;
+  created_at: string;
+  conversation_status: ConversationStatus;
+  escalated: boolean;
+  handoff_detected: boolean;
 }
 
 export interface Handoff {

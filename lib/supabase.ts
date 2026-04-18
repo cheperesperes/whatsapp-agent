@@ -1,6 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
 import { createBrowserClient as createBrowserClientSSR } from '@supabase/ssr';
-import type { Conversation, Message, Product, AgentProduct, Handoff, KnowledgeEntry } from './types';
+import type {
+  Conversation,
+  ConversationStatus,
+  Message,
+  Product,
+  AgentProduct,
+  Handoff,
+  KnowledgeEntry,
+  CustomerProfile,
+  CustomerProfileFact,
+  CustomerQuestion,
+  KBSuggestion,
+  KBSuggestionStatus,
+  LostCustomer,
+  OverviewMetrics,
+  RepeatedQuestion,
+} from './types';
 
 // ── Server-side client (service role — full access) ─────────
 export function createServiceClient() {
@@ -409,6 +425,7 @@ export function formatProductCatalogForPrompt(products: AgentProduct[], region: 
       if (p.output_watts && p.category === 'kit') specs.push(`${p.output_watts.toLocaleString()}W salida`);
       if (p.panel_watts) specs.push(`${p.panel_watts}W panel`);
       if (p.solar_input_watts) specs.push(`${p.solar_input_watts.toLocaleString()}W solar`);
+      if (p.supports_external_battery) specs.push('expandible con batería externa');
 
       const specsStr = specs.length ? ` (${specs.join(', ')})` : '';
 
@@ -540,4 +557,369 @@ export function formatKnowledgeBaseForPrompt(entries: KnowledgeEntry[]): string 
   }
 
   return lines.join('\n');
+}
+
+// ============================================================
+// Customer profiles (auto-learned per-contact facts)
+// ============================================================
+
+export async function loadCustomerProfile(phone: string): Promise<CustomerProfile | null> {
+  const supabase = createServiceClient();
+  const canonical = normalizePhone(phone);
+  const { data } = await supabase
+    .from('customer_profiles')
+    .select('*')
+    .eq('phone_number', canonical)
+    .maybeSingle();
+  return (data as CustomerProfile | null) ?? null;
+}
+
+export async function upsertCustomerProfile(
+  phone: string,
+  patch: {
+    display_name?: string | null;
+    language?: string | null;
+    summary?: string | null;
+    facts?: CustomerProfileFact[];
+  }
+): Promise<void> {
+  const supabase = createServiceClient();
+  const canonical = normalizePhone(phone);
+  const payload: Record<string, unknown> = {
+    phone_number: canonical,
+    last_extracted_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (patch.display_name !== undefined) payload.display_name = patch.display_name;
+  if (patch.language !== undefined) payload.language = patch.language;
+  if (patch.summary !== undefined) payload.summary = patch.summary;
+  if (patch.facts !== undefined) payload.facts = patch.facts;
+
+  const { error } = await supabase
+    .from('customer_profiles')
+    .upsert(payload, { onConflict: 'phone_number' });
+  if (error) console.warn('[profile] upsert error:', error.message);
+}
+
+export function formatCustomerProfileForPrompt(profile: CustomerProfile | null): string {
+  if (!profile) return '';
+  const facts = (profile.facts ?? []).map((f) => `• ${f.fact}`).join('\n');
+  const lines: string[] = ['\n=== LO QUE SABEMOS DE ESTE CLIENTE ==='];
+  if (profile.display_name) lines.push(`Nombre: ${profile.display_name}`);
+  if (profile.language) lines.push(`Idioma preferido: ${profile.language}`);
+  if (profile.summary) lines.push(`Resumen: ${profile.summary}`);
+  if (facts) lines.push(`Datos confirmados:\n${facts}`);
+  lines.push('Usa estos datos para personalizar la conversación; nunca los repitas como si los leyeras de una lista.');
+  if (lines.length === 2) return '';
+  return lines.join('\n');
+}
+
+// ============================================================
+// KB suggestion queue (cross-conversation learning)
+// ============================================================
+
+export async function listKBSuggestions(status: KBSuggestionStatus | 'all' = 'pending'): Promise<KBSuggestion[]> {
+  const supabase = createServiceClient();
+  let query = supabase.from('kb_suggestions').select('*').order('created_at', { ascending: false });
+  if (status !== 'all') query = query.eq('status', status);
+  const { data, error } = await query;
+  if (error) {
+    console.error('[kb_suggestions] list error:', error.message);
+    return [];
+  }
+  return (data as KBSuggestion[]) ?? [];
+}
+
+export async function createKBSuggestion(input: {
+  question: string;
+  answer: string;
+  category?: string;
+  conversation_id?: string | null;
+  rationale?: string | null;
+}): Promise<KBSuggestion | null> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('kb_suggestions')
+    .insert({
+      question: input.question.trim(),
+      answer: input.answer.trim(),
+      category: input.category?.trim() || 'general',
+      source_conversation_id: input.conversation_id ?? null,
+      rationale: input.rationale ?? null,
+      status: 'pending',
+    })
+    .select()
+    .single();
+  if (error) {
+    console.warn('[kb_suggestions] insert error:', error.message);
+    return null;
+  }
+  return data as KBSuggestion;
+}
+
+export async function approveKBSuggestion(id: string, reviewer?: string): Promise<KnowledgeEntry | null> {
+  const supabase = createServiceClient();
+  const { data: suggestion, error: selErr } = await supabase
+    .from('kb_suggestions')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (selErr || !suggestion) return null;
+
+  const entry = await addKnowledgeEntry(suggestion.question, suggestion.answer, suggestion.category);
+  if (!entry) return null;
+
+  await supabase
+    .from('kb_suggestions')
+    .update({
+      status: 'approved',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewer ?? null,
+      promoted_entry_id: entry.id,
+    })
+    .eq('id', id);
+
+  return entry;
+}
+
+export async function rejectKBSuggestion(id: string, reviewer?: string): Promise<boolean> {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from('kb_suggestions')
+    .update({
+      status: 'rejected',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: reviewer ?? null,
+    })
+    .eq('id', id);
+  return !error;
+}
+
+// ============================================================
+// Customer question feed (derived from messages table)
+// Surfaces every user message so the operator can spot gaps in Sol's training.
+// ============================================================
+
+type QuestionRow = {
+  id: string;
+  conversation_id: string;
+  content: string;
+  created_at: string;
+  handoff_detected: boolean;
+  conversations: {
+    phone_number: string;
+    customer_name: string | null;
+    status: ConversationStatus;
+    escalated: boolean;
+  } | null;
+};
+
+export async function listCustomerQuestions(opts: {
+  mode?: 'questions' | 'all';
+  limit?: number;
+  sinceDays?: number | null;
+} = {}): Promise<CustomerQuestion[]> {
+  const supabase = createServiceClient();
+  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+  const mode = opts.mode ?? 'questions';
+
+  let query = supabase
+    .from('messages')
+    .select(
+      'id, conversation_id, content, created_at, handoff_detected, conversations!inner(phone_number, customer_name, status, escalated)'
+    )
+    .eq('role', 'user')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (mode === 'questions') {
+    query = query.like('content', '%?%');
+  }
+
+  if (opts.sinceDays && opts.sinceDays > 0) {
+    const since = new Date(Date.now() - opts.sinceDays * 24 * 60 * 60 * 1000).toISOString();
+    query = query.gte('created_at', since);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[listCustomerQuestions] error:', error.message);
+    return [];
+  }
+
+  const rows = (data as unknown as QuestionRow[]) ?? [];
+  return rows.map((r) => ({
+    message_id: r.id,
+    conversation_id: r.conversation_id,
+    phone_number: r.conversations?.phone_number ?? '',
+    customer_name: r.conversations?.customer_name ?? null,
+    content: r.content,
+    created_at: r.created_at,
+    conversation_status: r.conversations?.status ?? 'active',
+    escalated: r.conversations?.escalated ?? false,
+    handoff_detected: r.handoff_detected,
+  }));
+}
+
+// ============================================================
+// Lost customers — engaged conversations that went silent.
+// "Engaged" = 3+ user messages; "silent" = updated_at older than N hours.
+// These are the most recoverable leads.
+// ============================================================
+export async function listLostCustomers(opts: {
+  minUserMessages?: number;
+  silentHours?: number;
+  limit?: number;
+} = {}): Promise<LostCustomer[]> {
+  const supabase = createServiceClient();
+  const minUserMessages = Math.max(opts.minUserMessages ?? 3, 1);
+  const silentHours = Math.max(opts.silentHours ?? 24, 1);
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+
+  const cutoff = new Date(Date.now() - silentHours * 60 * 60 * 1000).toISOString();
+
+  const { data: convs, error } = await supabase
+    .from('conversations')
+    .select('id, phone_number, customer_name, escalated, opted_out, status, updated_at')
+    .eq('opted_out', false)
+    .neq('status', 'closed')
+    .lt('updated_at', cutoff)
+    .order('updated_at', { ascending: false })
+    .limit(limit * 3);
+  if (error || !convs) {
+    console.error('[listLostCustomers] conv fetch error:', error?.message);
+    return [];
+  }
+
+  const results: LostCustomer[] = [];
+  for (const c of convs) {
+    const { data: lastMsgs } = await supabase
+      .from('messages')
+      .select('role, content, created_at')
+      .eq('conversation_id', c.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const last = lastMsgs?.[0];
+    if (!last) continue;
+
+    const { count: userCount } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', c.id)
+      .eq('role', 'user');
+    if ((userCount ?? 0) < minUserMessages) continue;
+
+    const hoursSilent = Math.round(
+      (Date.now() - new Date(last.created_at).getTime()) / (60 * 60 * 1000)
+    );
+
+    results.push({
+      conversation_id: c.id,
+      phone_number: c.phone_number,
+      customer_name: c.customer_name,
+      user_message_count: userCount ?? 0,
+      last_message_at: last.created_at,
+      last_message_role: last.role,
+      last_message_snippet: last.content.slice(0, 160),
+      hours_silent: hoursSilent,
+      escalated: c.escalated,
+    });
+    if (results.length >= limit) break;
+  }
+  return results;
+}
+
+// ============================================================
+// Weekly overview — metrics + repeated questions.
+// ============================================================
+
+function normalizeQuestionKey(content: string): string {
+  return content
+    .toLowerCase()
+    .replace(/[¿?¡!.,:;]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 50);
+}
+
+export async function getOverviewMetrics(windowDays = 7): Promise<OverviewMetrics> {
+  const supabase = createServiceClient();
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const [
+    { count: convsNew },
+    { count: msgsUser },
+    { count: msgsSol },
+    { count: escalated },
+    { data: deepData },
+  ] = await Promise.all([
+    supabase.from('conversations').select('*', { count: 'exact', head: true }).gte('created_at', since),
+    supabase.from('messages').select('*', { count: 'exact', head: true }).eq('role', 'user').gte('created_at', since),
+    supabase.from('messages').select('*', { count: 'exact', head: true }).eq('role', 'assistant').gte('created_at', since),
+    supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('escalated', true).gte('updated_at', since),
+    supabase
+      .from('messages')
+      .select('conversation_id')
+      .eq('role', 'user')
+      .gte('created_at', since),
+  ]);
+
+  const convCounts = new Map<string, number>();
+  for (const row of (deepData ?? []) as { conversation_id: string }[]) {
+    convCounts.set(row.conversation_id, (convCounts.get(row.conversation_id) ?? 0) + 1);
+  }
+  const deep = [...convCounts.values()].filter((n) => n >= 5).length;
+
+  return {
+    window_days: windowDays,
+    conversations_new: convsNew ?? 0,
+    messages_customer: msgsUser ?? 0,
+    messages_sol: msgsSol ?? 0,
+    escalated: escalated ?? 0,
+    deep_conversations: deep,
+  };
+}
+
+export async function listTopQuestions(windowDays = 7, limit = 10): Promise<RepeatedQuestion[]> {
+  const supabase = createServiceClient();
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('messages')
+    .select('content, created_at, conversations!inner(phone_number)')
+    .eq('role', 'user')
+    .gte('created_at', since)
+    .limit(2000);
+  if (error || !data) {
+    console.error('[listTopQuestions] error:', error?.message);
+    return [];
+  }
+
+  type Row = { content: string; created_at: string; conversations: { phone_number: string } | null };
+  const buckets = new Map<string, { samples: string[]; phones: Set<string>; last: string }>();
+  for (const r of data as unknown as Row[]) {
+    if (!r.content || r.content.length < 6) continue;
+    const key = normalizeQuestionKey(r.content);
+    if (!key) continue;
+    const phone = r.conversations?.phone_number ?? '';
+    const b = buckets.get(key);
+    if (b) {
+      b.samples.push(r.content);
+      if (phone) b.phones.add(phone);
+      if (r.created_at > b.last) b.last = r.created_at;
+    } else {
+      buckets.set(key, { samples: [r.content], phones: new Set(phone ? [phone] : []), last: r.created_at });
+    }
+  }
+
+  return [...buckets.entries()]
+    .map(([, v]) => ({
+      sample: v.samples[0].slice(0, 140),
+      count: v.samples.length,
+      distinct_phones: v.phones.size,
+      last_seen: v.last,
+    }))
+    .filter((q) => q.count >= 2 || q.distinct_phones >= 2)
+    .sort((a, b) => b.distinct_phones - a.distinct_phones || b.count - a.count)
+    .slice(0, limit);
 }
