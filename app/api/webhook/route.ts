@@ -378,15 +378,39 @@ async function processWebhook(body: unknown) {
     } else {
       // ── Normal AI response ──────────────────────────────
       await storeMessage(conversation.id, 'assistant', cleanMessage);
-      await sendMessage(senderPhone, cleanMessage, channel);
 
-      // ── Dispatch product images (WhatsApp only, best-effort) ──
-      if (channel === 'whatsapp' && imageSkus.length > 0) {
-        waitUntil(
-          dispatchProductImages(senderPhone, imageSkus).catch((err) =>
-            console.warn('[WEBHOOK] image dispatch failed:', err)
-          )
-        );
+      // For the common "one recommendation, one photo" case on WhatsApp, send
+      // the text as the image's caption so the customer gets a single native
+      // product bubble (photo + description) instead of two messages racing.
+      // If caption delivery fails for any reason, fall back to plain text so
+      // the customer always sees something.
+      const canUseCaption = channel === 'whatsapp' && imageSkus.length === 1;
+      let captionSent = false;
+
+      if (canUseCaption) {
+        const sku = imageSkus[0];
+        const imageUrl = await getProductImage(sku).catch(() => null);
+        if (imageUrl) {
+          try {
+            await sendImage(senderPhone, imageUrl, cleanMessage);
+            console.log(`[WEBHOOK] Sent image+caption for ${sku}`);
+            captionSent = true;
+          } catch (err) {
+            console.warn(`[WEBHOOK] Caption send failed for ${sku}, falling back to text:`, err);
+          }
+        }
+      }
+
+      if (!captionSent) {
+        await sendMessage(senderPhone, cleanMessage, channel);
+        // Multi-image (e.g. 3 tramos) or caption-fallback → dispatch separately
+        if (channel === 'whatsapp' && imageSkus.length > 0) {
+          waitUntil(
+            dispatchProductImages(senderPhone, imageSkus).catch((err) =>
+              console.warn('[WEBHOOK] image dispatch failed:', err)
+            )
+          );
+        }
       }
     }
 

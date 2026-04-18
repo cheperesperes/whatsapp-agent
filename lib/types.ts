@@ -91,6 +91,11 @@ export interface AgentProduct {
   ideal_for: string | null;
   compatible_with: string | null;
   supports_external_battery: boolean;
+  // Enriched from `products` table at load time — optional because older rows
+  // may not have these populated yet.
+  original_price?: number | null;
+  discount_percentage?: number | null;
+  qualifies_24h_cuba?: boolean;
   created_at?: string;
   updated_at?: string;
 }

@@ -373,6 +373,10 @@ export async function getConversationByPhone(phone: string): Promise<Conversatio
 
 /**
  * Load all in-stock products from agent_product_catalog for Sol's context window.
+ * Enriches each row with `original_price`, `discount_percentage`, and
+ * `qualifies_24h_cuba` from the `products` table — those live there only, not
+ * in agent_product_catalog, but Sol needs them to communicate offers and fast
+ * delivery.
  */
 export async function loadAgentCatalog(): Promise<AgentProduct[]> {
   const supabase = createServiceClient();
@@ -385,8 +389,43 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
     .order('sell_price');
 
   if (error) throw new Error(`Failed to load agent catalog: ${error.message}`);
+  const catalog = data ?? [];
+  if (catalog.length === 0) return catalog;
 
-  return data ?? [];
+  const skus = catalog.map((p) => p.sku);
+  const { data: extras } = await supabase
+    .from('products')
+    .select('sku, price, original_price, discount_percentage, qualifies_24h_cuba')
+    .in('sku', skus);
+
+  const extraBySku = new Map<string, {
+    price: number | null;
+    original_price: number | null;
+    discount_percentage: number | null;
+    qualifies_24h_cuba: boolean | null;
+  }>();
+  for (const row of extras ?? []) {
+    extraBySku.set(row.sku.toLowerCase(), row);
+  }
+
+  return catalog.map((p) => {
+    const extra = extraBySku.get(p.sku.toLowerCase());
+    if (!extra) return p;
+    // Only surface a discount when both fields agree — otherwise data is noisy
+    // (some rows have discount_percentage set but original_price equals price).
+    const hasRealDiscount =
+      extra.discount_percentage != null &&
+      extra.discount_percentage > 0 &&
+      extra.original_price != null &&
+      extra.price != null &&
+      extra.original_price > extra.price;
+    return {
+      ...p,
+      original_price: hasRealDiscount ? extra.original_price : null,
+      discount_percentage: hasRealDiscount ? extra.discount_percentage : null,
+      qualifies_24h_cuba: !!extra.qualifies_24h_cuba,
+    };
+  });
 }
 
 /**
@@ -436,6 +475,24 @@ export function formatProductCatalogForPrompt(products: AgentProduct[], region: 
       lines.push(
         `• ${p.name}${specsStr}: $${price.toFixed(2)} USD (${priceLabel})`
       );
+      // Offer: always anchored to the USA sell_price (the web-store list price
+      // that `original_price` compares against). Sol should mention the saving
+      // naturally, not as a sales-pressure line.
+      if (
+        p.original_price != null &&
+        p.discount_percentage != null &&
+        p.original_price > p.sell_price
+      ) {
+        const pct = Number(p.discount_percentage).toFixed(0);
+        lines.push(
+          `  🔥 OFERTA: antes $${Number(p.original_price).toFixed(2)} → ahora $${p.sell_price.toFixed(2)} USD (−${pct}%)`
+        );
+      }
+      if (p.qualifies_24h_cuba) {
+        lines.push(
+          `  ⚡ Entrega rápida La Habana disponible (hasta 24h desde almacén local)`
+        );
+      }
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
     }
   }
