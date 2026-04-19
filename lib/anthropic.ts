@@ -69,6 +69,7 @@ FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 
       messages,
     },
     {
+      timeout: 22_000,
       headers: {
         'anthropic-beta': 'prompt-caching-2024-07-31',
       },

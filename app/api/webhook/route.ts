@@ -413,13 +413,24 @@ async function processWebhook(body: unknown) {
     processingPhones.delete(senderPhone);
 
   } catch (err) {
-    console.error(`[WEBHOOK] AI error for ${senderPhone}:`, err);
-    processingPhones.delete(senderPhone);
-    await sendMessage(
-      senderPhone,
-      'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.',
-      channel
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === 'APIConnectionTimeoutError' ||
+        err.message.toLowerCase().includes('timeout') ||
+        err.message.toLowerCase().includes('timed out'));
+    console.error(
+      `[WEBHOOK] AI error for ${senderPhone} (timeout=${isTimeout}):`,
+      err
     );
+    processingPhones.delete(senderPhone);
+    const fallback = isTimeout
+      ? 'Estoy tardando más de lo normal en responder. ¿Podría repetir su mensaje? Si persiste, un especialista le contactará.'
+      : 'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.';
+    try {
+      await sendMessage(senderPhone, fallback, channel);
+    } catch (sendErr) {
+      console.error(`[WEBHOOK] fallback sendMessage failed for ${senderPhone}:`, sendErr);
+    }
   }
 }
 
