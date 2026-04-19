@@ -178,6 +178,169 @@ export interface KBSuggestionDraft {
   rationale: string;
 }
 
+// ============================================================
+// Self-evaluation: LLM judge scores conversations against Sol's rules
+// ============================================================
+
+export type ScorecardRuleId =
+  | 'answered_the_ask'
+  | 'recommended_with_link'
+  | 'avoided_permission_asking'
+  | 'avoided_irrelevant_limit'
+  | 'no_hallucination'
+  | 'concise_response';
+
+export interface ScorecardRuleResult {
+  passed: boolean;
+  evidence: string;
+}
+
+export interface ScorecardResult {
+  conversation_id: string;
+  rules: Record<ScorecardRuleId, ScorecardRuleResult>;
+  pass_count: number;
+  rule_count: number;
+  overall_summary: string;
+  teachable_suggestion: KBSuggestionDraft | null;
+}
+
+export const SCORECARD_RULE_LABELS: Record<ScorecardRuleId, string> = {
+  answered_the_ask: 'Responde lo que el cliente preguntó (Regla de Oro)',
+  recommended_with_link: 'Incluye el link directo al recomendar producto',
+  avoided_permission_asking: 'Evita "¿me permite…?" / "¿puedo preguntarle…?"',
+  avoided_irrelevant_limit: 'No ofrece limitaciones irrelevantes sin que se las pregunten',
+  no_hallucination: 'No inventa precios, specs, tiempos de entrega ni compatibilidades',
+  concise_response: 'Respuestas 2–4 oraciones, proporcionales al pedido',
+};
+
+/**
+ * Judge a conversation against Sol's rubric. Uses Haiku (cheap + fast).
+ * Returns per-rule pass/fail + overall summary + optional teachable moment
+ * that can be fed into the kb_suggestions queue for operator review.
+ */
+export async function judgeConversation(
+  conversationId: string,
+  history: Message[]
+): Promise<ScorecardResult | null> {
+  const userMsgCount = history.filter((m) => m.role === 'user').length;
+  if (userMsgCount < 2) return null;
+
+  const thread = history
+    .slice(-20)
+    .map((m) => `${m.role === 'user' ? 'CLIENTE' : 'SOL'}: ${m.content}`)
+    .join('\n');
+
+  const prompt = `Eres un juez de calidad para un agente de ventas por WhatsApp llamado Sol (Oiikon, energía solar). Evalúa la siguiente conversación contra 6 reglas. Sé estricto pero justo: una sola violación clara en cualquier mensaje de Sol = "passed": false para esa regla.
+
+Las 6 reglas:
+
+1. **answered_the_ask** — Cuando el cliente hace una pregunta específica (precio, producto, cómo funciona, ¿sirve para X?), Sol responde esa pregunta ANTES de hacer preguntas propias. FAIL si Sol responde con otra pregunta sin dar info útil primero.
+
+2. **recommended_with_link** — Cuando Sol menciona un producto específico con precio (ej. "E1500LFP $469"), incluye el link directo (https://oiikon.com/product/...) en la MISMA respuesta. FAIL si menciona modelo + precio sin link.
+
+3. **avoided_permission_asking** — Sol NO dice "¿me permite preguntarle…?", "¿puedo sugerirle…?", "¿le interesaría que le explique…?". FAIL si cualquier mensaje de Sol usa esas frases o equivalentes.
+
+4. **avoided_irrelevant_limit** — Sol NO ofrece limitaciones de un producto sin que el cliente las pregunte. Ejemplo FAIL: cliente preguntó "¿sirve para nevera y luces?" y Sol responde "sí, aunque no aguanta AC 220V…". Solo PASS si Sol menciona un límite cuando (a) el cliente preguntó por eso, (b) lo que el cliente necesita sobrepasa al equipo, o (c) el equipo queda al borde.
+
+5. **no_hallucination** — Sol no inventa precios, capacidades en Wh, tiempos de entrega específicos, garantías ni compatibilidades. FAIL si dice algo como "le llega en 3 días" o inventa specs sin base clara en catálogo. Si no estás seguro, PASS.
+
+6. **concise_response** — Respuestas de Sol son proporcionales al pedido. FAIL si Sol responde con 8+ líneas a una pregunta simple tipo "¿tienen fotos?", o si repite el mismo argumento de venta.
+
+Devuelve SOLO JSON válido con esta forma:
+{
+  "rules": {
+    "answered_the_ask": { "passed": true, "evidence": "cita corta del mensaje o razón" },
+    "recommended_with_link": { "passed": true, "evidence": "..." },
+    "avoided_permission_asking": { "passed": true, "evidence": "..." },
+    "avoided_irrelevant_limit": { "passed": true, "evidence": "..." },
+    "no_hallucination": { "passed": true, "evidence": "..." },
+    "concise_response": { "passed": true, "evidence": "..." }
+  },
+  "overall_summary": "1-2 oraciones: qué hizo bien Sol y qué falló",
+  "teachable_suggestion": null | {
+    "question": "pregunta genérica que Sol respondió mal (en español, reutilizable)",
+    "answer": "respuesta corta y correcta que Sol DEBERÍA haber dado (max 300 caracteres)",
+    "category": "shipping" | "pricing" | "product" | "compatibility" | "warranty" | "payment" | "general",
+    "rationale": "por qué esta entrada mejora a Sol (max 120 caracteres)"
+  }
+}
+
+Solo propón teachable_suggestion si:
+- La falla es generalizable a futuros clientes (no un caso único del cliente).
+- Tienes una respuesta CORRECTA concreta (no una crítica general).
+- Si no hay una falla enseñable clara, devuelve null.
+
+Conversación:
+${thread}
+
+Devuelve SOLO el JSON, sin markdown, sin explicación.`;
+
+  try {
+    const response = await client.messages.create({
+      model: EXTRACT_MODEL,
+      max_tokens: 1200,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
+    const parsed = JSON.parse(cleaned) as {
+      rules: Record<ScorecardRuleId, ScorecardRuleResult>;
+      overall_summary?: string;
+      teachable_suggestion?: KBSuggestionDraft | null;
+    };
+
+    const ruleIds: ScorecardRuleId[] = [
+      'answered_the_ask',
+      'recommended_with_link',
+      'avoided_permission_asking',
+      'avoided_irrelevant_limit',
+      'no_hallucination',
+      'concise_response',
+    ];
+    const rules: Record<ScorecardRuleId, ScorecardRuleResult> = {} as Record<
+      ScorecardRuleId,
+      ScorecardRuleResult
+    >;
+    let passCount = 0;
+    for (const id of ruleIds) {
+      const r = parsed.rules?.[id];
+      const passed = !!r?.passed;
+      rules[id] = {
+        passed,
+        evidence: typeof r?.evidence === 'string' ? r.evidence.slice(0, 240) : '',
+      };
+      if (passed) passCount++;
+    }
+
+    const teachable = parsed.teachable_suggestion;
+    const teachableValid =
+      teachable &&
+      typeof teachable.question === 'string' &&
+      typeof teachable.answer === 'string' &&
+      teachable.question.trim().length > 0 &&
+      teachable.answer.trim().length > 0
+        ? {
+            question: teachable.question.trim(),
+            answer: teachable.answer.trim(),
+            category: teachable.category?.trim() || 'general',
+            rationale: teachable.rationale?.trim() || '',
+          }
+        : null;
+
+    return {
+      conversation_id: conversationId,
+      rules,
+      pass_count: passCount,
+      rule_count: ruleIds.length,
+      overall_summary: parsed.overall_summary?.slice(0, 400) ?? '',
+      teachable_suggestion: teachableValid,
+    };
+  } catch (err) {
+    console.warn(`[judgeConversation] failed for ${conversationId}:`, err);
+    return null;
+  }
+}
+
 /**
  * Analyze a conversation and propose new KB entries — questions that
  * came up where the operator or Sol's answer could be reused across customers.
