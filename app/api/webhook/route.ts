@@ -24,6 +24,8 @@ import {
   formatCustomerProfileForPrompt,
   createKBSuggestion,
   getProductImage,
+  getRecentDispatchedSkus,
+  recordDispatchedSkus,
 } from '@/lib/supabase';
 import { generateSolResponse, extractCustomerFacts, extractKBSuggestions } from '@/lib/anthropic';
 import {
@@ -345,11 +347,12 @@ async function processWebhook(body: unknown) {
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries, customerProfile] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
       loadCustomerProfile(senderPhone),
+      getRecentDispatchedSkus(conversation.id),
     ]);
 
     const historyWithoutLast = history.slice(0, -1);
@@ -357,16 +360,22 @@ async function processWebhook(body: unknown) {
     const catalog = formatProductCatalogForPrompt(products);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
+    const dispatchedPrompt =
+      alreadySentSkus.length > 0
+        ? `\nFOTOS YA ENVIADAS EN ESTA CONVERSACIÓN: [${alreadySentSkus.join(', ')}]\nNO incluyas [SEND_IMAGE:SKU] para estos SKUs — el cliente ya los tiene.\n`
+        : '';
     const { message: aiMessage, handoffReason } = await generateSolResponse(
       historyWithoutLast,
       messageText,
       catalog,
       kbPrompt,
-      profilePrompt
+      profilePrompt + dispatchedPrompt
     );
 
-    // ── Extract [SEND_IMAGE:SKU] tags and strip from text ──
-    const { text: cleanMessage, skus: imageSkus } = extractImageTags(aiMessage);
+    // ── Extract [SEND_IMAGE:SKU] tags, strip duplicates already sent ──
+    const { text: cleanMessage, skus: rawSkus } = extractImageTags(aiMessage);
+    const sentSet = new Set(alreadySentSkus);
+    const imageSkus = rawSkus.filter((s) => !sentSet.has(s.toUpperCase()));
 
     // ── Handle HANDOFF ───────────────────────────────────
     if (handoffReason) {
@@ -383,9 +392,9 @@ async function processWebhook(body: unknown) {
       // ── Dispatch product images (WhatsApp only, best-effort) ──
       if (channel === 'whatsapp' && imageSkus.length > 0) {
         waitUntil(
-          dispatchProductImages(senderPhone, imageSkus).catch((err) =>
-            console.warn('[WEBHOOK] image dispatch failed:', err)
-          )
+          dispatchProductImages(senderPhone, imageSkus)
+            .then(() => recordDispatchedSkus(conversation.id, imageSkus))
+            .catch((err) => console.warn('[WEBHOOK] image dispatch failed:', err))
         );
       }
     }

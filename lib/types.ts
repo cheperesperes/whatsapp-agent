@@ -15,6 +15,11 @@ export type ProductCategory =
 
 // ── Database row types ──────────────────────────────────────
 
+export interface DispatchedImage {
+  sku: string;
+  at: string;
+}
+
 export interface Conversation {
   id: string;
   phone_number: string;
@@ -26,6 +31,7 @@ export interface Conversation {
   product_interest: string | null;
   opted_out: boolean;
   opted_out_at: string | null;
+  recent_dispatched_skus: DispatchedImage[];
   created_at: string;
   updated_at: string;
 }

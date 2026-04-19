@@ -368,6 +368,71 @@ export async function getConversationByPhone(phone: string): Promise<Conversatio
 }
 
 // ============================================================
+// Image-dispatch tracking (prevents re-sending same product photo)
+// ============================================================
+
+const DISPATCHED_SKU_TTL_HOURS = 48;
+const DISPATCHED_SKU_MAX = 30;
+
+/**
+ * Return the set of SKUs whose product image was sent to this conversation
+ * within the TTL. Used both for server-side dedup and for prompt context.
+ */
+export async function getRecentDispatchedSkus(conversationId: string): Promise<string[]> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('recent_dispatched_skus')
+    .eq('id', conversationId)
+    .maybeSingle();
+
+  if (error || !data) return [];
+
+  const raw = (data.recent_dispatched_skus ?? []) as { sku: string; at: string }[];
+  const cutoff = Date.now() - DISPATCHED_SKU_TTL_HOURS * 60 * 60 * 1000;
+  return raw
+    .filter((e) => e && typeof e.sku === 'string' && Date.parse(e.at) >= cutoff)
+    .map((e) => e.sku.toUpperCase());
+}
+
+/**
+ * Append SKUs we just dispatched to the conversation's tracking array,
+ * dedupe, prune entries older than the TTL, and cap list length.
+ */
+export async function recordDispatchedSkus(conversationId: string, skus: string[]): Promise<void> {
+  if (skus.length === 0) return;
+  const supabase = createServiceClient();
+
+  const { data } = await supabase
+    .from('conversations')
+    .select('recent_dispatched_skus')
+    .eq('id', conversationId)
+    .maybeSingle();
+
+  const prev = ((data?.recent_dispatched_skus ?? []) as { sku: string; at: string }[]).filter(
+    (e) => e && typeof e.sku === 'string' && typeof e.at === 'string'
+  );
+  const now = new Date().toISOString();
+  const incoming = skus.map((s) => ({ sku: s.toUpperCase(), at: now }));
+
+  const byKey = new Map<string, { sku: string; at: string }>();
+  for (const e of [...prev, ...incoming]) byKey.set(e.sku.toUpperCase(), e);
+
+  const cutoff = Date.now() - DISPATCHED_SKU_TTL_HOURS * 60 * 60 * 1000;
+  const merged = Array.from(byKey.values())
+    .filter((e) => Date.parse(e.at) >= cutoff)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, DISPATCHED_SKU_MAX);
+
+  const { error } = await supabase
+    .from('conversations')
+    .update({ recent_dispatched_skus: merged, updated_at: now })
+    .eq('id', conversationId);
+
+  if (error) console.warn('[recordDispatchedSkus] update failed:', error.message);
+}
+
+// ============================================================
 // Product helpers (used by webhook to build Sol's context)
 // ============================================================
 
