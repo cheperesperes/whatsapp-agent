@@ -460,7 +460,7 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
  * @param products Array of AgentProduct from agent_product_catalog
  * @param region 'cuba' or 'usa' - determines which price to show
  */
-export function formatProductCatalogForPrompt(products: AgentProduct[], region: 'cuba' | 'usa' = 'cuba'): string {
+export function formatProductCatalogForPrompt(products: AgentProduct[]): string {
   const categoryNames: Record<string, string> = {
     kit: 'ESTACIONES PORTÁTILES',
     battery: 'BATERÍAS DE LITIO',
@@ -476,14 +476,16 @@ export function formatProductCatalogForPrompt(products: AgentProduct[], region: 
     grouped[p.category].push(p);
   }
 
-  const lines: string[] = ['=== CATÁLOGO ACTUAL DE OIIKON ==='];
+  const lines: string[] = [
+    '=== CATÁLOGO ACTUAL DE OIIKON ===',
+    'Cada producto muestra precio USA (sell_price con descuento aplicado si hay), precio total entregado en Cuba (USA + envío+aduana combinados), y el descuento activo si aplica.',
+  ];
 
   for (const [cat, prods] of Object.entries(grouped)) {
     lines.push(`\n${categoryNames[cat] ?? cat.toUpperCase()}`);
     for (const p of prods) {
       const specs: string[] = [];
 
-      // Add relevant specs based on product type
       if (p.battery_capacity_wh) specs.push(`${p.battery_capacity_wh.toLocaleString()}Wh`);
       if (p.battery_capacity_ah) specs.push(`${p.battery_capacity_ah}Ah`);
       if (p.inverter_watts) specs.push(`${p.inverter_watts.toLocaleString()}W inversor`);
@@ -494,13 +496,18 @@ export function formatProductCatalogForPrompt(products: AgentProduct[], region: 
 
       const specsStr = specs.length ? ` (${specs.join(', ')})` : '';
 
-      // Show region-specific price
-      const price = region === 'cuba' ? p.cuba_total_price : p.sell_price;
-      const priceLabel = region === 'cuba' ? 'Precio Final Cuba' : 'Precio USA';
+      const discount = p.discount_percentage ?? 0;
+      const effectiveUsa = discount > 0 ? p.sell_price * (1 - discount / 100) : p.sell_price;
+      const cubaDelivery = p.cuba_shipping_fee + p.cuba_handling_fee;
+      const effectiveCubaTotal = effectiveUsa + cubaDelivery;
 
-      lines.push(
-        `• ${p.name}${specsStr}: $${price.toFixed(2)} USD (${priceLabel})`
-      );
+      const priceParts: string[] = [`SKU ${p.sku}`, `USA $${effectiveUsa.toFixed(2)}`];
+      if (discount > 0 && p.original_price) {
+        priceParts.push(`(antes $${p.original_price.toFixed(2)}, ${discount}% descuento)`);
+      }
+      priceParts.push(`Cuba $${effectiveCubaTotal.toFixed(2)} entregado (envío+aduana $${cubaDelivery.toFixed(2)})`);
+
+      lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}`);
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
     }
   }

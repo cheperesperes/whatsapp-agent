@@ -97,6 +97,8 @@ export interface AgentProduct {
   ideal_for: string | null;
   compatible_with: string | null;
   supports_external_battery: boolean;
+  original_price: number | null;
+  discount_percentage: number;
   created_at?: string;
   updated_at?: string;
 }
