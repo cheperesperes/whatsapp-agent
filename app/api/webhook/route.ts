@@ -23,11 +23,18 @@ import {
   upsertCustomerProfile,
   formatCustomerProfileForPrompt,
   createKBSuggestion,
-  getProductImage,
+  getProductImages,
   getRecentDispatchedSkus,
   recordDispatchedSkus,
+  upsertLeadScore,
 } from '@/lib/supabase';
-import { generateSolResponse, extractCustomerFacts, extractKBSuggestions } from '@/lib/anthropic';
+import {
+  generateSolResponse,
+  extractCustomerFacts,
+  extractKBSuggestions,
+  scoreLeadQuality,
+} from '@/lib/anthropic';
+import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import {
   sendWhatsAppMessage,
   sendMessage,
@@ -364,12 +371,23 @@ async function processWebhook(body: unknown) {
       alreadySentSkus.length > 0
         ? `\nFOTOS YA ENVIADAS EN ESTA CONVERSACIÓN: [${alreadySentSkus.join(', ')}]\nNO incluyas [SEND_IMAGE:SKU] para estos SKUs — el cliente ya los tiene.\n`
         : '';
+
+    // ── Classify intent (Haiku 4.5, ~400ms) — failures fall back to no hint ──
+    const intent = await classifyIntent(historyWithoutLast, messageText);
+    const intentHint = formatIntentHintForPrompt(intent);
+    if (intent) {
+      console.log(
+        `[WEBHOOK] Intent for ${senderPhone}: stage=${intent.stage} prior_rec=${intent.prior_assistant_recommended} equipment=[${intent.equipment_mentioned.join(',')}]`
+      );
+    }
+
     const { message: aiMessage, handoffReason } = await generateSolResponse(
       historyWithoutLast,
       messageText,
       catalog,
       kbPrompt,
-      profilePrompt + dispatchedPrompt
+      profilePrompt + dispatchedPrompt,
+      intentHint
     );
 
     // ── Extract [SEND_IMAGE:SKU] tags, strip duplicates already sent ──
@@ -445,9 +463,10 @@ async function runBackgroundLearning(
 ) {
   if (history.length < 3) return;
 
-  const [facts, suggestions] = await Promise.all([
+  const [facts, suggestions, leadScore] = await Promise.all([
     extractCustomerFacts(history, existingProfile),
     extractKBSuggestions(history),
+    scoreLeadQuality(history),
   ]);
 
   if (facts) {
@@ -467,6 +486,13 @@ async function runBackgroundLearning(
       conversation_id: conversationId,
       rationale: s.rationale,
     });
+  }
+
+  if (leadScore) {
+    await upsertLeadScore(conversationId, leadScore);
+    console.log(
+      `[learning] Lead score for ${phone}: ${leadScore.quality} — ${leadScore.reason.slice(0, 80)}`
+    );
   }
 }
 
@@ -558,6 +584,10 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
 // so accept `.` `/` in addition to `A-Z0-9_-`.
 const IMAGE_TAG_REGEX = /\[SEND_IMAGE:\s*([A-Z0-9][A-Z0-9_\-./]*)\s*\]/gi;
 const MAX_IMAGES_PER_REPLY = 3;
+// Total image cap (across all SKUs) to avoid spamming the customer.
+// 1 SKU → 2 images. 2 SKUs → 2 + 1 = 3. 3 SKUs → 1 each = 3.
+const TOTAL_IMAGE_CAP_PER_REPLY = 4;
+const IMAGES_PER_SKU_WHEN_SINGLE = 2;
 
 /**
  * Strip `[SEND_IMAGE:SKU]` tags from Sol's reply and return the list of SKUs
@@ -581,17 +611,29 @@ function extractImageTags(message: string): { text: string; skus: string[] } {
 }
 
 async function dispatchProductImages(phone: string, skus: string[]): Promise<void> {
+  // Single SKU → up to 2 images (front + alt angle / use shot).
+  // Multiple SKUs → 1 image each, capped at TOTAL_IMAGE_CAP_PER_REPLY.
+  const perSku = skus.length === 1 ? IMAGES_PER_SKU_WHEN_SINGLE : 1;
+  let sent = 0;
+
   for (const sku of skus) {
+    if (sent >= TOTAL_IMAGE_CAP_PER_REPLY) break;
+    const remaining = TOTAL_IMAGE_CAP_PER_REPLY - sent;
+    const want = Math.min(perSku, remaining);
+
     try {
-      const url = await getProductImage(sku);
-      if (!url) {
-        console.log(`[WEBHOOK] No image URL for SKU ${sku} — skipping`);
+      const urls = await getProductImages(sku, want);
+      if (urls.length === 0) {
+        console.log(`[WEBHOOK] No image URLs for SKU ${sku} — skipping`);
         continue;
       }
-      await sendImage(phone, url);
-      console.log(`[WEBHOOK] Sent product image for ${sku}`);
+      for (const url of urls) {
+        await sendImage(phone, url);
+        sent++;
+      }
+      console.log(`[WEBHOOK] Sent ${urls.length} image(s) for ${sku}`);
     } catch (err) {
-      console.warn(`[WEBHOOK] Failed to send image for ${sku}:`, err);
+      console.warn(`[WEBHOOK] Failed to send image(s) for ${sku}:`, err);
     }
   }
 }
