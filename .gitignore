@@ -41,3 +41,6 @@ yarn-error.log*
 
 # Misc
 *.pem
+
+# Claude Code session worktrees (local-only sandboxes)
+.claude/worktrees/

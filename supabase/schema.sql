@@ -170,8 +170,8 @@ INSERT INTO products (sku, name, category, brand, capacity_wh, output_watts, pri
  'Best-seller. Nevera + ventilador + luces (7-8 hrs)'),
 
 ('PECRON-F3000LFP', 'PECRON F3000LFP', 'portable_station', 'PECRON', 3072, 3600, 1030.00, true, true,
- 'Estación de energía portátil PECRON F3000LFP con 3,072Wh y salida de 3,600W. Para hogares con múltiples aparatos.',
- 'Nevera + múltiples aparatos (8-10 hrs)'),
+ 'Estación de energía portátil PECRON F3000LFP con 3,072Wh y salida de 3,600W. Para hogares con múltiples equipos.',
+ 'Nevera + múltiples equipos (8-10 hrs)'),
 
 ('PECRON-E3600LFP', 'PECRON E3600LFP', 'portable_station', 'PECRON', 3840, 3600, 1341.00, true, true,
  'PECRON E3600LFP: máxima capacidad en formato portátil. 3,840Wh y 3,600W. Maneja toda una casa sin AC durante 10-12 horas.',
