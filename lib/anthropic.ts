@@ -58,14 +58,20 @@ export async function generateSolResponse(
   customerProfilePrompt = '',
   intentHint = '',
   competitorComparisons = '',
-  languageLock = ''
+  languageLock = '',
+  firstContactDirective = ''
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
-  // The language lock lands LAST, after FECHA, so it's the final
-  // instruction the model reads before generating. Soft signals earlier
-  // in the prompt ("Idioma del cliente: es") were being ignored in
-  // production — placing the hard lock at the tail fixes that.
+  // The language lock and first-contact directive land LAST, after FECHA,
+  // so they're the final instructions the model reads before generating.
+  // Soft signals earlier in the prompt ("Idioma del cliente: es") were
+  // being ignored in production — placing the hard lock at the tail fixes
+  // that. The first-contact directive (only present on turn 1) is added
+  // AFTER languageLock because it's the most recent-state instruction:
+  // it tells Sol "this is turn 1 and here is exactly how to open". Without
+  // it, Sol was treating FB-ad openers as real questions and dumping the
+  // full catalog before the customer said anything concrete.
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
@@ -74,7 +80,7 @@ ${customerProfilePrompt}
 ${competitorComparisons}
 ${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-${languageLock ? `\n${languageLock}\n` : ''}`;
+${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}`;
 
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',
