@@ -113,6 +113,29 @@ export interface AgentProduct {
   updated_at?: string;
 }
 
+// ── Competitor models (other brands Sol pivots away from) ──
+// Sol uses these to do a respectful $/Wh comparison when a customer
+// mentions EcoFlow / Jackery / Bluetti / Anker / Goal Zero. Editable
+// from /dashboard/competitors. Auto-refreshed weekly by
+// /api/cron/refresh-competitors unless manually_overridden_at is recent.
+export interface CompetitorModel {
+  id: string;
+  brand: string;
+  model: string;
+  capacity_wh: number;
+  inverter_watts: number | null;
+  current_price_usd: number;
+  chemistry: 'LFP' | 'NMC' | string | null;
+  warranty_years: number | null;
+  source_url: string | null;
+  active: boolean;
+  notes: string | null;
+  manually_overridden_at: string | null;
+  last_refreshed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Customer profile (auto-learned per contact) ─────────────
 export interface CustomerProfileFact {
   fact: string;

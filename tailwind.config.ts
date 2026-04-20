@@ -1,15 +1,15 @@
 import type { Config } from 'tailwindcss';
 
-// LIGHT THEME — WhatsApp-inspired.
+// DARK THEME — high-contrast operator dashboard.
 //
-// We deliberately INVERT both `gray` and `surface` so that class names already
-// scattered across the codebase (text-gray-100, bg-surface-800, etc.) keep
-// working but render as a light WhatsApp-style UI instead of a dark dashboard.
-// `gray-100` → near-black text; `surface-800` → white panel; `surface-900`
-// → page wallpaper (#EFEAE2 — WhatsApp's "doodle" cream tone).
+// We tried a light WhatsApp palette (PR #18) but the surfaces (cream
+// #EFEAE2 + near-white #F0F2F5) were too close to each other AND most
+// text classes (text-gray-400/500) were originally dark-mode tokens —
+// so everything washed out. Restored a proper dark palette here so the
+// existing class names (bg-surface-800, text-gray-400, etc.) read with
+// the contrast they were written for.
 //
-// All other Tailwind default colors (orange, purple, blue, etc.) are
-// untouched and continue to work normally.
+// Brand stays Oiikon amber, WhatsApp green stays for chat bubbles.
 const config: Config = {
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
@@ -19,7 +19,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Oiikon brand palette (amber — used for warm accents)
+        // Oiikon brand (amber — used for active nav, primary accents)
         brand: {
           50: '#fffbeb',
           100: '#fef3c7',
@@ -32,41 +32,40 @@ const config: Config = {
           800: '#92400e',
           900: '#78350f',
         },
-        // Surface tokens (semantic, light theme).
-        // 900 = outermost wallpaper · 800 = panel · 700 = input/hover ·
-        // 600 = divider · 500 = stronger border.
-        // We pulled `800` off pure white so the dashboard panels (sidebar,
-        // conversation list, info column) read as soft gray — closer to the
-        // real WhatsApp Web look. Incoming chat bubbles use `bg-white`
-        // explicitly so they still pop against the cream wallpaper.
+        // Surface tokens — dark gradient.
+        // 900 = page background · 800 = panels · 700 = inputs / hover ·
+        // 600 = dividers · 500 = stronger borders.
+        // Spaced so adjacent layers (panel on bg, input on panel) have
+        // visible contrast — the previous palette had every layer within
+        // 6% lightness of the next, which is why the UI looked flat.
         surface: {
-          900: '#EFEAE2', // WhatsApp chat wallpaper tint
-          800: '#F0F2F5', // panel background (soft gray, was #FFFFFF)
-          700: '#E4E7EB', // input bg / hover (slightly darker)
-          600: '#D8DCE0', // divider
-          500: '#C4CACE', // stronger border
+          900: '#0B141A', // page background (deep slate, near WhatsApp dark)
+          800: '#111B21', // panels (sidebar, list, info column)
+          700: '#1F2C33', // input bg / hover
+          600: '#2A3942', // dividers
+          500: '#3B4A54', // stronger borders
         },
-        // WhatsApp accent (used for primary actions + outgoing bubble)
+        // WhatsApp accent (primary actions + outgoing bubble)
         whatsapp: {
           50: '#E7F8E5',
-          100: '#DCF8C6', // outgoing bubble (sender = us)
+          100: '#005C4B', // outgoing bubble (dark green for dark theme)
           400: '#25D366', // logo green / online dot
           500: '#128C7E', // primary teal
           600: '#075E54', // dark teal
         },
-        // INVERTED gray scale — text-gray-100 reads as near-black,
-        // text-gray-500 stays mid-grey (works as muted text either way).
+        // Standard gray scale (NOT inverted) — text-gray-100 is light,
+        // text-gray-400/500 are mid-grey muted text on dark surfaces.
         gray: {
-          50: '#111B21', // darkest text (was lightest)
-          100: '#1F2937', // primary text on light bg
-          200: '#374151',
-          300: '#3B4A54', // labels
-          400: '#54656F', // secondary text (WhatsApp muted)
-          500: '#667781', // placeholder / muted
-          600: '#8696A0',
-          700: '#AEBAC1',
-          800: '#D1D7DB',
-          900: '#F0F2F5', // lightest (was darkest)
+          50: '#F9FAFB',
+          100: '#F3F4F6', // primary text on dark bg
+          200: '#E5E7EB',
+          300: '#D1D5DB', // labels / strong secondary
+          400: '#9CA3AF', // secondary text
+          500: '#6B7280', // muted / placeholder
+          600: '#4B5563',
+          700: '#374151',
+          800: '#1F2937',
+          900: '#111827',
         },
       },
       fontFamily: {

@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    color-scheme: light;
+    color-scheme: dark;
   }
 
   * {
@@ -18,15 +18,14 @@
     padding: 0;
   }
 
-  /* Light theme — `bg-surface-900` is now the WhatsApp wallpaper tint, and
-     `text-gray-100` reads as near-black thanks to the inverted palette in
-     tailwind.config.ts. */
+  /* Dark theme — `bg-surface-900` is the deep slate page background,
+     `text-gray-100` reads as light text on dark surfaces. */
   body {
     @apply bg-surface-900 text-gray-100 antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
-  /* Custom scrollbar — light scheme */
+  /* Custom scrollbar — dark scheme */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -38,44 +37,43 @@
     @apply bg-surface-500 rounded-full;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #B8C0C5;
+    background: #54656F;
   }
 }
 
 @layer components {
-  /* Chat bubbles — WhatsApp style */
+  /* Chat bubbles — WhatsApp dark style */
   .bubble-user {
-    /* Incoming (customer) — pure white so it pops against the cream
-       wallpaper. Use bg-white directly because `surface-800` was shifted to
-       a soft panel-gray for the rest of the dashboard. */
-    @apply bg-white text-gray-100 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[75%] text-sm shadow-sm;
+    /* Incoming (customer) — surface-700 reads as a slate bubble against
+       the deep slate background. */
+    @apply bg-surface-700 text-gray-100 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[75%] text-sm shadow-sm;
   }
 
   .bubble-assistant {
-    /* Outgoing (Sol / operator) — WhatsApp light green */
+    /* Outgoing (Sol / operator) — WhatsApp dark green */
     @apply bg-whatsapp-100 text-gray-100 rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[75%] text-sm shadow-sm;
   }
 
   .bubble-system {
-    @apply bg-yellow-100 border border-yellow-300 text-yellow-800 rounded-xl px-3 py-2 text-xs text-center;
+    @apply bg-yellow-900/30 border border-yellow-700/50 text-yellow-200 rounded-xl px-3 py-2 text-xs text-center;
   }
 
   /* Status badges */
   .badge-active {
-    @apply inline-flex items-center gap-1 bg-green-100 text-green-700 border border-green-200 rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 bg-green-900/40 text-green-300 border border-green-700/50 rounded-full px-2 py-0.5 text-xs font-medium;
   }
 
   .badge-escalated {
-    @apply inline-flex items-center gap-1 bg-red-100 text-red-700 border border-red-200 rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 bg-red-900/40 text-red-300 border border-red-700/50 rounded-full px-2 py-0.5 text-xs font-medium;
   }
 
   .badge-closed {
-    @apply inline-flex items-center gap-1 bg-surface-700 text-gray-500 border border-surface-600 rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 bg-surface-700 text-gray-400 border border-surface-600 rounded-full px-2 py-0.5 text-xs font-medium;
   }
 
   /* Form inputs */
   .input {
-    @apply bg-white border border-surface-500 text-gray-100 rounded-lg px-3 py-2 text-sm
+    @apply bg-surface-700 border border-surface-500 text-gray-100 rounded-lg px-3 py-2 text-sm
            focus:outline-none focus:border-whatsapp-500 focus:ring-1 focus:ring-whatsapp-500
            placeholder:text-gray-500 transition-colors;
   }
@@ -84,19 +82,19 @@
   .btn-primary {
     /* WhatsApp teal — clear, accessible, distinct from the amber brand */
     @apply bg-whatsapp-500 hover:bg-whatsapp-600 text-white font-medium rounded-lg px-4 py-2 text-sm
-           transition-colors focus:outline-none focus:ring-2 focus:ring-whatsapp-400 focus:ring-offset-2 focus:ring-offset-white
+           transition-colors focus:outline-none focus:ring-2 focus:ring-whatsapp-400 focus:ring-offset-2 focus:ring-offset-surface-900
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply bg-surface-700 hover:bg-surface-600 text-gray-300 font-medium rounded-lg px-4 py-2 text-sm
+    @apply bg-surface-700 hover:bg-surface-600 text-gray-200 font-medium rounded-lg px-4 py-2 text-sm
            border border-surface-500 transition-colors focus:outline-none
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-danger {
-    @apply bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-lg px-4 py-2 text-sm
-           border border-red-200 transition-colors;
+    @apply bg-red-900/40 hover:bg-red-900/60 text-red-200 font-medium rounded-lg px-4 py-2 text-sm
+           border border-red-700/50 transition-colors;
   }
 
   /* Cards */
