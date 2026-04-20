@@ -63,7 +63,7 @@ export default function SuggestionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-600 bg-surface-800 shrink-0">
         <div className="flex items-center gap-4">
-          <h2 className="text-base font-semibold text-white">Sugerencias de Sol</h2>
+          <h2 className="text-base font-semibold text-gray-100">Sugerencias de Sol</h2>
           <span className="text-xs text-gray-400">{suggestions.length} en esta vista</span>
         </div>
       </div>
@@ -77,7 +77,7 @@ export default function SuggestionsPage() {
             onClick={() => setFilter(f.key)}
             className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
               filter === f.key
-                ? 'bg-brand-500/20 text-brand-400'
+                ? 'bg-whatsapp-500/15 text-whatsapp-600'
                 : 'bg-surface-700 text-gray-400 hover:text-gray-200'
             }`}
           >

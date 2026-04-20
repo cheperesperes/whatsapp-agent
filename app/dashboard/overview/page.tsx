@@ -39,7 +39,7 @@ export default function OverviewPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-600 bg-surface-800 shrink-0">
-        <h2 className="text-base font-semibold text-white">Resumen semanal</h2>
+        <h2 className="text-base font-semibold text-gray-100">Resumen semanal</h2>
         <div className="flex items-center gap-2">
           {ranges.map((r) => (
             <button
@@ -48,7 +48,7 @@ export default function OverviewPage() {
               onClick={() => setRange(r.key)}
               className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
                 range === r.key
-                  ? 'bg-brand-500/20 text-brand-400'
+                  ? 'bg-whatsapp-500/15 text-whatsapp-600'
                   : 'bg-surface-700 text-gray-400 hover:text-gray-200'
               }`}
             >
@@ -78,7 +78,7 @@ export default function OverviewPage() {
                 <h3 className="text-sm font-semibold text-gray-200">
                   Preguntas repetidas
                 </h3>
-                <Link href="/dashboard/questions" className="text-xs text-brand-400 hover:text-brand-300">
+                <Link href="/dashboard/questions" className="text-xs text-whatsapp-600 hover:text-whatsapp-500">
                   Ver todas →
                 </Link>
               </div>
@@ -92,7 +92,7 @@ export default function OverviewPage() {
                     <li key={i} className="flex items-start justify-between gap-3 pb-2 border-b border-surface-700 last:border-0">
                       <p className="text-sm text-gray-300 flex-1 min-w-0">{q.sample}</p>
                       <div className="flex items-center gap-2 shrink-0 text-xs">
-                        <span className="px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400">
+                        <span className="px-2 py-0.5 rounded-full bg-whatsapp-500/15 text-whatsapp-600">
                           {q.distinct_phones} cliente{q.distinct_phones !== 1 ? 's' : ''}
                         </span>
                         <span className="text-gray-500">{q.count}×</span>
@@ -103,7 +103,7 @@ export default function OverviewPage() {
               )}
               <p className="text-xs text-gray-500 pt-2">
                 💡 Si una pregunta aparece de 2+ clientes distintos, conviene agregarla como entrada de base de conocimiento en{' '}
-                <Link href="/dashboard/knowledge" className="text-brand-400 hover:text-brand-300">Conocimiento</Link>.
+                <Link href="/dashboard/knowledge" className="text-whatsapp-600 hover:text-whatsapp-500">Conocimiento</Link>.
               </p>
             </section>
 
@@ -113,7 +113,7 @@ export default function OverviewPage() {
                 <h3 className="text-sm font-semibold text-gray-200">
                   Clientes perdidos (24h+ sin respuesta)
                 </h3>
-                <Link href="/dashboard/lost" className="text-xs text-brand-400 hover:text-brand-300">
+                <Link href="/dashboard/lost" className="text-xs text-whatsapp-600 hover:text-whatsapp-500">
                   Ver todos →
                 </Link>
               </div>
@@ -153,7 +153,7 @@ function MetricCard({ label, value, hint }: { label: string; value: number; hint
   return (
     <div className="card p-3">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-2xl font-semibold text-white mt-1">{value}</p>
+      <p className="text-2xl font-semibold text-gray-100 mt-1">{value}</p>
       {hint && <p className="text-xs text-gray-600 mt-0.5">{hint}</p>}
     </div>
   );

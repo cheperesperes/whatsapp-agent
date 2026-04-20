@@ -151,7 +151,7 @@ export default function ProductsPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-surface-600 bg-surface-800 shrink-0">
         <div>
-          <h2 className="text-base font-semibold text-white">Catálogo de Productos</h2>
+          <h2 className="text-base font-semibold text-gray-100">Catálogo de Productos</h2>
           <p className="text-xs text-gray-500 mt-0.5">
             {products.length} productos · {inStockCount} en stock
           </p>

@@ -134,7 +134,7 @@ export default function CompetitorsPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-surface-600 bg-surface-800 shrink-0">
         <div>
-          <h2 className="text-base font-semibold text-white">Competencia</h2>
+          <h2 className="text-base font-semibold text-gray-100">Competencia</h2>
           <p className="text-xs text-gray-500 mt-0.5">
             {rows.length} modelos · {activeCount} activos · auto-refresh semanal
           </p>
@@ -322,7 +322,7 @@ export default function CompetitorsPage() {
                               href={c.source_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-brand-400 hover:text-brand-300 text-[11px]"
+                              className="text-whatsapp-600 hover:text-whatsapp-500 text-[11px]"
                               title="Ver página oficial"
                             >
                               🔗
