@@ -27,6 +27,7 @@ import {
   getRecentDispatchedSkus,
   recordDispatchedSkus,
   upsertLeadScore,
+  OPERATOR_REPLY_REASON,
 } from '@/lib/supabase';
 import {
   generateSolResponse,
@@ -346,10 +347,26 @@ async function processWebhook(body: unknown) {
   }
 
   // ── Human mode: notify operator, skip AI ───────────────
+  // EXCEPTION: if the operator just sent a one-off text from the dashboard
+  // (escalation_reason === OPERATOR_REPLY_REASON), AUTO-RESUME Sol on the
+  // customer's reply so the conversation flows naturally. Real handoffs
+  // (objection, opt-out, manual escalation) stay escalated.
   if (conversation.escalated) {
-    console.log(`[WEBHOOK] Conversation ${senderPhone} is escalated — forwarding to operator`);
-    await sendEscalatedMessageAlert(OPERATOR_PHONE, senderPhone, messageText);
-    return;
+    if (conversation.escalation_reason === OPERATOR_REPLY_REASON) {
+      console.log(
+        `[WEBHOOK] Customer ${senderPhone} replied after operator text — auto-resuming Sol`
+      );
+      await deescalateConversation(conversation.id);
+      // Refresh local view so downstream code (e.g. AI flow) sees post-resume state.
+      conversation.escalated = false;
+      conversation.escalation_reason = null;
+      conversation.status = 'active';
+      // Fall through to the AI flow below.
+    } else {
+      console.log(`[WEBHOOK] Conversation ${senderPhone} is escalated — forwarding to operator`);
+      await sendEscalatedMessageAlert(OPERATOR_PHONE, senderPhone, messageText);
+      return;
+    }
   }
 
   // ── AI mode: generate Sol response ─────────────────────
