@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "review:export": "tsx scripts/export-weekly-conversations.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",
