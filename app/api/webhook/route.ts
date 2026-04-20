@@ -36,6 +36,7 @@ import {
   scoreLeadQuality,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
+import { loadCompetitorModels, formatCompetitorsForPrompt } from '@/lib/competitors';
 import {
   sendWhatsAppMessage,
   sendMessage,
@@ -371,12 +372,13 @@ async function processWebhook(body: unknown) {
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
       loadCustomerProfile(senderPhone),
       getRecentDispatchedSkus(conversation.id),
+      loadCompetitorModels(),
     ]);
 
     const historyWithoutLast = history.slice(0, -1);
@@ -384,6 +386,7 @@ async function processWebhook(body: unknown) {
     const catalog = formatProductCatalogForPrompt(products);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
+    const competitorPrompt = formatCompetitorsForPrompt(competitors, products);
     const dispatchedPrompt =
       alreadySentSkus.length > 0
         ? `\nFOTOS YA ENVIADAS EN ESTA CONVERSACIÓN: [${alreadySentSkus.join(', ')}]\nNO incluyas [SEND_IMAGE:SKU] para estos SKUs — el cliente ya los tiene.\n`
@@ -404,7 +407,8 @@ async function processWebhook(body: unknown) {
       catalog,
       kbPrompt,
       profilePrompt + dispatchedPrompt,
-      intentHint
+      intentHint,
+      competitorPrompt
     );
 
     // ── Extract [SEND_IMAGE:SKU] tags, strip duplicates already sent ──

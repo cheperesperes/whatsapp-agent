@@ -18,9 +18,9 @@
     padding: 0;
   }
 
-  /* Light theme — `bg-surface-900` is now the WhatsApp wallpaper tint, and
-     `text-gray-100` reads as near-black thanks to the inverted palette in
-     tailwind.config.ts. */
+  /* Light WhatsApp Web theme — `bg-surface-900` is the cream doodle
+     wallpaper, `text-gray-100` reads as near-black thanks to the inverted
+     gray scale in tailwind.config.ts. */
   body {
     @apply bg-surface-900 text-gray-100 antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -43,41 +43,41 @@
 }
 
 @layer components {
-  /* Chat bubbles — WhatsApp style */
+  /* Chat bubbles — WhatsApp Web style */
   .bubble-user {
-    /* Incoming (customer) — pure white so it pops against the cream
-       wallpaper. Use bg-white directly because `surface-800` was shifted to
-       a soft panel-gray for the rest of the dashboard. */
+    /* Incoming (customer) — pure white pops against the cream wallpaper.
+       Use bg-white explicitly (surface-800 is also white but this is
+       semantic — "an incoming bubble is always white"). */
     @apply bg-white text-gray-100 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[75%] text-sm shadow-sm;
   }
 
   .bubble-assistant {
-    /* Outgoing (Sol / operator) — WhatsApp light green */
+    /* Outgoing (Sol / operator) — WhatsApp's light green */
     @apply bg-whatsapp-100 text-gray-100 rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[75%] text-sm shadow-sm;
   }
 
   .bubble-system {
-    @apply bg-yellow-100 border border-yellow-300 text-yellow-800 rounded-xl px-3 py-2 text-xs text-center;
+    @apply bg-yellow-900 border border-yellow-800 text-yellow-300 rounded-xl px-3 py-2 text-xs text-center;
   }
 
-  /* Status badges */
+  /* Status badges — pastel pills on white panels */
   .badge-active {
-    @apply inline-flex items-center gap-1 bg-green-100 text-green-700 border border-green-200 rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 bg-green-900 text-green-300 border border-green-800 rounded-full px-2 py-0.5 text-xs font-medium;
   }
 
   .badge-escalated {
-    @apply inline-flex items-center gap-1 bg-red-100 text-red-700 border border-red-200 rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 bg-red-900 text-red-300 border border-red-800 rounded-full px-2 py-0.5 text-xs font-medium;
   }
 
   .badge-closed {
     @apply inline-flex items-center gap-1 bg-surface-700 text-gray-500 border border-surface-600 rounded-full px-2 py-0.5 text-xs font-medium;
   }
 
-  /* Form inputs */
+  /* Form inputs — white bg with visible border */
   .input {
     @apply bg-white border border-surface-500 text-gray-100 rounded-lg px-3 py-2 text-sm
            focus:outline-none focus:border-whatsapp-500 focus:ring-1 focus:ring-whatsapp-500
-           placeholder:text-gray-500 transition-colors;
+           placeholder:text-gray-600 transition-colors;
   }
 
   /* Buttons */
@@ -89,14 +89,14 @@
   }
 
   .btn-secondary {
-    @apply bg-surface-700 hover:bg-surface-600 text-gray-300 font-medium rounded-lg px-4 py-2 text-sm
+    @apply bg-surface-700 hover:bg-surface-600 text-gray-200 font-medium rounded-lg px-4 py-2 text-sm
            border border-surface-500 transition-colors focus:outline-none
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-danger {
-    @apply bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-lg px-4 py-2 text-sm
-           border border-red-200 transition-colors;
+    @apply bg-red-900 hover:bg-red-800 text-red-300 font-medium rounded-lg px-4 py-2 text-sm
+           border border-red-800 transition-colors;
   }
 
   /* Cards */

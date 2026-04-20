@@ -47,7 +47,8 @@ export async function generateSolResponse(
   productCatalog: string,
   knowledgeBase = '',
   customerProfilePrompt = '',
-  intentHint = ''
+  intentHint = '',
+  competitorComparisons = ''
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
@@ -56,6 +57,7 @@ export async function generateSolResponse(
 ${productCatalog}
 ${knowledgeBase}
 ${customerProfilePrompt}
+${competitorComparisons}
 ${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 `;

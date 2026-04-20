@@ -7,12 +7,19 @@
     },
     "app/api/cron/sync-inventory/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/cron/refresh-competitors/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/cron/sync-inventory",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-competitors",
+      "schedule": "0 8 * * 1"
     }
   ],
   "headers": [
