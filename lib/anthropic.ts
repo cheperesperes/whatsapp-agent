@@ -35,11 +35,20 @@ function getAgentPrompt(): string {
 export interface SolResponse {
   message: string;
   handoffReason: string | null;
+  /**
+   * Funnel metric tags Sol emitted (e.g. `discovery_complete`,
+   * `recommendation_sent`, `close_attempt`, `objection_raised: precio`).
+   * Stripped from the customer-facing message; surface them to analytics.
+   */
+  metrics: string[];
 }
 
 /**
  * Call Claude to generate Sol's response.
- * Returns the customer-facing message and any detected handoff reason.
+ * Returns the customer-facing message, any detected handoff reason, and
+ * funnel metric tags. ALL internal tags (`[HANDOFF: ...]`, `[METRIC: ...]`,
+ * `[OPTOUT: ...]`) are stripped from `message` so they never leak to
+ * WhatsApp — they're metadata for the system, not text for the customer.
  */
 export async function generateSolResponse(
   conversationHistory: Message[],
@@ -90,9 +99,23 @@ FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 
   const handoffMatch = rawText.match(/\[HANDOFF:\s*([^\]]+)\]/i);
   const handoffReason = handoffMatch ? handoffMatch[1].trim() : null;
 
-  const customerMessage = rawText.replace(/\[HANDOFF:\s*[^\]]+\]/gi, '').trim();
+  // Funnel metric tags: `[METRIC: discovery_complete]`,
+  // `[METRIC: objection_raised: precio]`, etc.
+  const metricMatches = rawText.matchAll(/\[METRIC:\s*([^\]]+)\]/gi);
+  const metrics = Array.from(metricMatches, (m) => m[1].trim());
 
-  return { message: customerMessage, handoffReason };
+  // Strip ALL internal tags (HANDOFF, METRIC, OPTOUT) from the
+  // customer-facing message. SEND_IMAGE is handled downstream by
+  // extractImageTags in the webhook route.
+  const customerMessage = rawText
+    .replace(/\[HANDOFF:\s*[^\]]+\]/gi, '')
+    .replace(/\[METRIC:\s*[^\]]+\]/gi, '')
+    .replace(/\[OPTOUT:\s*[^\]]+\]/gi, '')
+    .replace(/[ \t]+\n/g, '\n') // tidy trailing whitespace from stripped tags
+    .replace(/\n{3,}/g, '\n\n') // collapse triple+ blank lines created by stripping
+    .trim();
+
+  return { message: customerMessage, handoffReason, metrics };
 }
 
 // ============================================================
