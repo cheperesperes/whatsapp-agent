@@ -37,6 +37,7 @@ import {
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import { loadCompetitorModels, formatCompetitorsForPrompt } from '@/lib/competitors';
+import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
 import {
   sendWhatsAppMessage,
   sendMessage,
@@ -420,9 +421,22 @@ async function processWebhook(body: unknown) {
     }
 
     // ── Extract [SEND_IMAGE:SKU] tags, strip duplicates already sent ──
-    const { text: cleanMessage, skus: rawSkus } = extractImageTags(aiMessage);
+    const { text: extractedMessage, skus: rawSkus } = extractImageTags(aiMessage);
     const sentSet = new Set(alreadySentSkus);
     const imageSkus = rawSkus.filter((s) => !sentSet.has(s.toUpperCase()));
+
+    // ── Last-line-of-defense: normalize WhatsApp formatting ─────
+    // Deterministic cleanup for the 3 patterns that render as literal broken
+    // code when the prompt drifts (`**bold**` → `*bold*`, `~~strike~~` →
+    // `~strike~`) plus table detection for observability. Runs for every
+    // outbound message so the customer never sees a visible `**`.
+    const { text: cleanMessage, fixes: formatFixes } =
+      normalizeWhatsAppFormatting(extractedMessage);
+    if (formatFixes.length > 0) {
+      console.warn(
+        `[WEBHOOK] Format fixes applied for ${senderPhone} conv=${conversation.id}: ${formatFixes.join(',')}`
+      );
+    }
 
     // ── Handle HANDOFF ───────────────────────────────────
     if (handoffReason) {
