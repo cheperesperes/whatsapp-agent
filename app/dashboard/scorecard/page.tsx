@@ -95,7 +95,7 @@ export default function ScorecardPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-600 bg-surface-800 shrink-0">
         <div className="flex items-center gap-4">
-          <h2 className="text-base font-semibold text-white">Scorecard de Sol</h2>
+          <h2 className="text-base font-semibold text-gray-100">Scorecard de Sol</h2>
           <span className="text-xs text-gray-400">Auto-evaluación contra las reglas del agente</span>
         </div>
       </div>

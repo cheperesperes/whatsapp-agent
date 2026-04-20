@@ -87,7 +87,7 @@ export default function KnowledgePage() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-600 bg-surface-800 shrink-0">
         <div className="flex items-center gap-4">
-          <h2 className="text-base font-semibold text-white">Base de Conocimiento</h2>
+          <h2 className="text-base font-semibold text-gray-100">Base de Conocimiento</h2>
           <span className="text-xs text-gray-400">{entries.length} entradas</span>
         </div>
         <button
@@ -200,7 +200,7 @@ function EntryForm({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-white">
+          <h3 className="text-base font-semibold text-gray-100">
             {initial.id ? 'Editar entrada' : 'Nueva entrada de conocimiento'}
           </h3>
           <button

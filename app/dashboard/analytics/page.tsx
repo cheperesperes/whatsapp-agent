@@ -79,7 +79,7 @@ export default function AnalyticsPage() {
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Header */}
       <div className="px-6 py-4 border-b border-surface-600 bg-surface-800 shrink-0">
-        <h2 className="text-base font-semibold text-white">Analíticas</h2>
+        <h2 className="text-base font-semibold text-gray-100">Analíticas</h2>
         <p className="text-xs text-gray-500 mt-0.5">Rendimiento del agente Sol</p>
       </div>
 

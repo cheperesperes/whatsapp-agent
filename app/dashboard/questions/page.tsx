@@ -61,7 +61,7 @@ export default function QuestionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-600 bg-surface-800 shrink-0">
         <div className="flex items-center gap-4">
-          <h2 className="text-base font-semibold text-white">Preguntas de clientes</h2>
+          <h2 className="text-base font-semibold text-gray-100">Preguntas de clientes</h2>
           <span className="text-xs text-gray-400">{filtered.length} mostradas</span>
         </div>
       </div>
@@ -76,7 +76,7 @@ export default function QuestionsPage() {
               onClick={() => setMode(m.key)}
               className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
                 mode === m.key
-                  ? 'bg-brand-500/20 text-brand-400'
+                  ? 'bg-whatsapp-500/15 text-whatsapp-600'
                   : 'bg-surface-700 text-gray-400 hover:text-gray-200'
               }`}
             >
@@ -92,7 +92,7 @@ export default function QuestionsPage() {
               onClick={() => setRange(r.key)}
               className={`text-xs px-3 py-1.5 rounded-full transition-colors ${
                 range === r.key
-                  ? 'bg-brand-500/20 text-brand-400'
+                  ? 'bg-whatsapp-500/15 text-whatsapp-600'
                   : 'bg-surface-700 text-gray-400 hover:text-gray-200'
               }`}
             >
@@ -143,7 +143,7 @@ export default function QuestionsPage() {
                   href={`https://wa.me/${q.phone_number.replace(/^\+/, '')}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="ml-auto text-brand-400 hover:text-brand-300"
+                  className="ml-auto text-whatsapp-600 hover:text-whatsapp-500"
                 >
                   WhatsApp →
                 </a>

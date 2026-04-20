@@ -228,7 +228,7 @@ function KBModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-white">
+          <h3 className="text-base font-semibold text-gray-100">
             Agregar a la base de conocimiento
           </h3>
           <button
@@ -714,7 +714,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-600 bg-surface-800 shrink-0">
         <div className="flex items-center gap-4">
-          <h2 className="text-base font-semibold text-white">Conversaciones</h2>
+          <h2 className="text-base font-semibold text-gray-100">Conversaciones</h2>
           <div className="flex items-center gap-2 text-xs text-gray-400">
             <span className="badge-active">{activeCount} activas</span>
             {escalatedCount > 0 && (
