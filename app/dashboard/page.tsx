@@ -149,7 +149,7 @@ function ChatThread({
                   type="button"
                   onClick={() => onAddToKB(msg, suggestedAnswers[msg.id] ?? '')}
                   title="Agregar a la base de conocimiento"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 rounded-md bg-surface-700 hover:bg-brand-600 text-gray-300 hover:text-white border border-surface-500 shrink-0"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 rounded-md bg-surface-700 hover:bg-whatsapp-500 text-gray-300 hover:text-white border border-surface-500 shrink-0"
                 >
                   + KB
                 </button>
@@ -166,7 +166,7 @@ function ChatThread({
                 type="button"
                 onClick={() => onAddToKB(msg, msg.content)}
                 title="Agregar respuesta a la base de conocimiento"
-                className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 rounded-md bg-surface-700 hover:bg-brand-600 text-gray-300 hover:text-white border border-surface-500 shrink-0"
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-1 rounded-md bg-surface-700 hover:bg-whatsapp-500 text-gray-300 hover:text-white border border-surface-500 shrink-0"
               >
                 + KB
               </button>
@@ -472,7 +472,7 @@ function CustomerCard({ conv, onDeescalate, onEscalate, onClose, onCloseDrawer, 
             type="button"
             onClick={onEscalate}
             disabled={loading}
-            className="w-full text-xs px-3 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-800 transition-colors disabled:opacity-50"
+            className="w-full text-xs px-3 py-2 rounded-lg bg-red-900 hover:bg-red-800 text-red-300 border border-red-800 transition-colors disabled:opacity-50"
           >
             {loading ? 'Procesando...' : '🚨 Escalar a operador'}
           </button>
@@ -747,7 +747,7 @@ export default function DashboardPage() {
                   key={f}
                   onClick={() => setFilter(f)}
                   className={`flex-1 text-xs py-1 rounded-md transition-colors
-                    ${filter === f ? 'bg-brand-500 text-white' : 'bg-surface-700 text-gray-400 hover:text-gray-200'}`}
+                    ${filter === f ? 'bg-whatsapp-500 text-white' : 'bg-surface-700 text-gray-400 hover:text-gray-200'}`}
                 >
                   {f === 'all' ? 'Todos' : f === 'escalated' ? '🔴' : f === 'active' ? 'Activos' : 'Cerrados'}
                 </button>
@@ -886,7 +886,7 @@ export default function DashboardPage() {
       )}
 
       {kbToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-brand-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-whatsapp-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50">
           {kbToast}
         </div>
       )}
