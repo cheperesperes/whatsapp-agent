@@ -34,6 +34,7 @@ import {
   extractCustomerFacts,
   extractKBSuggestions,
   scoreLeadQuality,
+  mergeReading,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import { loadCompetitorModels, formatCompetitorsForPrompt } from '@/lib/competitors';
@@ -466,6 +467,31 @@ async function processWebhook(body: unknown) {
               ? `ad_arrival variant=${built.adMatch.variant} language=${built.adMatch.language}`
               : `organic language=${detectedLang}`)
         );
+
+        // Seed arrival_source into the structured read so later turns know
+        // HOW the customer landed (ad vs organic). This is the only signal
+        // that can't be recovered later from the transcript — once they've
+        // exchanged a few messages, the ad opener is far up in the history
+        // and Haiku would miss it. Seed it now, inline, as a merge so we
+        // don't clobber anything else the Haiku extractor may have already
+        // written.
+        const arrivalSource = built.adMatch
+          ? `facebook_ad:${built.adMatch.variant}`
+          : 'organic';
+        const seededReading = mergeReading(
+          customerProfile?.reading ?? null,
+          { arrival_source: arrivalSource },
+          new Date().toISOString()
+        );
+        waitUntil(
+          upsertCustomerProfile(senderPhone, { reading: seededReading }).catch(
+            (err) =>
+              console.warn(
+                `[WEBHOOK] arrival_source seed failed for ${senderPhone}:`,
+                err
+              )
+          )
+        );
       }
     }
 
@@ -587,10 +613,17 @@ async function runBackgroundLearning(
     // would re-introduce the exact drift that caused the 17:20 ET prod
     // bug (customer wrote Spanglish, Haiku decided "en", Sol replied
     // in English to a Spanish speaker).
+    //
+    // `reading` already comes pre-merged from extractCustomerFacts (it
+    // runs mergeReading internally against existingProfile.reading), so
+    // we just persist whatever it returned. `arrival_source` is preserved
+    // across merges because freshReading.arrival_source is never emitted
+    // by Haiku — only the webhook's turn-1 path seeds it.
     await upsertCustomerProfile(phone, {
       display_name: facts.display_name ?? null,
       summary: facts.summary ?? null,
       facts: facts.facts ?? [],
+      reading: facts.reading ?? null,
     });
   }
 
