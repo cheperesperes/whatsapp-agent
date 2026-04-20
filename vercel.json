@@ -10,6 +10,9 @@
     },
     "app/api/cron/refresh-competitors/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/send-followups/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -20,6 +23,10 @@
     {
       "path": "/api/cron/refresh-competitors",
       "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/cron/send-followups",
+      "schedule": "0 * * * *"
     }
   ],
   "headers": [
