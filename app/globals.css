@@ -45,8 +45,10 @@
 @layer components {
   /* Chat bubbles — WhatsApp style */
   .bubble-user {
-    /* Incoming (customer) — white */
-    @apply bg-surface-800 text-gray-100 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[75%] text-sm shadow-sm;
+    /* Incoming (customer) — pure white so it pops against the cream
+       wallpaper. Use bg-white directly because `surface-800` was shifted to
+       a soft panel-gray for the rest of the dashboard. */
+    @apply bg-white text-gray-100 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[75%] text-sm shadow-sm;
   }
 
   .bubble-assistant {
