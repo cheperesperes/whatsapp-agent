@@ -401,7 +401,7 @@ async function processWebhook(body: unknown) {
       );
     }
 
-    const { message: aiMessage, handoffReason } = await generateSolResponse(
+    const { message: aiMessage, handoffReason, metrics } = await generateSolResponse(
       historyWithoutLast,
       messageText,
       catalog,
@@ -410,6 +410,14 @@ async function processWebhook(body: unknown) {
       intentHint,
       competitorPrompt
     );
+
+    // ── Funnel metrics — log for analytics (not sent to customer) ──
+    // Internal tags `[METRIC: ...]` are already stripped from `aiMessage`.
+    if (metrics.length > 0) {
+      console.log(
+        `[METRICS] ${senderPhone} conv=${conversation.id}: ${metrics.join(' | ')}`
+      );
+    }
 
     // ── Extract [SEND_IMAGE:SKU] tags, strip duplicates already sent ──
     const { text: cleanMessage, skus: rawSkus } = extractImageTags(aiMessage);
