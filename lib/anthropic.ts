@@ -57,10 +57,15 @@ export async function generateSolResponse(
   knowledgeBase = '',
   customerProfilePrompt = '',
   intentHint = '',
-  competitorComparisons = ''
+  competitorComparisons = '',
+  languageLock = ''
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
+  // The language lock lands LAST, after FECHA, so it's the final
+  // instruction the model reads before generating. Soft signals earlier
+  // in the prompt ("Idioma del cliente: es") were being ignored in
+  // production — placing the hard lock at the tail fixes that.
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
@@ -69,7 +74,7 @@ ${customerProfilePrompt}
 ${competitorComparisons}
 ${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-`;
+${languageLock ? `\n${languageLock}\n` : ''}`;
 
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',

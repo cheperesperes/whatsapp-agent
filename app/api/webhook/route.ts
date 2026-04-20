@@ -39,6 +39,10 @@ import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import { loadCompetitorModels, formatCompetitorsForPrompt } from '@/lib/competitors';
 import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
 import {
+  detectLanguageFromHistory,
+  formatLanguageLockForPrompt,
+} from '@/lib/language';
+import {
   sendWhatsAppMessage,
   sendMessage,
   sendImage,
@@ -402,6 +406,41 @@ async function processWebhook(body: unknown) {
       );
     }
 
+    // ── Deterministic language pinning ──────────────────────
+    // Zero-cost heuristic over the last 5 user turns. Spanglish = Spanish
+    // (we serve Cuban families). The resulting lock is injected at the
+    // END of the system prompt so the model reads it last, as a hard
+    // imperative. Catches the 17:20 ET prod bug where Sol replied in
+    // English to "Hello! Que capacidad tiene...".
+    const recentUserMsgs = [
+      ...historyWithoutLast
+        .filter((m) => m.role === 'user')
+        .slice(-4)
+        .map((m) => m.content),
+      messageText,
+    ];
+    const detectedLang = detectLanguageFromHistory(
+      recentUserMsgs,
+      customerProfile?.language
+    );
+    const languageLock = formatLanguageLockForPrompt(detectedLang);
+    console.log(
+      `[WEBHOOK] Language pin for ${senderPhone}: ${detectedLang} (persisted=${customerProfile?.language ?? 'none'})`
+    );
+    // Persist the detection so subsequent turns inherit it as fallback
+    // when the current message is SKU-only or emoji-only. Non-blocking.
+    if (customerProfile?.language !== detectedLang) {
+      waitUntil(
+        upsertCustomerProfile(senderPhone, { language: detectedLang }).catch(
+          (err) =>
+            console.warn(
+              `[WEBHOOK] language persist failed for ${senderPhone}:`,
+              err
+            )
+        )
+      );
+    }
+
     const { message: aiMessage, handoffReason, metrics } = await generateSolResponse(
       historyWithoutLast,
       messageText,
@@ -409,7 +448,8 @@ async function processWebhook(body: unknown) {
       kbPrompt,
       profilePrompt + dispatchedPrompt,
       intentHint,
-      competitorPrompt
+      competitorPrompt,
+      languageLock
     );
 
     // ── Funnel metrics — log for analytics (not sent to customer) ──
@@ -513,9 +553,13 @@ async function runBackgroundLearning(
   ]);
 
   if (facts) {
+    // `language` is intentionally NOT written here — the deterministic
+    // heuristic in the main webhook path owns it. Letting Haiku override
+    // would re-introduce the exact drift that caused the 17:20 ET prod
+    // bug (customer wrote Spanglish, Haiku decided "en", Sol replied
+    // in English to a Spanish speaker).
     await upsertCustomerProfile(phone, {
       display_name: facts.display_name ?? null,
-      language: facts.language ?? null,
       summary: facts.summary ?? null,
       facts: facts.facts ?? [],
     });
