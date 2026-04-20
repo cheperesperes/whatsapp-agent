@@ -150,7 +150,7 @@ Devuelve SOLO este JSON:
 Reglas para "stage":
 - "greeting" — hola, buenos días, primer contacto sin tema.
 - "discovery_open" — cliente plantea necesidad sin enumerar equipos ("necesito algo para los apagones").
-- "equipment_listed" — cliente nombró aparatos concretos (nevera, ventilador, TV, luces, A/C, etc.) en este turno o el anterior.
+- "equipment_listed" — cliente nombró equipos concretos (nevera, ventilador, TV, luces, A/C, etc.) en este turno o el anterior.
 - "price_asked" — pidió precio o catálogo sin contexto suficiente.
 - "ready_to_buy" — "me interesa", "lo quiero", "cómo pago", "ok lo llevo".
 - "objection" — duda sobre precio, garantía, confianza, demora, autenticidad.

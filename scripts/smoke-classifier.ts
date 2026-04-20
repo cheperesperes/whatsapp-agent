@@ -60,7 +60,7 @@ check(
 check(
   'assistant message without product link → false',
   lastAssistantHadRecommendation([
-    msg('assistant', '¿Qué aparatos necesita?'),
+    msg('assistant', '¿Qué equipos necesita?'),
   ]) === false
 );
 
@@ -100,7 +100,7 @@ check(
 check(
   'last user message ignored even if it has a link → false',
   lastAssistantHadRecommendation([
-    msg('assistant', '¿Qué aparatos?'),
+    msg('assistant', '¿Qué equipos?'),
     msg('user', 'vi este: https://oiikon.com/product/pecron-e500lfp'),
   ]) === false
 );

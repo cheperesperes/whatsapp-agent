@@ -309,16 +309,75 @@ function KBModal({
   );
 }
 
+// ── Composer (operator → customer) ───────────────────────────
+
+function Composer({
+  onSend,
+  disabled,
+}: {
+  onSend: (text: string) => Promise<void>;
+  disabled: boolean;
+}) {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+
+  async function submit() {
+    const value = text.trim();
+    if (!value || sending) return;
+    setSending(true);
+    try {
+      await onSend(value);
+      setText('');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-surface-600 bg-surface-800 p-3 shrink-0">
+      <div className="flex items-end gap-2">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          rows={2}
+          disabled={disabled || sending}
+          placeholder="Escribir como operador… (Cmd/Ctrl+Enter para enviar)"
+          className="input flex-1 resize-none text-sm"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={disabled || sending || !text.trim()}
+          className="btn-primary text-xs px-4 py-2 shrink-0"
+        >
+          {sending ? '…' : 'Enviar'}
+        </button>
+      </div>
+      <p className="text-[10px] text-gray-500 mt-1.5">
+        Al enviar, Sol queda en pausa hasta que pulses &quot;Devolver a Sol&quot;.
+      </p>
+    </div>
+  );
+}
+
 // ── Customer Card ────────────────────────────────────────────
 
 interface CustomerCardProps {
   conv: Conversation;
   onDeescalate: () => void;
+  onEscalate: () => void;
   onClose: () => void;
+  onCloseDrawer?: () => void;
   loading: boolean;
 }
 
-function CustomerCard({ conv, onDeescalate, onClose, loading }: CustomerCardProps) {
+function CustomerCard({ conv, onDeescalate, onEscalate, onClose, onCloseDrawer, loading }: CustomerCardProps) {
   const segmentLabels: Record<string, string> = {
     cuban_family: 'Familia cubana',
     general: 'Cliente general',
@@ -326,8 +385,20 @@ function CustomerCard({ conv, onDeescalate, onClose, loading }: CustomerCardProp
   };
 
   return (
-    <div className="w-64 shrink-0 border-l border-surface-600 bg-surface-800 flex flex-col p-4 gap-4 overflow-y-auto">
-      <h3 className="text-sm font-semibold text-gray-300">Info del cliente</h3>
+    <div className="w-full md:w-64 shrink-0 md:border-l border-surface-600 bg-surface-800 flex flex-col p-4 gap-4 overflow-y-auto">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-300">Info del cliente</h3>
+        {onCloseDrawer && (
+          <button
+            type="button"
+            onClick={onCloseDrawer}
+            className="md:hidden text-gray-500 hover:text-gray-300 text-xl leading-none"
+            aria-label="Cerrar info"
+          >
+            ×
+          </button>
+        )}
+      </div>
 
       <div className="space-y-3">
         <div>
@@ -387,7 +458,7 @@ function CustomerCard({ conv, onDeescalate, onClose, loading }: CustomerCardProp
 
       {/* Actions */}
       <div className="mt-auto space-y-2">
-        {conv.escalated && (
+        {conv.escalated ? (
           <button
             type="button"
             onClick={onDeescalate}
@@ -395,6 +466,15 @@ function CustomerCard({ conv, onDeescalate, onClose, loading }: CustomerCardProp
             className="btn-primary w-full text-xs"
           >
             {loading ? 'Procesando...' : 'Devolver a Sol (AI)'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onEscalate}
+            disabled={loading}
+            className="w-full text-xs px-3 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-white border border-red-800 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Procesando...' : '🚨 Escalar a operador'}
           </button>
         )}
 
@@ -439,6 +519,15 @@ export default function DashboardPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [kbModal, setKbModal] = useState<{ question: string; answer: string } | null>(null);
   const [kbToast, setKbToast] = useState<string | null>(null);
+  // Mobile-only: toggle the customer-info drawer (hidden by default <md).
+  const [infoOpen, setInfoOpen] = useState(false);
+  // Toast for send/escalate feedback.
+  const [actionToast, setActionToast] = useState<string | null>(null);
+
+  function flashToast(msg: string) {
+    setActionToast(msg);
+    setTimeout(() => setActionToast(null), 2500);
+  }
 
   // Load conversations via server API (service-role, RLS-bypassing)
   const loadConversations = useCallback(async (opts?: { showSpinner?: boolean }) => {
@@ -506,26 +595,43 @@ export default function DashboardPage() {
   });
 
   // Actions — POST to server API which uses service role
-  async function postAction(action: 'deescalate' | 'close') {
+  async function postAction(
+    action: 'deescalate' | 'close' | 'escalate',
+    payload?: Record<string, unknown>
+  ) {
     if (!selectedConv) return;
     setActionLoading(true);
     try {
       const res = await fetch(`/api/conversations/${selectedConv.id}/action`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, ...(payload ?? {}) }),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         console.error(`[DASHBOARD] ${action} failed: ${res.status}`, text);
         alert(
-          `No se pudo ${action === 'close' ? 'cerrar' : 'devolver a Sol'} la conversación.\n` +
-            `Status: ${res.status}\n${text.slice(0, 200)}`
+          `No se pudo ${
+            action === 'close' ? 'cerrar' : action === 'escalate' ? 'escalar' : 'devolver a Sol'
+          } la conversación.\n` + `Status: ${res.status}\n${text.slice(0, 200)}`
         );
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { warning?: string };
+        if (action === 'escalate') {
+          flashToast(
+            data.warning
+              ? `⚠️ Escalado, pero alerta WhatsApp falló`
+              : `🚨 Escalado — alerta enviada al operador`
+          );
+        }
       }
     } catch (err) {
       console.error(`[DASHBOARD] ${action} network error:`, err);
-      alert(`Error de red al ${action === 'close' ? 'cerrar' : 'devolver a Sol'}. Revise la consola.`);
+      alert(
+        `Error de red al ${
+          action === 'close' ? 'cerrar' : action === 'escalate' ? 'escalar' : 'devolver a Sol'
+        }. Revise la consola.`
+      );
     } finally {
       setActionLoading(false);
       loadConversations();
@@ -538,6 +644,42 @@ export default function DashboardPage() {
 
   async function handleClose() {
     await postAction('close');
+  }
+
+  async function handleEscalate() {
+    const reason = window.prompt(
+      'Razón del escalamiento (opcional):',
+      'Operador solicitó tomar control'
+    );
+    if (reason === null) return; // user cancelled
+    await postAction('escalate', { reason: reason.trim() || undefined });
+  }
+
+  // Send a text from the operator straight to the customer via Twilio.
+  // The endpoint also flips the conversation to 'escalated' so Sol stops
+  // auto-replying until the operator presses "Devolver a Sol".
+  async function handleSendOperatorText(text: string) {
+    if (!selectedConv) return;
+    try {
+      const res = await fetch(`/api/conversations/${selectedConv.id}/send`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text, escalate: true }),
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        console.error('[DASHBOARD] send failed:', res.status, t);
+        alert(`No se pudo enviar.\nStatus: ${res.status}\n${t.slice(0, 200)}`);
+        throw new Error(`HTTP ${res.status}`);
+      }
+      flashToast('✓ Mensaje enviado al cliente');
+      // Refresh thread + list so the new message + escalated badge appear.
+      loadMessages(selectedConv.id);
+      loadConversations();
+    } catch (err) {
+      // Re-throw so Composer's `sending` state clears with no input wipe
+      throw err;
+    }
   }
 
   function openKBModal(msg: Message, suggestedAnswer: string) {
@@ -583,8 +725,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {/* Conversation List */}
-        <div className="w-72 shrink-0 flex flex-col border-r border-surface-600 bg-surface-800">
+        {/* Conversation List — full width on mobile until a chat is opened */}
+        <div
+          className={`${
+            selectedId ? 'hidden md:flex' : 'flex'
+          } w-full md:w-72 shrink-0 flex-col border-r border-surface-600 bg-surface-800`}
+        >
           {/* Search + Filter */}
           <div className="p-3 space-y-2 border-b border-surface-600">
             <input
@@ -630,36 +776,73 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Chat Area */}
+        {/* Chat Area — full width on mobile when a chat is open */}
         {selectedConv ? (
-          <div className="flex flex-1 min-w-0">
+          <div
+            className={`${
+              selectedId ? 'flex' : 'hidden md:flex'
+            } flex-1 min-w-0`}
+          >
             {/* Chat Thread */}
             <div className="flex flex-col flex-1 min-w-0">
               {/* Chat Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-surface-600 bg-surface-800 shrink-0">
-                <div>
-                  <p className="text-sm font-medium text-gray-200">
-                    {selectedConv.customer_name ?? selectedConv.phone_number}
-                  </p>
-                  <p className="text-xs text-gray-500">{selectedConv.phone_number}</p>
+              <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-surface-600 bg-surface-800 shrink-0 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {/* Back button — mobile only */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(null)}
+                    className="md:hidden text-gray-400 hover:text-gray-200 p-1 -ml-1 shrink-0"
+                    aria-label="Volver a la lista"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-200 truncate">
+                      {selectedConv.customer_name ?? selectedConv.phone_number}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{selectedConv.phone_number}</p>
+                  </div>
                 </div>
-                <StatusBadge status={selectedConv.status} />
+                <div className="flex items-center gap-2 shrink-0">
+                  <StatusBadge status={selectedConv.status} />
+                  {/* Info toggle — mobile only */}
+                  <button
+                    type="button"
+                    onClick={() => setInfoOpen(true)}
+                    className="md:hidden text-gray-400 hover:text-gray-200 p-1"
+                    aria-label="Ver info del cliente"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               {/* Messages */}
               <ChatThread messages={messages} onAddToKB={openKBModal} />
+
+              {/* Operator composer */}
+              <Composer onSend={handleSendOperatorText} disabled={actionLoading} />
             </div>
 
-            {/* Customer Card */}
-            <CustomerCard
-              conv={selectedConv}
-              onDeescalate={handleDeescalate}
-              onClose={handleClose}
-              loading={actionLoading}
-            />
+            {/* Customer Card — desktop sidebar (always visible) */}
+            <div className="hidden md:flex">
+              <CustomerCard
+                conv={selectedConv}
+                onDeescalate={handleDeescalate}
+                onEscalate={handleEscalate}
+                onClose={handleClose}
+                loading={actionLoading}
+              />
+            </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-600">
+          <div className="hidden md:flex flex-1 items-center justify-center text-gray-600">
             <div className="text-center">
               <svg className="w-12 h-12 mx-auto mb-3 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1}
@@ -670,6 +853,28 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Customer Card — mobile drawer overlay */}
+      {selectedConv && infoOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          onClick={() => setInfoOpen(false)}
+        >
+          <div
+            className="absolute right-0 top-0 bottom-0 w-[85%] max-w-xs bg-surface-800 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CustomerCard
+              conv={selectedConv}
+              onDeescalate={handleDeescalate}
+              onEscalate={handleEscalate}
+              onClose={handleClose}
+              onCloseDrawer={() => setInfoOpen(false)}
+              loading={actionLoading}
+            />
+          </div>
+        </div>
+      )}
 
       {kbModal && (
         <KBModal
