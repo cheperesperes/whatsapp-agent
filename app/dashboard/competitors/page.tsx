@@ -158,7 +158,7 @@ export default function CompetitorsPage() {
           <button
             onClick={() => setBrandFilter('all')}
             className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
-              brandFilter === 'all' ? 'bg-brand-500 text-white' : 'bg-surface-700 text-gray-400 hover:text-gray-200'
+              brandFilter === 'all' ? 'bg-whatsapp-500 text-white' : 'bg-surface-700 text-gray-400 hover:text-gray-200'
             }`}
           >
             Todas
@@ -168,7 +168,7 @@ export default function CompetitorsPage() {
               key={b}
               onClick={() => setBrandFilter(b)}
               className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                brandFilter === b ? 'bg-brand-500 text-white' : 'bg-surface-700 text-gray-400 hover:text-gray-200'
+                brandFilter === b ? 'bg-whatsapp-500 text-white' : 'bg-surface-700 text-gray-400 hover:text-gray-200'
               }`}
             >
               {b}

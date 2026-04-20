@@ -160,7 +160,7 @@ export default function ProductsPage() {
           <button
             onClick={() => setRegion('cuba')}
             className={`text-xs px-3 py-1 rounded transition-colors ${
-              region === 'cuba' ? 'bg-brand-500 text-white' : 'text-gray-400 hover:text-gray-200'
+              region === 'cuba' ? 'bg-whatsapp-500 text-white' : 'text-gray-400 hover:text-gray-200'
             }`}
           >
             Precio Cuba
@@ -168,7 +168,7 @@ export default function ProductsPage() {
           <button
             onClick={() => setRegion('usa')}
             className={`text-xs px-3 py-1 rounded transition-colors ${
-              region === 'usa' ? 'bg-brand-500 text-white' : 'text-gray-400 hover:text-gray-200'
+              region === 'usa' ? 'bg-whatsapp-500 text-white' : 'text-gray-400 hover:text-gray-200'
             }`}
           >
             Precio USA
@@ -192,7 +192,7 @@ export default function ProductsPage() {
               onClick={() => setCategoryFilter(cat)}
               className={`text-xs px-3 py-1.5 rounded-lg transition-colors
                 ${categoryFilter === cat
-                  ? 'bg-brand-500 text-white'
+                  ? 'bg-whatsapp-500 text-white'
                   : 'bg-surface-700 text-gray-400 hover:text-gray-200'}`}
             >
               {cat === 'all' ? 'Todos' : CATEGORY_LABELS[cat] ?? cat}
