@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { createServiceClient, escalateConversation, storeMessage } from '@/lib/supabase';
+import {
+  createServiceClient,
+  escalateConversation,
+  storeMessage,
+  OPERATOR_REPLY_REASON,
+} from '@/lib/supabase';
 import { sendMessage } from '@/lib/whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -67,12 +72,12 @@ export async function POST(
 
   await storeMessage(id, 'assistant', text, false);
 
+  // Use the OPERATOR_REPLY_REASON sentinel — the webhook recognizes this and
+  // auto-resumes Sol on the customer's next reply, so a one-off operator text
+  // doesn't permanently take Sol offline. Real "take over" handoffs use a
+  // different reason and stay escalated until manually de-escalated.
   if (shouldEscalate && !conv.escalated) {
-    await escalateConversation(
-      id,
-      'Operador respondió desde el dashboard',
-      text
-    );
+    await escalateConversation(id, OPERATOR_REPLY_REASON, text);
   }
 
   return NextResponse.json({ ok: true, escalated: shouldEscalate });

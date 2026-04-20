@@ -295,6 +295,15 @@ export async function clearOptOut(conversationId: string): Promise<void> {
 }
 
 /**
+ * Sentinel reason used when the operator sends a one-off message from the
+ * dashboard. The webhook recognizes this value and AUTO-DEESCALATES the next
+ * time the customer replies, so Sol resumes the conversation. Any other reason
+ * keeps the conversation in human-only mode until an operator manually
+ * de-escalates.
+ */
+export const OPERATOR_REPLY_REASON = 'operator_sent_text';
+
+/**
  * Mark a conversation as escalated and log the handoff.
  */
 export async function escalateConversation(
