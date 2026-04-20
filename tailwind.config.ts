@@ -35,12 +35,16 @@ const config: Config = {
         // Surface tokens (semantic, light theme).
         // 900 = outermost wallpaper · 800 = panel · 700 = input/hover ·
         // 600 = divider · 500 = stronger border.
+        // We pulled `800` off pure white so the dashboard panels (sidebar,
+        // conversation list, info column) read as soft gray — closer to the
+        // real WhatsApp Web look. Incoming chat bubbles use `bg-white`
+        // explicitly so they still pop against the cream wallpaper.
         surface: {
           900: '#EFEAE2', // WhatsApp chat wallpaper tint
-          800: '#FFFFFF', // panel background
-          700: '#F0F2F5', // input bg / hover
-          600: '#E9EDEF', // divider
-          500: '#D1D7DB', // stronger border
+          800: '#F0F2F5', // panel background (soft gray, was #FFFFFF)
+          700: '#E4E7EB', // input bg / hover (slightly darker)
+          600: '#D8DCE0', // divider
+          500: '#C4CACE', // stronger border
         },
         // WhatsApp accent (used for primary actions + outgoing bubble)
         whatsapp: {
