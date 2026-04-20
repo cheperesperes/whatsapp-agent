@@ -105,6 +105,10 @@ export interface AgentProduct {
   supports_external_battery: boolean;
   original_price: number | null;
   discount_percentage: number;
+  /** Set when an operator edits this row from the dashboard. The cron sync
+   * (/api/cron/sync-inventory) skips rows whose override is younger than
+   * INVENTORY_SYNC_OVERRIDE_TTL_HOURS so the deliberate change isn't reverted. */
+  manually_overridden_at?: string | null;
   created_at?: string;
   updated_at?: string;
 }

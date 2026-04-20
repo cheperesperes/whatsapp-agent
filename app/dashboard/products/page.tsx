@@ -107,6 +107,10 @@ export default function ProductsPage() {
       return;
     }
 
+    // `manually_overridden_at` tells the inventory-sync cron
+    // (/api/cron/sync-inventory) to skip this row for the next
+    // INVENTORY_SYNC_OVERRIDE_TTL_HOURS so an operator's edit isn't
+    // silently reverted on the next sync.
     await supabase
       .from('agent_product_catalog')
       .update({
@@ -114,6 +118,7 @@ export default function ProductsPage() {
         in_stock: editValues.in_stock,
         description_short: editValues.description_short || null,
         ideal_for: editValues.ideal_for || null,
+        manually_overridden_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', productId);
