@@ -42,6 +42,7 @@ import {
   detectLanguageFromHistory,
   formatLanguageLockForPrompt,
 } from '@/lib/language';
+import { buildFirstContactDirective } from '@/lib/ad-landing';
 import {
   sendWhatsAppMessage,
   sendMessage,
@@ -441,6 +442,33 @@ async function processWebhook(body: unknown) {
       );
     }
 
+    // ── Turn-1 first-contact directive ──────────────────────
+    // Most Oiikon customers arrive via Facebook ads whose WhatsApp CTA
+    // pre-fills one of a handful of templates ("¿Qué productos ofrecen?",
+    // "Hello! Can I get more info on this?", "Hola"). Without this block
+    // Sol was treating those templates as real questions and dumping the
+    // catalog on turn 1 — the opposite of what a trained salesperson does
+    // with an ad-click lead. We check whether this is the very first turn
+    // (historyWithoutLast is empty → the user message we're replying to is
+    // their first ever) and, if so, inject a directive that routes Sol to
+    // a warm greeting + ONE qualifying question. Detection is strict
+    // (exact match after normalization) so real questions fall through to
+    // the softer organic-first-contact directive that still forces an
+    // intro but lets her answer the question.
+    let firstContactDirective = '';
+    if (historyWithoutLast.length === 0) {
+      const built = buildFirstContactDirective(messageText, detectedLang);
+      if (built) {
+        firstContactDirective = built.directive;
+        console.log(
+          `[WEBHOOK] Turn-1 directive for ${senderPhone}: ` +
+            (built.adMatch
+              ? `ad_arrival variant=${built.adMatch.variant} language=${built.adMatch.language}`
+              : `organic language=${detectedLang}`)
+        );
+      }
+    }
+
     const { message: aiMessage, handoffReason, metrics } = await generateSolResponse(
       historyWithoutLast,
       messageText,
@@ -449,7 +477,8 @@ async function processWebhook(body: unknown) {
       profilePrompt + dispatchedPrompt,
       intentHint,
       competitorPrompt,
-      languageLock
+      languageLock,
+      firstContactDirective
     );
 
     // ── Funnel metrics — log for analytics (not sent to customer) ──
