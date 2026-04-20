@@ -11,6 +11,11 @@ const MODEL = 'claude-sonnet-4-6';
 const EXTRACT_MODEL = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS = 500;
 
+// Background extractors run inside `waitUntil` and SHARE the lambda's
+// maxDuration with the main reply path. Each Haiku call must time out fast
+// so a hung extractor can't kill the lambda before Sol's reply is sent.
+const EXTRACT_TIMEOUT_MS = 5_000;
+
 // Cache the agent prompt (read once at module load)
 let _agentPromptCache: string | null = null;
 
@@ -139,11 +144,14 @@ ${thread}
 Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
-    const response = await client.messages.create({
-      model: EXTRACT_MODEL,
-      max_tokens: 400,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        model: EXTRACT_MODEL,
+        max_tokens: 400,
+        messages: [{ role: 'user', content: prompt }],
+      },
+      { timeout: EXTRACT_TIMEOUT_MS }
+    );
     const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as {
@@ -278,11 +286,14 @@ ${thread}
 Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
-    const response = await client.messages.create({
-      model: EXTRACT_MODEL,
-      max_tokens: 1200,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        model: EXTRACT_MODEL,
+        max_tokens: 1200,
+        messages: [{ role: 'user', content: prompt }],
+      },
+      { timeout: EXTRACT_TIMEOUT_MS }
+    );
     const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as {
@@ -433,11 +444,14 @@ Reglas:
 Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
 
   try {
-    const response = await client.messages.create({
-      model: EXTRACT_MODEL,
-      max_tokens: 250,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        model: EXTRACT_MODEL,
+        max_tokens: 250,
+        messages: [{ role: 'user', content: prompt }],
+      },
+      { timeout: EXTRACT_TIMEOUT_MS }
+    );
 
     const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
     return parseLeadScoreResponse(text);
@@ -485,11 +499,14 @@ ${thread}
 Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
-    const response = await client.messages.create({
-      model: EXTRACT_MODEL,
-      max_tokens: 800,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const response = await client.messages.create(
+      {
+        model: EXTRACT_MODEL,
+        max_tokens: 800,
+        messages: [{ role: 'user', content: prompt }],
+      },
+      { timeout: EXTRACT_TIMEOUT_MS }
+    );
     const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as { suggestions?: KBSuggestionDraft[] };

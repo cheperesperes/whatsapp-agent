@@ -6,7 +6,9 @@ const client = new Anthropic({
 });
 
 const CLASSIFIER_MODEL = 'claude-haiku-4-5-20251001';
-const CLASSIFIER_TIMEOUT_MS = 4_000;
+// Tight inline budget — classifier blocks Sol's reply, so degrade to "no hint"
+// fast rather than burn the webhook's maxDuration on a slow Haiku call.
+const CLASSIFIER_TIMEOUT_MS = 2_000;
 const CLASSIFIER_MAX_TOKENS = 350;
 
 export type IntentStage =
