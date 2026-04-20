@@ -4,8 +4,17 @@
   "functions": {
     "app/api/webhook/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/sync-inventory/route.ts": {
+      "maxDuration": 30
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/sync-inventory",
+      "schedule": "*/10 * * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
