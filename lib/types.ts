@@ -20,6 +20,8 @@ export interface DispatchedImage {
   at: string;
 }
 
+export type LeadQuality = 'hot' | 'warm' | 'cold' | 'dead';
+
 export interface Conversation {
   id: string;
   phone_number: string;
@@ -32,6 +34,10 @@ export interface Conversation {
   opted_out: boolean;
   opted_out_at: string | null;
   recent_dispatched_skus: DispatchedImage[];
+  lead_quality: LeadQuality | null;
+  lead_reason: string | null;
+  recommended_action: string | null;
+  lead_scored_at: string | null;
   created_at: string;
   updated_at: string;
 }

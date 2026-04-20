@@ -433,6 +433,30 @@ export async function recordDispatchedSkus(conversationId: string, skus: string[
 }
 
 // ============================================================
+// Lead-quality scoring (Haiku 4.5 background job persistence)
+// ============================================================
+
+export type LeadQualityValue = 'hot' | 'warm' | 'cold' | 'dead';
+
+export async function upsertLeadScore(
+  conversationId: string,
+  score: { quality: LeadQualityValue; reason: string; recommended_action: string }
+): Promise<void> {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from('conversations')
+    .update({
+      lead_quality: score.quality,
+      lead_reason: score.reason,
+      recommended_action: score.recommended_action,
+      lead_scored_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId);
+
+  if (error) console.warn('[upsertLeadScore] update failed:', error.message);
+}
+
+// ============================================================
 // Product helpers (used by webhook to build Sol's context)
 // ============================================================
 
@@ -526,8 +550,8 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
  * so any webp URL is proxied through wsrv.nl which transcodes to JPEG on the
  * fly. Without this the `sendImage` call 400s and the customer gets nothing.
  */
-export async function getProductImage(sku: string): Promise<string | null> {
-  if (!sku?.trim()) return null;
+export async function getProductImages(sku: string, max = 2): Promise<string[]> {
+  if (!sku?.trim() || max <= 0) return [];
 
   const supabase = createServiceClient();
 
@@ -538,23 +562,27 @@ export async function getProductImage(sku: string): Promise<string | null> {
     .limit(1)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error || !data) return [];
 
   const isUsable = (u: unknown): u is string =>
     typeof u === 'string' && u.startsWith('https://') && !u.includes('images.unsplash.com');
 
-  let chosen: string | null = null;
-  if (isUsable(data.primary_image_url)) {
-    chosen = data.primary_image_url as string;
-  } else if (Array.isArray(data.gallery_images)) {
-    const first = data.gallery_images.find(isUsable);
-    if (first) chosen = first;
-  }
-  if (!chosen && isUsable(data.image_url)) {
-    chosen = data.image_url as string;
-  }
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const push = (u: unknown) => {
+    if (isUsable(u) && !seen.has(u)) {
+      seen.add(u);
+      ordered.push(u);
+    }
+  };
 
-  return chosen ? toWhatsAppMediaUrl(chosen) : null;
+  push(data.primary_image_url);
+  if (Array.isArray(data.gallery_images)) {
+    for (const u of data.gallery_images) push(u);
+  }
+  push(data.image_url);
+
+  return ordered.slice(0, max).map(toWhatsAppMediaUrl);
 }
 
 /**

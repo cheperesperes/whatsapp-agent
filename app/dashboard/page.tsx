@@ -38,6 +38,19 @@ function StatusBadge({ status }: { status: Conversation['status'] }) {
   return <span className="badge-closed">○ Cerrado</span>;
 }
 
+const LEAD_BADGE_STYLES: Record<NonNullable<Conversation['lead_quality']>, { label: string; cls: string }> = {
+  hot: { label: '🔥 Hot', cls: 'bg-red-900/40 text-red-300 border border-red-800' },
+  warm: { label: '🟡 Warm', cls: 'bg-yellow-900/40 text-yellow-300 border border-yellow-800' },
+  cold: { label: '⚪ Cold', cls: 'bg-surface-700 text-gray-400 border border-surface-600' },
+  dead: { label: '💀 Dead', cls: 'bg-surface-800 text-gray-600 border border-surface-700' },
+};
+
+function LeadBadge({ quality }: { quality: Conversation['lead_quality'] }) {
+  if (!quality) return null;
+  const s = LEAD_BADGE_STYLES[quality];
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${s.cls}`}>{s.label}</span>;
+}
+
 // ── Conversation List Item ───────────────────────────────────
 
 interface ConvItemProps {
@@ -70,11 +83,12 @@ function ConvItem({ conv, isSelected, onClick }: ConvItemProps) {
           <span className="text-xs text-gray-500 shrink-0">{formatTime(time)}</span>
         </div>
         <p className="text-xs text-gray-500 truncate mt-0.5">{preview.slice(0, 60)}</p>
-        {conv.escalated && (
-          <div className="mt-1">
+        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+          <LeadBadge quality={conv.lead_quality} />
+          {conv.escalated && (
             <span className="text-xs text-red-400">🔴 Requiere atención</span>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </button>
   );
@@ -344,6 +358,19 @@ function CustomerCard({ conv, onDeescalate, onClose, loading }: CustomerCardProp
           <p className="text-xs text-gray-500">Estado</p>
           <StatusBadge status={conv.status} />
         </div>
+
+        {conv.lead_quality && (
+          <div className="space-y-1">
+            <p className="text-xs text-gray-500">Calidad del lead</p>
+            <LeadBadge quality={conv.lead_quality} />
+            {conv.lead_reason && (
+              <p className="text-xs text-gray-400 italic">{conv.lead_reason}</p>
+            )}
+            {conv.recommended_action && (
+              <p className="text-xs text-brand-400">→ {conv.recommended_action}</p>
+            )}
+          </div>
+        )}
 
         {conv.escalation_reason && (
           <div>

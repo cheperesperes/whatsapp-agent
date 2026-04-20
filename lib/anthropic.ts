@@ -41,7 +41,8 @@ export async function generateSolResponse(
   newUserMessage: string,
   productCatalog: string,
   knowledgeBase = '',
-  customerProfilePrompt = ''
+  customerProfilePrompt = '',
+  intentHint = ''
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
@@ -50,7 +51,7 @@ export async function generateSolResponse(
 ${productCatalog}
 ${knowledgeBase}
 ${customerProfilePrompt}
-
+${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 `;
 
@@ -338,6 +339,110 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
     };
   } catch (err) {
     console.warn(`[judgeConversation] failed for ${conversationId}:`, err);
+    return null;
+  }
+}
+
+// ============================================================
+// Lead-quality scorer (Haiku 4.5) — triages conversations
+// for the operator dashboard so Eduardo can prioritize follow-up.
+// ============================================================
+
+export type LeadQuality = 'hot' | 'warm' | 'cold' | 'dead';
+
+export interface LeadScore {
+  quality: LeadQuality;
+  reason: string;
+  recommended_action: string;
+}
+
+export const LEAD_QUALITY_LABELS: Record<LeadQuality, string> = {
+  hot: 'Listo para comprar',
+  warm: 'Interesado, indeciso',
+  cold: 'Curioso, baja señal',
+  dead: 'Perdido / fuera de tema',
+};
+
+/**
+ * Classify a conversation's sales-readiness. Pure helper — exported for testing.
+ * Returns null only on unparseable input.
+ */
+export function parseLeadScoreResponse(rawText: string): LeadScore | null {
+  const cleaned = rawText.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
+
+  let parsed: Partial<LeadScore>;
+  try {
+    parsed = JSON.parse(cleaned) as Partial<LeadScore>;
+  } catch {
+    return null;
+  }
+
+  const quality: LeadQuality =
+    parsed.quality === 'hot' || parsed.quality === 'warm' || parsed.quality === 'cold' || parsed.quality === 'dead'
+      ? parsed.quality
+      : 'cold';
+
+  return {
+    quality,
+    reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 200) : '',
+    recommended_action:
+      typeof parsed.recommended_action === 'string'
+        ? parsed.recommended_action.slice(0, 200)
+        : '',
+  };
+}
+
+/**
+ * Score a conversation as hot / warm / cold / dead.
+ * Cheap (Haiku), runs in background after each customer turn.
+ * Returns null on failure — caller skips the upsert.
+ */
+export async function scoreLeadQuality(history: Message[]): Promise<LeadScore | null> {
+  const userMsgCount = history.filter((m) => m.role === 'user').length;
+  if (userMsgCount < 1) return null;
+
+  const thread = history
+    .slice(-16)
+    .map((m) => `${m.role === 'user' ? 'CLIENTE' : 'SOL'}: ${m.content}`)
+    .join('\n');
+
+  const prompt = `Eres un evaluador de calidad de leads para Sol, un agente de ventas de WhatsApp (Oiikon, energía solar para Cuba/USA). Lee la conversación y clasifica al cliente.
+
+Conversación reciente:
+${thread}
+
+Devuelve SOLO este JSON:
+{
+  "quality": "hot" | "warm" | "cold" | "dead",
+  "reason": "1 oración: por qué este lead está en esta categoría",
+  "recommended_action": "1 oración: qué debería hacer Eduardo (operador) ahora"
+}
+
+Definiciones:
+- "hot" — cliente expresó intención clara de compra ("lo quiero", "cómo pago", "envíenme el link", "lo llevo"), pidió detalles finales (forma de pago, tiempo de entrega, dirección), o aceptó un precio. Acción típica: confirmar venta / enviar link de pago.
+- "warm" — cliente está enganchado, hizo preguntas sustantivas (precio, specs, compatibilidad) o enumeró equipos, pero NO ha cerrado. Tal vez se quedó callado tras un precio o comparó modelos. Acción típica: follow-up con pregunta o oferta concreta.
+- "cold" — cliente solo saludó, hizo una pregunta vaga, o exploró sin compromiso. Poca señal de compra. Acción típica: dejar a Sol seguir nutriendo o esperar.
+- "dead" — cliente claramente perdido: pidió hablar con humano y no respondió, dijo "no me interesa", se opt-out, o el hilo es spam/off-topic. Acción típica: archivar, no perseguir.
+
+Reglas:
+- Si Sol envió una recomendación con precio + link y el cliente NO respondió en su último mensaje, baja un nivel (warm → cold, hot → warm) — el silencio es señal débil.
+- Si el cliente pidió hablar con humano: dead si han pasado varias horas sin respuesta de su lado, warm si el operador aún puede responder.
+- Si la conversación es muy corta (1 mensaje del cliente) y no hay señal clara: cold.
+- Sé conservador con "hot" — solo si hay intención inequívoca.
+
+Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
+
+  try {
+    const response = await client.messages.create({
+      model: EXTRACT_MODEL,
+      max_tokens: 250,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    return parseLeadScoreResponse(text);
+  } catch (err) {
+    console.warn('[scoreLeadQuality] failed:', err instanceof Error ? err.message : err);
     return null;
   }
 }
