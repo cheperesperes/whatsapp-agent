@@ -13,6 +13,9 @@
     },
     "app/api/cron/send-followups/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/hallucination-check/route.ts": {
+      "maxDuration": 30
     }
   },
   "crons": [
@@ -27,6 +30,10 @@
     {
       "path": "/api/cron/send-followups",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/hallucination-check",
+      "schedule": "0 14 * * *"
     }
   ],
   "headers": [

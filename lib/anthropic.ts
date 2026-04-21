@@ -64,7 +64,8 @@ export async function generateSolResponse(
   intentHint = '',
   competitorComparisons = '',
   languageLock = '',
-  firstContactDirective = ''
+  firstContactDirective = '',
+  dynamicDirectives = ''
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
@@ -77,6 +78,11 @@ export async function generateSolResponse(
   // it tells Sol "this is turn 1 and here is exactly how to open". Without
   // it, Sol was treating FB-ad openers as real questions and dumping the
   // full catalog before the customer said anything concrete.
+  //
+  // `dynamicDirectives` lands at the very tail — these are situational
+  // rules computed per-turn (soft-close mandate when customer is ready to
+  // buy, pivot-before-backing-off when they just said "no me interesa").
+  // Placing them last ensures they override earlier, more general guidance.
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
@@ -85,7 +91,7 @@ ${customerProfilePrompt}
 ${competitorComparisons}
 ${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}`;
+${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}`;
 
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -218,7 +224,13 @@ export async function extractCustomerFacts(
   facts?: CustomerProfileFact[];
   reading?: CustomerProfileReading | null;
 } | null> {
-  if (history.length < 3) return null;
+  // Minimum of 2 messages (one user + one assistant) gives Haiku enough
+  // to extract at least a `reading` signal. The old `< 3` gate meant the
+  // FIRST full user→Sol→user→Sol exchange produced no read, so turn 2
+  // replied with zero tone adaptation. Dropping to `< 2` closes that gap;
+  // the Haiku extractor itself is precision-tuned, so a shallow read just
+  // returns null/empty fields rather than hallucinating.
+  if (history.length < 2) return null;
 
   const thread = history
     .map((m) => `${m.role === 'user' ? 'CLIENTE' : 'SOL'}: ${m.content}`)
@@ -695,4 +707,100 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
     console.warn('[extractKBSuggestions] failed:', err);
     return [];
   }
+}
+
+// ============================================================
+// Dynamic per-turn directives
+// ============================================================
+
+/**
+ * Regex catching Spanish rejection signals we want to bounce off with a
+ * lateral offer before Sol backs off. "muy caro" variants, "no me interesa",
+ * "no tengo presupuesto", etc. Intentionally simple — precision > recall;
+ * false positives would push Sol to keep selling when the customer actually
+ * wants out. The list is deliberately short and in lowercase; the caller
+ * lowercases the user text before matching.
+ */
+const REJECTION_PATTERNS: RegExp[] = [
+  /\bno me interesa\b/,
+  /\bno estoy interesad[oa]\b/,
+  /\bmuy caro\b/,
+  /\bmuy costoso\b/,
+  /\bdemasiado caro\b/,
+  /\bfuera de mi presupuesto\b/,
+  /\bno tengo (ese )?presupuesto\b/,
+  /\bno puedo pagar(?:l[oa])?\b/, // pagar / pagarlo / pagarla — all common
+  /\bno me alcanza\b/,
+  /\bmejor despu[eé]s\b/,
+  /\bmejor m[aá]s adelante\b/,
+  /\bya no quiero\b/,
+];
+
+/**
+ * Detect whether the latest user message carries a rejection signal Sol
+ * should pivot off of (offer a cheaper SKU, ask about budget, suggest
+ * financing) rather than closing the conversation with a flat "entiendo".
+ * Exported for unit testing.
+ */
+export function hasRejectionSignal(userText: string): boolean {
+  const lowered = (userText ?? '').toLowerCase();
+  return REJECTION_PATTERNS.some((re) => re.test(lowered));
+}
+
+/**
+ * Build the per-turn "dynamic directives" block injected at the tail of
+ * Sol's system prompt. These are computed every turn from:
+ *
+ *  • `userTurnCount` — how many user messages this conversation has seen
+ *    (including the current one)
+ *  • `intentStage` — the latest reading.intent_stage, if we have one
+ *  • `lastUserText` — the message we're about to reply to (for rejection
+ *    detection)
+ *
+ * The block is intentionally short so it doesn't dilute the base prompt.
+ * Each rule is one sentence starting with a verb, matching the tone of the
+ * rest of the prompt. Empty string return means "no dynamic rule applies
+ * this turn" — the caller then skips the section entirely.
+ *
+ * Two rules currently:
+ *   1. SOFT-CLOSE MANDATE: if intent_stage=listo_comprar AND user turn
+ *      count ≥ 3, the reply must end with a concrete next step (direct
+ *      product link, operator phone, or "¿te mando el pago?"). Catches the
+ *      "Sol answered every question but never asked for the sale" pattern.
+ *   2. POST-REJECTION PIVOT: if the current user message contains a
+ *      rejection signal, the reply must offer one lateral option (cheaper
+ *      SKU, financing hint, or a budget question) BEFORE acknowledging and
+ *      backing off. No forcing — one pivot attempt, then respect the no.
+ */
+export function buildDynamicDirectives(args: {
+  userTurnCount: number;
+  intentStage?: CustomerProfileReading['intent_stage'];
+  lastUserText: string;
+}): string {
+  const rules: string[] = [];
+
+  if (args.intentStage === 'listo_comprar' && args.userTurnCount >= 3) {
+    rules.push(
+      '• CIERRE SUAVE OBLIGATORIO: el cliente ya está listo para comprar y llevan varios turnos. ' +
+        'Termina tu mensaje con UN paso concreto: enlace directo al producto acordado, número del operador, ' +
+        'o una pregunta de cierre ("¿te mando el link de pago ahora?"). NO re-vendas. NO dejes el turno ' +
+        'abierto sin CTA.'
+    );
+  }
+
+  if (hasRejectionSignal(args.lastUserText)) {
+    rules.push(
+      '• PIVOTE ANTES DE RETIRARTE: el cliente acaba de rechazar ("muy caro" / "no me interesa" / similar). ' +
+        'Antes de cerrar amablemente, ofrece UNA alternativa lateral: un SKU más económico del catálogo, ' +
+        'una pregunta corta sobre presupuesto ("¿qué rango manejas?"), o mencionar financiamiento si aplica. ' +
+        'UNA sola propuesta, no insistas. Si vuelve a decir que no, respétalo y cierra con elegancia.'
+    );
+  }
+
+  if (rules.length === 0) return '';
+
+  return [
+    '=== DIRECTIVAS DINÁMICAS DE ESTE TURNO (obligatorias — NO repitas estas etiquetas al cliente) ===',
+    ...rules,
+  ].join('\n');
 }

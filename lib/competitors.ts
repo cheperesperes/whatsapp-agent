@@ -12,8 +12,38 @@ import type { AgentProduct, CompetitorModel } from './types';
 
 const PECRON_BRAND_RE = /pecron/i;
 
-/** Load active competitor rows for prompt injection / dashboard listing. */
-export async function loadCompetitorModels(opts: { activeOnly?: boolean } = {}): Promise<CompetitorModel[]> {
+/**
+ * Age beyond which a competitor row is too stale to feed into Sol's prompt.
+ * Competitor prices drift week-over-week (sales, inventory, Amazon pricing
+ * games). Quoting a 3-month-old $/Wh is worse than quoting none — the
+ * customer can fact-check us in 15 seconds and we lose trust.
+ *
+ * Manually-overridden rows bypass this check; the operator is asserting
+ * the price is current even if the auto-refresher hasn't touched it.
+ */
+export const COMPETITOR_STALE_DAYS = 14;
+
+/** Exported for smoke tests. */
+export function isStale(row: CompetitorModel, cutoffMs: number): boolean {
+  // Manual override trumps the refresh clock. Operators sometimes pin a
+  // price deliberately (e.g. scraped today by hand because the auto-fetch
+  // is broken for that vendor).
+  if (row.manually_overridden_at) return false;
+  if (!row.last_refreshed_at) return true; // never refreshed = treat as stale
+  return Date.parse(row.last_refreshed_at) < cutoffMs;
+}
+
+/**
+ * Load active competitor rows for prompt injection / dashboard listing.
+ *
+ * For prompt use (default), rows whose `last_refreshed_at` is older than
+ * 14 days AND that have no recent manual override are filtered out.
+ * Dashboards that WANT to see stale rows (so operators can spot what needs
+ * re-scraping) can pass `{ includeStale: true }`.
+ */
+export async function loadCompetitorModels(
+  opts: { activeOnly?: boolean; includeStale?: boolean } = {}
+): Promise<CompetitorModel[]> {
   const supabase = createServiceClient();
   let query = supabase
     .from('competitor_models')
@@ -26,7 +56,19 @@ export async function loadCompetitorModels(opts: { activeOnly?: boolean } = {}):
     console.error('[competitors] load failed:', error.message);
     return [];
   }
-  return (data ?? []) as CompetitorModel[];
+  const rows = (data ?? []) as CompetitorModel[];
+  if (opts.includeStale) return rows;
+
+  const cutoffMs = Date.now() - COMPETITOR_STALE_DAYS * 24 * 60 * 60 * 1000;
+  const filtered = rows.filter((r) => !isStale(r, cutoffMs));
+  const dropped = rows.length - filtered.length;
+  if (dropped > 0) {
+    console.warn(
+      `[competitors] dropped ${dropped} stale row(s) older than ${COMPETITOR_STALE_DAYS} days ` +
+        `(no manual override). Run /api/cron/refresh-competitors or edit from dashboard.`
+    );
+  }
+  return filtered;
 }
 
 /** $/Wh — the metric the whole pitch hangs on. */

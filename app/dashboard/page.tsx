@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import type { Conversation, Message } from '@/lib/types';
+import type { Conversation, Message, CustomerProfile } from '@/lib/types';
 
 // Poll the API routes every N ms. The dashboard used to subscribe to Supabase
 // postgres_changes directly with the anon key, but RLS (correctly) filters
@@ -373,8 +373,119 @@ function Composer({
 
 // ── Customer Card ────────────────────────────────────────────
 
+// ── Reading chips (structured behavioral read) ─────────────
+// Renders the customer_profiles.reading JSONB as color-coded chips.
+// Rationale: operators were making triage decisions blind because the
+// reading lived only in the agent's system prompt. Surfacing it here
+// lets a human spot "this customer is listo_comprar but Sol is still in
+// education mode" without reading the full transcript.
+
+const STAGE_COLORS: Record<string, string> = {
+  explorando: 'bg-gray-700 text-gray-300',
+  evaluando: 'bg-blue-900 text-blue-300',
+  listo_comprar: 'bg-green-900 text-green-300',
+  post_venta: 'bg-purple-900 text-purple-300',
+};
+
+const URGENCY_COLORS: Record<string, string> = {
+  ya: 'bg-red-900 text-red-300',
+  semanas: 'bg-orange-900 text-orange-300',
+  meses: 'bg-yellow-900 text-yellow-300',
+  sin_prisa: 'bg-gray-700 text-gray-300',
+};
+
+const PRICE_COLORS: Record<string, string> = {
+  alta: 'bg-red-900 text-red-300',
+  media: 'bg-amber-900 text-amber-300',
+  baja: 'bg-green-900 text-green-300',
+};
+
+const KNOWLEDGE_COLORS: Record<string, string> = {
+  novato: 'bg-sky-900 text-sky-300',
+  intermedio: 'bg-cyan-900 text-cyan-300',
+  experto: 'bg-teal-900 text-teal-300',
+};
+
+function ReadingChips({ profile }: { profile: CustomerProfile | null }) {
+  const reading = profile?.reading;
+  if (!reading) return null;
+
+  const chips: Array<{ label: string; value: string; className: string }> = [];
+
+  if (reading.intent_stage) {
+    chips.push({
+      label: 'Etapa',
+      value: reading.intent_stage.replace('_', ' '),
+      className: STAGE_COLORS[reading.intent_stage] ?? 'bg-surface-700 text-gray-300',
+    });
+  }
+  if (reading.urgency) {
+    chips.push({
+      label: 'Urgencia',
+      value: reading.urgency.replace('_', ' '),
+      className: URGENCY_COLORS[reading.urgency] ?? 'bg-surface-700 text-gray-300',
+    });
+  }
+  if (reading.price_sensitivity) {
+    chips.push({
+      label: 'Precio',
+      value: reading.price_sensitivity,
+      className: PRICE_COLORS[reading.price_sensitivity] ?? 'bg-surface-700 text-gray-300',
+    });
+  }
+  if (reading.knowledge_level) {
+    chips.push({
+      label: 'Nivel',
+      value: reading.knowledge_level,
+      className: KNOWLEDGE_COLORS[reading.knowledge_level] ?? 'bg-surface-700 text-gray-300',
+    });
+  }
+
+  if (chips.length === 0 && (!reading.objection_themes || reading.objection_themes.length === 0) && !reading.arrival_source) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-gray-500">Lectura del cliente</p>
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {chips.map((c) => (
+            <span
+              key={c.label}
+              className={`text-[10px] px-2 py-0.5 rounded-full ${c.className}`}
+              title={`${c.label}: ${c.value}`}
+            >
+              {c.label}: <span className="font-medium">{c.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {reading.objection_themes && reading.objection_themes.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          <span className="text-[10px] text-gray-500 px-1">Objeciones:</span>
+          {reading.objection_themes.slice(0, 6).map((t) => (
+            <span
+              key={t}
+              className="text-[10px] px-2 py-0.5 rounded-full bg-rose-900 text-rose-300"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+      {reading.arrival_source && (
+        <p className="text-[10px] text-gray-500 italic">
+          Origen: {reading.arrival_source}
+        </p>
+      )}
+    </div>
+  );
+}
+
 interface CustomerCardProps {
   conv: Conversation;
+  profile: CustomerProfile | null;
   onDeescalate: () => void;
   onEscalate: () => void;
   onClose: () => void;
@@ -383,7 +494,7 @@ interface CustomerCardProps {
   loading: boolean;
 }
 
-function CustomerCard({ conv, onDeescalate, onEscalate, onClose, onMarkWon, onCloseDrawer, loading }: CustomerCardProps) {
+function CustomerCard({ conv, profile, onDeescalate, onEscalate, onClose, onMarkWon, onCloseDrawer, loading }: CustomerCardProps) {
   const segmentLabels: Record<string, string> = {
     cuban_family: 'Familia cubana',
     general: 'Cliente general',
@@ -453,6 +564,8 @@ function CustomerCard({ conv, onDeescalate, onEscalate, onClose, onMarkWon, onCl
             )}
           </div>
         )}
+
+        <ReadingChips profile={profile} />
 
         {conv.escalation_reason && (
           <div>
@@ -535,6 +648,7 @@ export default function DashboardPage() {
   const [conversations, setConversations] = useState<ConvWithLast[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState<CustomerProfile | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'escalated' | 'closed'>('all');
   const [loading, setLoading] = useState(false);
@@ -581,21 +695,47 @@ export default function DashboardPage() {
     setMessages(data ?? []);
   }, []);
 
+  // Load the customer profile row for the selected conversation so we can
+  // render the structured reading chips. Kept separate from loadMessages
+  // because it refreshes on a different cadence (profile only moves every
+  // few turns; messages move every poll).
+  const loadProfile = useCallback(async (convId: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${convId}/profile`, { cache: 'no-store' });
+      if (!res.ok) {
+        setSelectedProfile(null);
+        return;
+      }
+      const { profile } = (await res.json()) as { profile: CustomerProfile | null };
+      setSelectedProfile(profile);
+    } catch {
+      setSelectedProfile(null);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => { loadConversations({ showSpinner: true }); }, [loadConversations]);
 
   useEffect(() => {
-    if (selectedId) loadMessages(selectedId);
-  }, [selectedId, loadMessages]);
+    if (selectedId) {
+      loadMessages(selectedId);
+      loadProfile(selectedId);
+    } else {
+      setSelectedProfile(null);
+    }
+  }, [selectedId, loadMessages, loadProfile]);
 
   // Polling — refresh conversations list and the open thread
   useEffect(() => {
     const t = setInterval(() => {
       loadConversations();
-      if (selectedId) loadMessages(selectedId);
+      if (selectedId) {
+        loadMessages(selectedId);
+        loadProfile(selectedId);
+      }
     }, POLL_MS);
     return () => clearInterval(t);
-  }, [loadConversations, loadMessages, selectedId]);
+  }, [loadConversations, loadMessages, loadProfile, selectedId]);
 
   // Selected conversation object
   const selectedConv = conversations.find((c) => c.id === selectedId) ?? null;
@@ -872,6 +1012,7 @@ export default function DashboardPage() {
             <div className="hidden md:flex">
               <CustomerCard
                 conv={selectedConv}
+                profile={selectedProfile}
                 onDeescalate={handleDeescalate}
                 onEscalate={handleEscalate}
                 onClose={handleClose}
@@ -905,6 +1046,7 @@ export default function DashboardPage() {
           >
             <CustomerCard
               conv={selectedConv}
+              profile={selectedProfile}
               onDeescalate={handleDeescalate}
               onEscalate={handleEscalate}
               onClose={handleClose}
