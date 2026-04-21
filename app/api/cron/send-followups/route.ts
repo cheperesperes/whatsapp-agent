@@ -7,6 +7,7 @@ import {
 } from '@/lib/supabase';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { buildFollowupDraft, hasPriorFollowup } from '@/lib/followup';
+import { isInQuietHours, timezoneFromPhone } from '@/lib/timezone';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -83,6 +84,7 @@ type SkipReason =
   | 'no_product_link'
   | 'no_user_messages'
   | 'already_followed_up'
+  | 'quiet_hours'
   | 'send_failed';
 
 interface CandidateRow {
@@ -217,6 +219,22 @@ export async function GET(req: NextRequest) {
     // on every inbound). Default to 'es' — this is a Spanish-first product.
     const profile = await loadCustomerProfile(c.phone_number);
     const language: 'es' | 'en' = profile?.language === 'en' ? 'en' : 'es';
+
+    // Quiet-hours guard. If local time at the customer is between 21:00 and
+    // 08:00 we skip — a sales nudge at dinner or pre-dawn converts worse
+    // than the same nudge at noon and invites opt-outs. Fall back to the
+    // phone-derived tz if the profile doesn't have one stored yet (early
+    // conversations before turn-1 seed has run).
+    const effectiveTz = profile?.user_timezone ?? timezoneFromPhone(c.phone_number);
+    const quiet = isInQuietHours(effectiveTz);
+    if (quiet.isQuiet) {
+      skipped.push({
+        conversation_id: c.id,
+        reason: 'quiet_hours',
+        detail: `local hour ${quiet.localHour} in ${quiet.timezone}`,
+      });
+      continue;
+    }
 
     // Build the draft and (unless dry-run) send + persist it.
     const draft = buildFollowupDraft({

@@ -189,6 +189,10 @@ export interface CustomerProfile {
   summary: string | null;
   facts: CustomerProfileFact[];
   reading: CustomerProfileReading | null;
+  /** IANA timezone (e.g. "America/Havana"). NULL = unknown; callers
+   *  should fall back to "America/New_York". Used by crons to enforce
+   *  quiet hours so we don't nudge at 2am local. */
+  user_timezone: string | null;
   last_extracted_at: string | null;
   created_at: string;
   updated_at: string;

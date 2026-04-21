@@ -37,6 +37,7 @@ import {
   extractKBSuggestions,
   scoreLeadQuality,
   mergeReading,
+  buildDynamicDirectives,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import { loadCompetitorModels, formatCompetitorsForPrompt } from '@/lib/competitors';
@@ -46,6 +47,7 @@ import {
   formatLanguageLockForPrompt,
 } from '@/lib/language';
 import { buildFirstContactDirective } from '@/lib/ad-landing';
+import { timezoneFromPhone } from '@/lib/timezone';
 import {
   sendWhatsAppMessage,
   sendMessage,
@@ -495,6 +497,49 @@ async function processWebhook(body: unknown) {
           )
         );
       }
+
+      // Also seed user_timezone on turn 1 — derived from the phone country
+      // code via timezoneFromPhone. This is BEFORE Haiku has had a chance to
+      // extract anything, so the followup cron (which runs 18h later) has a
+      // tz even for brand-new conversations. Skip if we already have one
+      // stored (operator might have corrected it manually).
+      if (!customerProfile?.user_timezone) {
+        const seededTz = timezoneFromPhone(senderPhone);
+        waitUntil(
+          upsertCustomerProfile(senderPhone, { user_timezone: seededTz }).catch(
+            (err) =>
+              console.warn(
+                `[WEBHOOK] user_timezone seed failed for ${senderPhone}:`,
+                err
+              )
+          )
+        );
+        console.log(
+          `[WEBHOOK] Seeded user_timezone=${seededTz} for ${senderPhone}`
+        );
+      }
+    }
+
+    // ── Per-turn dynamic directives ─────────────────────────
+    // Computed from: how many user turns we've had, the latest reading,
+    // and the raw text of this message. Emits a short block that tells
+    // Sol to soft-close when the customer is ready, or to pivot once
+    // before backing off when the customer rejects. Empty string when no
+    // rule applies — the prompt assembly handles that gracefully.
+    const userTurnCount =
+      historyWithoutLast.filter((m) => m.role === 'user').length + 1; // +1 for current msg
+    const dynamicDirectives = buildDynamicDirectives({
+      userTurnCount,
+      intentStage: customerProfile?.reading?.intent_stage ?? undefined,
+      lastUserText: messageText,
+    });
+    if (dynamicDirectives) {
+      console.log(
+        `[WEBHOOK] Dynamic directives for ${senderPhone}: ` +
+          `turnCount=${userTurnCount} ` +
+          `stage=${customerProfile?.reading?.intent_stage ?? 'none'} ` +
+          `rules=${dynamicDirectives.split('\n').length - 1}`
+      );
     }
 
     const { message: aiMessage, handoffReason, metrics } = await generateSolResponse(
@@ -506,7 +551,8 @@ async function processWebhook(body: unknown) {
       intentHint,
       competitorPrompt,
       languageLock,
-      firstContactDirective
+      firstContactDirective,
+      dynamicDirectives
     );
 
     // ── Funnel metrics — log for analytics (not sent to customer) ──
@@ -601,7 +647,11 @@ async function runBackgroundLearning(
   history: Message[],
   existingProfile: CustomerProfile | null
 ) {
-  if (history.length < 3) return;
+  // Allow extraction from the very first [user, assistant] pair so turn 2
+  // inherits a `reading` from turn 1. Lead-scoring still needs more
+  // context and gates itself internally (scoreLeadQuality checks its own
+  // history length), as does KB-suggestion extraction.
+  if (history.length < 2) return;
 
   const [facts, suggestions, leadScore] = await Promise.all([
     extractCustomerFacts(history, existingProfile),

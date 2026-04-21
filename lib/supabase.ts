@@ -762,6 +762,8 @@ export async function upsertCustomerProfile(
      *  existing" rule is applied). An empty object {} clears nothing — to
      *  actually blank the column use {reading: null}. */
     reading?: CustomerProfileReading | null;
+    /** IANA timezone for quiet-hours enforcement on outbound crons. */
+    user_timezone?: string | null;
   }
 ): Promise<void> {
   const supabase = createServiceClient();
@@ -776,6 +778,7 @@ export async function upsertCustomerProfile(
   if (patch.summary !== undefined) payload.summary = patch.summary;
   if (patch.facts !== undefined) payload.facts = patch.facts;
   if (patch.reading !== undefined) payload.reading = patch.reading;
+  if (patch.user_timezone !== undefined) payload.user_timezone = patch.user_timezone;
 
   const { error } = await supabase
     .from('customer_profiles')
