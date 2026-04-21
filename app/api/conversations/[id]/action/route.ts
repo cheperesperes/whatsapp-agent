@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   deescalateConversation,
   escalateConversation,
+  markConversationWon,
   createServiceClient,
 } from '@/lib/supabase';
 import { sendHandoffAlert } from '@/lib/whatsapp';
@@ -15,6 +16,7 @@ const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
 //   { action: 'deescalate' }
 //   { action: 'close' }
 //   { action: 'escalate', reason?: string }
+//   { action: 'won' }
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -38,6 +40,21 @@ export async function POST(
       .update({ status: 'closed', updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === 'won') {
+    // markConversationWon sets converted_at + status='closed' in one update.
+    // It's idempotent server-side, but we also block re-marking from the UI
+    // by hiding the button after converted_at is set.
+    try {
+      await markConversationWon(id);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'update failed' },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({ ok: true });
   }
 

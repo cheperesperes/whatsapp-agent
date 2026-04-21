@@ -238,5 +238,13 @@ export function parseOwnerCommand(
     return { command: 'broadcast', args: broadcastMatch[1].trim() };
   }
 
+  // /won <phone> — operator confirms a conversation closed as a sale.
+  // Accepts the phone in any readable form (with or without +, spaces,
+  // hyphens). getConversationByAnyPhone normalizes on the way in.
+  const wonMatch = trimmed.match(/^\/won\s+([+\d][\d\s\-().]{5,})$/i);
+  if (wonMatch) {
+    return { command: 'won', args: wonMatch[1].trim() };
+  }
+
   return null;
 }

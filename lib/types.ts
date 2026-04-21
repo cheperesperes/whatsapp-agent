@@ -38,6 +38,9 @@ export interface Conversation {
   lead_reason: string | null;
   recommended_action: string | null;
   lead_scored_at: string | null;
+  /** When the operator confirmed this conversation led to a sale.
+   *  NULL = not converted. Set via /won <phone> or dashboard button. */
+  converted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -216,6 +219,9 @@ export interface OverviewMetrics {
   messages_sol: number;
   escalated: number;
   deep_conversations: number;
+  /** Count of conversations with converted_at set within the window.
+   *  Ground-truth sales marked by the operator via /won or dashboard. */
+  conversions: number;
 }
 
 export interface RepeatedQuestion {

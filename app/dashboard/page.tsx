@@ -86,7 +86,12 @@ function ConvItem({ conv, isSelected, onClick }: ConvItemProps) {
         <div className="mt-1 flex items-center gap-1.5 flex-wrap">
           <LeadBadge quality={conv.lead_quality} />
           {conv.escalated && (
-            <span className="text-xs text-red-400">🔴 Requiere atención</span>
+            <span
+              className="text-xs text-red-400 truncate max-w-[220px]"
+              title={conv.escalation_reason ?? 'Requiere atención'}
+            >
+              🔴 {conv.escalation_reason ? conv.escalation_reason.slice(0, 40) : 'Requiere atención'}
+            </span>
           )}
         </div>
       </div>
@@ -373,11 +378,12 @@ interface CustomerCardProps {
   onDeescalate: () => void;
   onEscalate: () => void;
   onClose: () => void;
+  onMarkWon: () => void;
   onCloseDrawer?: () => void;
   loading: boolean;
 }
 
-function CustomerCard({ conv, onDeescalate, onEscalate, onClose, onCloseDrawer, loading }: CustomerCardProps) {
+function CustomerCard({ conv, onDeescalate, onEscalate, onClose, onMarkWon, onCloseDrawer, loading }: CustomerCardProps) {
   const segmentLabels: Record<string, string> = {
     cuban_family: 'Familia cubana',
     general: 'Cliente general',
@@ -428,6 +434,11 @@ function CustomerCard({ conv, onDeescalate, onEscalate, onClose, onCloseDrawer, 
         <div>
           <p className="text-xs text-gray-500">Estado</p>
           <StatusBadge status={conv.status} />
+          {conv.converted_at && (
+            <p className="text-xs text-green-400 mt-1">
+              ✅ Venta ganada ({formatFull(conv.converted_at)})
+            </p>
+          )}
         </div>
 
         {conv.lead_quality && (
@@ -475,6 +486,17 @@ function CustomerCard({ conv, onDeescalate, onEscalate, onClose, onCloseDrawer, 
             className="w-full text-xs px-3 py-2 rounded-lg bg-red-900 hover:bg-red-800 text-red-300 border border-red-800 transition-colors disabled:opacity-50"
           >
             {loading ? 'Procesando...' : '🚨 Escalar a operador'}
+          </button>
+        )}
+
+        {!conv.converted_at && (
+          <button
+            type="button"
+            onClick={onMarkWon}
+            disabled={loading}
+            className="w-full text-xs px-3 py-2 rounded-lg bg-green-900 hover:bg-green-800 text-green-300 border border-green-800 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Procesando...' : '✅ Marcar como venta ganada'}
           </button>
         )}
 
@@ -596,11 +618,17 @@ export default function DashboardPage() {
 
   // Actions — POST to server API which uses service role
   async function postAction(
-    action: 'deescalate' | 'close' | 'escalate',
+    action: 'deescalate' | 'close' | 'escalate' | 'won',
     payload?: Record<string, unknown>
   ) {
     if (!selectedConv) return;
     setActionLoading(true);
+    const verbMap: Record<typeof action, string> = {
+      close: 'cerrar',
+      escalate: 'escalar',
+      deescalate: 'devolver a Sol',
+      won: 'marcar como venta ganada',
+    };
     try {
       const res = await fetch(`/api/conversations/${selectedConv.id}/action`, {
         method: 'POST',
@@ -611,9 +639,8 @@ export default function DashboardPage() {
         const text = await res.text().catch(() => '');
         console.error(`[DASHBOARD] ${action} failed: ${res.status}`, text);
         alert(
-          `No se pudo ${
-            action === 'close' ? 'cerrar' : action === 'escalate' ? 'escalar' : 'devolver a Sol'
-          } la conversación.\n` + `Status: ${res.status}\n${text.slice(0, 200)}`
+          `No se pudo ${verbMap[action]} la conversación.\n` +
+            `Status: ${res.status}\n${text.slice(0, 200)}`
         );
       } else {
         const data = (await res.json().catch(() => ({}))) as { warning?: string };
@@ -623,15 +650,13 @@ export default function DashboardPage() {
               ? `⚠️ Escalado, pero alerta WhatsApp falló`
               : `🚨 Escalado — alerta enviada al operador`
           );
+        } else if (action === 'won') {
+          flashToast('✅ Venta registrada — gracias por cerrar el lazo.');
         }
       }
     } catch (err) {
       console.error(`[DASHBOARD] ${action} network error:`, err);
-      alert(
-        `Error de red al ${
-          action === 'close' ? 'cerrar' : action === 'escalate' ? 'escalar' : 'devolver a Sol'
-        }. Revise la consola.`
-      );
+      alert(`Error de red al ${verbMap[action]}. Revise la consola.`);
     } finally {
       setActionLoading(false);
       loadConversations();
@@ -644,6 +669,19 @@ export default function DashboardPage() {
 
   async function handleClose() {
     await postAction('close');
+  }
+
+  async function handleMarkWon() {
+    // Mild speed-bump: this flips a real business metric (and closes the
+    // thread), so confirm before firing. We don't allow undoing from the UI —
+    // an accidental win is friction-heavy to reverse.
+    if (!selectedConv) return;
+    const ok = window.confirm(
+      `¿Marcar ${selectedConv.customer_name ?? selectedConv.phone_number} como venta ganada?\n\n` +
+        `Esto cierra la conversación y suma 1 al contador semanal. No se puede deshacer desde el dashboard.`
+    );
+    if (!ok) return;
+    await postAction('won');
   }
 
   async function handleEscalate() {
@@ -837,6 +875,7 @@ export default function DashboardPage() {
                 onDeescalate={handleDeescalate}
                 onEscalate={handleEscalate}
                 onClose={handleClose}
+                onMarkWon={handleMarkWon}
                 loading={actionLoading}
               />
             </div>
@@ -869,6 +908,7 @@ export default function DashboardPage() {
               onDeescalate={handleDeescalate}
               onEscalate={handleEscalate}
               onClose={handleClose}
+              onMarkWon={handleMarkWon}
               onCloseDrawer={() => setInfoOpen(false)}
               loading={actionLoading}
             />
