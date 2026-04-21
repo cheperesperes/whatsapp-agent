@@ -143,12 +143,49 @@ export interface CustomerProfileFact {
   verified_at: string;
 }
 
+/**
+ * Structured behavioral read of the customer, used to adapt Sol's tone and
+ * content in real time. All fields are optional — the Haiku extractor emits
+ * only what it has signal on, and the merge rule is "new value wins, null
+ * preserves existing". That way a later turn can't downgrade a confident
+ * earlier read by emitting null.
+ *
+ * This is the v1 schema: intent_stage / knowledge_level / price_sensitivity /
+ * urgency / objection_themes / arrival_source. The column is JSONB so future
+ * dimensions can be added without a migration.
+ */
+export interface CustomerProfileReading {
+  /** Funnel position. explorando = just clicked, hasn't said what they need.
+   *  evaluando = comparing options. listo_comprar = asked for link / payment /
+   *  shipping. post_venta = already bought, still chatting. */
+  intent_stage?: 'explorando' | 'evaluando' | 'listo_comprar' | 'post_venta' | null;
+  /** Technical vocabulary proficiency. Drives whether Sol uses LFP/MPPT/Wh or
+   *  plain-language analogies. */
+  knowledge_level?: 'novato' | 'intermedio' | 'experto' | null;
+  /** How central price is to their decision. alta = leads with discounts,
+   *  media = considers but not blocker, baja = will pay for the right product. */
+  price_sensitivity?: 'alta' | 'media' | 'baja' | null;
+  /** Decision pace. ya = active outage / immediate need. semanas = weeks out.
+   *  meses = planning ahead. sin_prisa = exploring. */
+  urgency?: 'ya' | 'semanas' | 'meses' | 'sin_prisa' | null;
+  /** Objection themes raised so far (up to 6). Used to address proactively in
+   *  the next reply. Examples: 'envío', 'confianza', 'precio', 'técnico',
+   *  'pago', 'compatibilidad'. */
+  objection_themes?: string[];
+  /** How the customer first arrived. Seeded on turn 1.
+   *  Values: 'facebook_ad:<variant>' | 'organic' | null. */
+  arrival_source?: string | null;
+  /** Timestamp of the most recent read update (either Haiku or turn-1 seed). */
+  last_updated_at?: string | null;
+}
+
 export interface CustomerProfile {
   phone_number: string;
   display_name: string | null;
   language: string | null;
   summary: string | null;
   facts: CustomerProfileFact[];
+  reading: CustomerProfileReading | null;
   last_extracted_at: string | null;
   created_at: string;
   updated_at: string;

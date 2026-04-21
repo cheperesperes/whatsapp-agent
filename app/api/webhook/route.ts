@@ -34,10 +34,16 @@ import {
   extractCustomerFacts,
   extractKBSuggestions,
   scoreLeadQuality,
+  mergeReading,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import { loadCompetitorModels, formatCompetitorsForPrompt } from '@/lib/competitors';
 import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
+import {
+  detectLanguageFromHistory,
+  formatLanguageLockForPrompt,
+} from '@/lib/language';
+import { buildFirstContactDirective } from '@/lib/ad-landing';
 import {
   sendWhatsAppMessage,
   sendMessage,
@@ -402,6 +408,93 @@ async function processWebhook(body: unknown) {
       );
     }
 
+    // ── Deterministic language pinning ──────────────────────
+    // Zero-cost heuristic over the last 5 user turns. Spanglish = Spanish
+    // (we serve Cuban families). The resulting lock is injected at the
+    // END of the system prompt so the model reads it last, as a hard
+    // imperative. Catches the 17:20 ET prod bug where Sol replied in
+    // English to "Hello! Que capacidad tiene...".
+    const recentUserMsgs = [
+      ...historyWithoutLast
+        .filter((m) => m.role === 'user')
+        .slice(-4)
+        .map((m) => m.content),
+      messageText,
+    ];
+    const detectedLang = detectLanguageFromHistory(
+      recentUserMsgs,
+      customerProfile?.language
+    );
+    const languageLock = formatLanguageLockForPrompt(detectedLang);
+    console.log(
+      `[WEBHOOK] Language pin for ${senderPhone}: ${detectedLang} (persisted=${customerProfile?.language ?? 'none'})`
+    );
+    // Persist the detection so subsequent turns inherit it as fallback
+    // when the current message is SKU-only or emoji-only. Non-blocking.
+    if (customerProfile?.language !== detectedLang) {
+      waitUntil(
+        upsertCustomerProfile(senderPhone, { language: detectedLang }).catch(
+          (err) =>
+            console.warn(
+              `[WEBHOOK] language persist failed for ${senderPhone}:`,
+              err
+            )
+        )
+      );
+    }
+
+    // ── Turn-1 first-contact directive ──────────────────────
+    // Most Oiikon customers arrive via Facebook ads whose WhatsApp CTA
+    // pre-fills one of a handful of templates ("¿Qué productos ofrecen?",
+    // "Hello! Can I get more info on this?", "Hola"). Without this block
+    // Sol was treating those templates as real questions and dumping the
+    // catalog on turn 1 — the opposite of what a trained salesperson does
+    // with an ad-click lead. We check whether this is the very first turn
+    // (historyWithoutLast is empty → the user message we're replying to is
+    // their first ever) and, if so, inject a directive that routes Sol to
+    // a warm greeting + ONE qualifying question. Detection is strict
+    // (exact match after normalization) so real questions fall through to
+    // the softer organic-first-contact directive that still forces an
+    // intro but lets her answer the question.
+    let firstContactDirective = '';
+    if (historyWithoutLast.length === 0) {
+      const built = buildFirstContactDirective(messageText, detectedLang);
+      if (built) {
+        firstContactDirective = built.directive;
+        console.log(
+          `[WEBHOOK] Turn-1 directive for ${senderPhone}: ` +
+            (built.adMatch
+              ? `ad_arrival variant=${built.adMatch.variant} language=${built.adMatch.language}`
+              : `organic language=${detectedLang}`)
+        );
+
+        // Seed arrival_source into the structured read so later turns know
+        // HOW the customer landed (ad vs organic). This is the only signal
+        // that can't be recovered later from the transcript — once they've
+        // exchanged a few messages, the ad opener is far up in the history
+        // and Haiku would miss it. Seed it now, inline, as a merge so we
+        // don't clobber anything else the Haiku extractor may have already
+        // written.
+        const arrivalSource = built.adMatch
+          ? `facebook_ad:${built.adMatch.variant}`
+          : 'organic';
+        const seededReading = mergeReading(
+          customerProfile?.reading ?? null,
+          { arrival_source: arrivalSource },
+          new Date().toISOString()
+        );
+        waitUntil(
+          upsertCustomerProfile(senderPhone, { reading: seededReading }).catch(
+            (err) =>
+              console.warn(
+                `[WEBHOOK] arrival_source seed failed for ${senderPhone}:`,
+                err
+              )
+          )
+        );
+      }
+    }
+
     const { message: aiMessage, handoffReason, metrics } = await generateSolResponse(
       historyWithoutLast,
       messageText,
@@ -409,7 +502,9 @@ async function processWebhook(body: unknown) {
       kbPrompt,
       profilePrompt + dispatchedPrompt,
       intentHint,
-      competitorPrompt
+      competitorPrompt,
+      languageLock,
+      firstContactDirective
     );
 
     // ── Funnel metrics — log for analytics (not sent to customer) ──
@@ -513,11 +608,22 @@ async function runBackgroundLearning(
   ]);
 
   if (facts) {
+    // `language` is intentionally NOT written here — the deterministic
+    // heuristic in the main webhook path owns it. Letting Haiku override
+    // would re-introduce the exact drift that caused the 17:20 ET prod
+    // bug (customer wrote Spanglish, Haiku decided "en", Sol replied
+    // in English to a Spanish speaker).
+    //
+    // `reading` already comes pre-merged from extractCustomerFacts (it
+    // runs mergeReading internally against existingProfile.reading), so
+    // we just persist whatever it returned. `arrival_source` is preserved
+    // across merges because freshReading.arrival_source is never emitted
+    // by Haiku — only the webhook's turn-1 path seeds it.
     await upsertCustomerProfile(phone, {
       display_name: facts.display_name ?? null,
-      language: facts.language ?? null,
       summary: facts.summary ?? null,
       facts: facts.facts ?? [],
+      reading: facts.reading ?? null,
     });
   }
 

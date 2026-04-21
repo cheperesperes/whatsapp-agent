@@ -1,7 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import type { Message, CustomerProfile, CustomerProfileFact } from './types';
+import type {
+  Message,
+  CustomerProfile,
+  CustomerProfileFact,
+  CustomerProfileReading,
+} from './types';
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -57,10 +62,21 @@ export async function generateSolResponse(
   knowledgeBase = '',
   customerProfilePrompt = '',
   intentHint = '',
-  competitorComparisons = ''
+  competitorComparisons = '',
+  languageLock = '',
+  firstContactDirective = ''
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
+  // The language lock and first-contact directive land LAST, after FECHA,
+  // so they're the final instructions the model reads before generating.
+  // Soft signals earlier in the prompt ("Idioma del cliente: es") were
+  // being ignored in production — placing the hard lock at the tail fixes
+  // that. The first-contact directive (only present on turn 1) is added
+  // AFTER languageLock because it's the most recent-state instruction:
+  // it tells Sol "this is turn 1 and here is exactly how to open". Without
+  // it, Sol was treating FB-ad openers as real questions and dumping the
+  // full catalog before the customer said anything concrete.
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
@@ -69,7 +85,7 @@ ${customerProfilePrompt}
 ${competitorComparisons}
 ${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-`;
+${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}`;
 
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',
@@ -123,8 +139,74 @@ FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 
 // ============================================================
 
 /**
- * Extract per-customer facts from a conversation thread.
+ * Valid enum values for each reading dimension. Kept here so the
+ * parser can coerce / reject unexpected strings from the model.
+ */
+const READING_INTENT_STAGES = new Set([
+  'explorando',
+  'evaluando',
+  'listo_comprar',
+  'post_venta',
+]);
+const READING_KNOWLEDGE_LEVELS = new Set(['novato', 'intermedio', 'experto']);
+const READING_PRICE_SENSITIVITIES = new Set(['alta', 'media', 'baja']);
+const READING_URGENCIES = new Set(['ya', 'semanas', 'meses', 'sin_prisa']);
+
+/**
+ * Coerce a string into a valid reading enum value, returning null for
+ * unknown / empty / malformed input. Used per-field when parsing Haiku output.
+ */
+function coerceEnum<T extends string>(
+  value: unknown,
+  allowed: Set<string>
+): T | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  return allowed.has(v) ? (v as T) : null;
+}
+
+/**
+ * Merge a new (partially-populated) read with the existing stored read,
+ * enforcing the "null preserves existing" rule. A later turn emitting
+ * `intent_stage: null` must NOT clobber a confident earlier read — that
+ * would make the signal less useful as the conversation develops.
+ * Only non-null fresh values overwrite. `objection_themes` unions and
+ * caps at 6 to keep the prompt block bounded.
+ */
+function mergeReading(
+  existing: CustomerProfileReading | null | undefined,
+  fresh: Partial<CustomerProfileReading>,
+  now: string
+): CustomerProfileReading {
+  const prev = existing ?? {};
+  const merged: CustomerProfileReading = { ...prev };
+
+  if (fresh.intent_stage != null) merged.intent_stage = fresh.intent_stage;
+  if (fresh.knowledge_level != null) merged.knowledge_level = fresh.knowledge_level;
+  if (fresh.price_sensitivity != null) merged.price_sensitivity = fresh.price_sensitivity;
+  if (fresh.urgency != null) merged.urgency = fresh.urgency;
+  if (fresh.arrival_source != null) merged.arrival_source = fresh.arrival_source;
+
+  if (Array.isArray(fresh.objection_themes) && fresh.objection_themes.length > 0) {
+    const prevThemes = prev.objection_themes ?? [];
+    const combined = [...prevThemes, ...fresh.objection_themes]
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length > 0);
+    merged.objection_themes = Array.from(new Set(combined)).slice(-6);
+  }
+
+  merged.last_updated_at = now;
+  return merged;
+}
+
+/**
+ * Extract per-customer facts + structured read from a conversation thread.
  * Strict rule: only facts the customer literally stated.
+ *
+ * The read adds behavioral signals (intent_stage, knowledge_level,
+ * price_sensitivity, urgency, objection_themes) used to adapt Sol's tone
+ * and content on the next turn. Unlike `facts`, the read enums are closed
+ * sets so the operator-facing dashboard can filter on them reliably.
  */
 export async function extractCustomerFacts(
   history: Message[],
@@ -134,6 +216,7 @@ export async function extractCustomerFacts(
   language?: string | null;
   summary?: string | null;
   facts?: CustomerProfileFact[];
+  reading?: CustomerProfileReading | null;
 } | null> {
   if (history.length < 3) return null;
 
@@ -150,15 +233,43 @@ Devuelve SOLO JSON válido con esta forma:
   "display_name": string | null,
   "language": "es" | "en" | null,
   "summary": string | null,
-  "new_facts": string[]
+  "new_facts": string[],
+  "reading": {
+    "intent_stage": "explorando" | "evaluando" | "listo_comprar" | "post_venta" | null,
+    "knowledge_level": "novato" | "intermedio" | "experto" | null,
+    "price_sensitivity": "alta" | "media" | "baja" | null,
+    "urgency": "ya" | "semanas" | "meses" | "sin_prisa" | null,
+    "objection_themes": string[]
+  }
 }
 
-Reglas:
+Reglas de hechos:
 - "display_name": solo si el cliente dijo claramente su nombre.
 - "language": "es" si el cliente escribe en español, "en" si en inglés, null si ambiguo.
 - "summary": máximo 200 caracteres, resumen neutral de quién es el cliente y qué busca (p.ej. "Cliente en Miami comprando para familia en Cuba; interesado en estación portátil para nevera y luces").
 - "new_facts": hechos concretos que el cliente mencionó y que NO aparecen ya en la lista de hechos previos. Ejemplos: "Vive en Miami", "Compra para su madre en Santiago de Cuba", "Su familia tiene nevera vieja y ventilador", "Presupuesto cerca de $800". NO incluyas hechos genéricos o inferidos.
-- Si no hay nada nuevo que agregar, devuelve {"display_name": null, "language": null, "summary": null, "new_facts": []}.
+
+Reglas de lectura (SOLO emite un valor si hay SEÑAL EXPLÍCITA en la conversación; null si no):
+- "intent_stage":
+    • "listo_comprar" SOLO si preguntó por link, pago, envío, "cómo lo compro" o "dónde pago".
+    • "evaluando" si compara productos, pide diferencias, o pregunta "¿cuál me recomienda?".
+    • "explorando" por defecto cuando hay curiosidad sin comparación.
+    • "post_venta" si ya compró y pregunta por uso o problemas.
+- "knowledge_level":
+    • "experto" SOLO si usa specs concretas (Wh, Ah, V, LFP, MPPT, kWh).
+    • "novato" si hace preguntas básicas tipo "¿qué es eso?" o "¿cómo funciona?".
+    • "intermedio" cuando conoce algo pero no usa specs.
+- "price_sensitivity":
+    • "alta" SOLO si pregunta por descuentos, financiamiento, o dice "es caro" / "muy costoso".
+    • "baja" si pide "el mejor" o "más potente" sin mirar precio.
+    • "media" por defecto.
+- "urgency":
+    • "ya" SOLO si menciona apagón activo o "lo necesito esta semana".
+    • "semanas"/"meses" si menciona fecha concreta.
+    • "sin_prisa" si dice "estoy explorando" o "para más adelante".
+- "objection_themes": TEMAS que mencionó como obstáculo. Valores posibles (de este set): "envío", "confianza", "precio", "técnico", "pago", "compatibilidad". Máximo 6. Si no mencionó objeciones, devuelve [].
+
+Si no hay nada nuevo que agregar, devuelve hechos en null y reading con todos los campos en null / [].
 
 Hechos ya conocidos (no los repitas):
 ${existingFactsText || '(ninguno)'}
@@ -172,7 +283,7 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
     const response = await client.messages.create(
       {
         model: EXTRACT_MODEL,
-        max_tokens: 400,
+        max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
       },
       { timeout: EXTRACT_TIMEOUT_MS }
@@ -184,6 +295,13 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
       language: string | null;
       summary: string | null;
       new_facts: string[];
+      reading?: {
+        intent_stage?: unknown;
+        knowledge_level?: unknown;
+        price_sensitivity?: unknown;
+        urgency?: unknown;
+        objection_themes?: unknown;
+      };
     };
 
     const now = new Date().toISOString();
@@ -194,17 +312,51 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
     const mergedFacts = [...existingFacts, ...newFactObjects].slice(-40);
 
+    // Parse + validate the read. Any field that isn't a legal enum value
+    // falls back to null so bad model output can't corrupt persisted state.
+    const freshReading: Partial<CustomerProfileReading> = {
+      intent_stage: coerceEnum<CustomerProfileReading['intent_stage'] & string>(
+        parsed.reading?.intent_stage,
+        READING_INTENT_STAGES
+      ),
+      knowledge_level: coerceEnum<CustomerProfileReading['knowledge_level'] & string>(
+        parsed.reading?.knowledge_level,
+        READING_KNOWLEDGE_LEVELS
+      ),
+      price_sensitivity: coerceEnum<CustomerProfileReading['price_sensitivity'] & string>(
+        parsed.reading?.price_sensitivity,
+        READING_PRICE_SENSITIVITIES
+      ),
+      urgency: coerceEnum<CustomerProfileReading['urgency'] & string>(
+        parsed.reading?.urgency,
+        READING_URGENCIES
+      ),
+      objection_themes: Array.isArray(parsed.reading?.objection_themes)
+        ? (parsed.reading!.objection_themes as unknown[])
+            .filter((t) => typeof t === 'string')
+            .map((t) => (t as string).trim().toLowerCase())
+            .filter((t) => t.length > 0)
+        : [],
+    };
+
+    const mergedReading = mergeReading(existingProfile?.reading, freshReading, now);
+
     return {
       display_name: parsed.display_name ?? existingProfile?.display_name ?? null,
       language: parsed.language ?? existingProfile?.language ?? null,
       summary: parsed.summary ?? existingProfile?.summary ?? null,
       facts: mergedFacts,
+      reading: mergedReading,
     };
   } catch (err) {
     console.warn('[extractCustomerFacts] failed:', err);
     return null;
   }
 }
+
+// Re-export the merge helper so the webhook can use it for the turn-1
+// arrival_source seed (which doesn't go through Haiku).
+export { mergeReading };
 
 export interface KBSuggestionDraft {
   question: string;

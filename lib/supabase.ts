@@ -10,6 +10,7 @@ import type {
   KnowledgeEntry,
   CustomerProfile,
   CustomerProfileFact,
+  CustomerProfileReading,
   CustomerQuestion,
   KBSuggestion,
   KBSuggestionStatus,
@@ -743,6 +744,11 @@ export async function upsertCustomerProfile(
     language?: string | null;
     summary?: string | null;
     facts?: CustomerProfileFact[];
+    /** Structured behavioral read. Pass the already-merged object (the caller
+     *  is responsible for running mergeReading() so the "null preserves
+     *  existing" rule is applied). An empty object {} clears nothing — to
+     *  actually blank the column use {reading: null}. */
+    reading?: CustomerProfileReading | null;
   }
 ): Promise<void> {
   const supabase = createServiceClient();
@@ -756,6 +762,7 @@ export async function upsertCustomerProfile(
   if (patch.language !== undefined) payload.language = patch.language;
   if (patch.summary !== undefined) payload.summary = patch.summary;
   if (patch.facts !== undefined) payload.facts = patch.facts;
+  if (patch.reading !== undefined) payload.reading = patch.reading;
 
   const { error } = await supabase
     .from('customer_profiles')
@@ -772,8 +779,94 @@ export function formatCustomerProfileForPrompt(profile: CustomerProfile | null):
   if (profile.summary) lines.push(`Resumen: ${profile.summary}`);
   if (facts) lines.push(`Datos confirmados:\n${facts}`);
   lines.push('Usa estos datos para personalizar la conversación; nunca los repitas como si los leyeras de una lista.');
+
+  // Structured read — only rendered when we have at least one populated
+  // dimension. The guidance per value is what makes this useful to Sol:
+  // raw enum values would just be jargon; the imperative sentence tells her
+  // *how* to adapt the next turn.
+  const readBlock = formatReadingForPrompt(profile.reading ?? null);
+  if (readBlock) lines.push(readBlock);
+
   if (lines.length === 2) return '';
   return lines.join('\n');
+}
+
+/**
+ * Render the structured behavioral read as a prompt block. Only populated
+ * dimensions appear — a freshly-seeded row with just `arrival_source` still
+ * produces a useful two-line block. Returns empty string when nothing is
+ * populated so the caller can skip it entirely.
+ *
+ * The per-dimension advice is deliberately prescriptive (imperative verbs) and
+ * kept to one line each so the block stays compact. This is INTERNAL guidance
+ * for Sol's tone/content — the header makes that explicit so the model doesn't
+ * echo these labels back to the customer.
+ */
+export function formatReadingForPrompt(reading: CustomerProfileReading | null): string {
+  if (!reading) return '';
+
+  const rows: string[] = [];
+
+  if (reading.intent_stage) {
+    const hint: Record<string, string> = {
+      explorando: 'aún no ha dicho qué necesita → haz UNA pregunta que califique (Cuba vs aquí, uso principal).',
+      evaluando: 'está comparando → diferencia con $/Wh, garantía y entrega, no repitas catálogo.',
+      listo_comprar: 'pidió link/pago/envío → cierra: dale enlace directo al producto acordado, no re-vendas.',
+      post_venta: 'ya compró → responde como soporte, no ofrezcas más productos sin señal.',
+    };
+    rows.push(`• Etapa: ${reading.intent_stage} — ${hint[reading.intent_stage] ?? ''}`.trim());
+  }
+
+  if (reading.knowledge_level) {
+    const hint: Record<string, string> = {
+      novato: 'usa lenguaje sencillo; evita LFP/MPPT/Wh sin analogía ("aguanta como X bombillos por Y horas").',
+      intermedio: 'puedes usar términos técnicos con una frase de contexto; no asumas experto.',
+      experto: 'usa vocabulario técnico directo (LFP, MPPT, ciclos, voltaje); cero explicaciones básicas.',
+    };
+    rows.push(`• Nivel técnico: ${reading.knowledge_level} — ${hint[reading.knowledge_level] ?? ''}`.trim());
+  }
+
+  if (reading.price_sensitivity) {
+    const hint: Record<string, string> = {
+      alta: 'precio manda — lidera con descuentos, $/Wh, ofertas activas antes que specs.',
+      media: 'precio pesa pero no bloquea — equilibra valor y precio.',
+      baja: 'pagará por lo correcto — lidera con calidad, garantía, ajuste a su necesidad.',
+    };
+    rows.push(`• Sensibilidad a precio: ${reading.price_sensitivity} — ${hint[reading.price_sensitivity] ?? ''}`.trim());
+  }
+
+  if (reading.urgency) {
+    const hint: Record<string, string> = {
+      ya: 'necesidad inmediata (apagón en curso) → velocidad de respuesta y entrega rápida mandan.',
+      semanas: 'compra a semanas — cerrar con link y plan de envío ahora tiene sentido.',
+      meses: 'planifica con tiempo — no presiones cierre; siembra beneficios clave y déjale el material.',
+      sin_prisa: 'explorando — educativo, no presiones; pide qué lo detiene para ayudar mejor.',
+    };
+    rows.push(`• Urgencia: ${reading.urgency} — ${hint[reading.urgency] ?? ''}`.trim());
+  }
+
+  if (Array.isArray(reading.objection_themes) && reading.objection_themes.length > 0) {
+    rows.push(
+      `• Objeciones vistas: ${reading.objection_themes.join(', ')} — adelántate y abórdalas sin que las repita.`
+    );
+  }
+
+  if (reading.arrival_source) {
+    const src = reading.arrival_source;
+    const hint = src.startsWith('facebook_ad:')
+      ? 'llegó por anuncio de Facebook → recién conoce Oiikon; preséntate breve, no asumas contexto.'
+      : src === 'organic'
+      ? 'llegó orgánicamente → quizás ya conoce Oiikon; sigue su lead.'
+      : '';
+    rows.push(`• Origen: ${src}${hint ? ' — ' + hint : ''}`);
+  }
+
+  if (rows.length === 0) return '';
+
+  return [
+    '\n=== CÓMO LEER A ESTE CLIENTE (guía interna — NO se la muestres) ===',
+    ...rows,
+  ].join('\n');
 }
 
 // ============================================================
