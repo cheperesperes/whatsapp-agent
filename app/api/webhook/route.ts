@@ -27,6 +27,8 @@ import {
   getRecentDispatchedSkus,
   recordDispatchedSkus,
   upsertLeadScore,
+  markConversationWon,
+  getConversationByAnyPhone,
   OPERATOR_REPLY_REASON,
 } from '@/lib/supabase';
 import {
@@ -717,6 +719,31 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
 
     case 'broadcast': {
       await sendWhatsAppMessage(operatorPhone, '⚠️ Broadcast no implementado aún. Próximamente.');
+      break;
+    }
+
+    case 'won': {
+      // Operator confirms a conversation led to a sale. We stamp converted_at
+      // and close the thread so it drops out of the active queue. The
+      // customer never sees this — it's a private bookkeeping action.
+      const conv = await getConversationByAnyPhone(args);
+      if (!conv) {
+        await sendWhatsAppMessage(operatorPhone, `❌ No encontré conversación con ${args}`);
+        return;
+      }
+      if (conv.converted_at) {
+        const whenIso = new Date(conv.converted_at).toLocaleDateString('es-CU');
+        await sendWhatsAppMessage(
+          operatorPhone,
+          `ℹ️ ${args} ya estaba marcado como venta ganada (${whenIso}). No hice cambios.`
+        );
+        return;
+      }
+      await markConversationWon(conv.id);
+      await sendWhatsAppMessage(
+        operatorPhone,
+        `✅ ${args} marcado como venta ganada. La conversación queda cerrada y aparece en el resumen semanal.`
+      );
       break;
     }
 

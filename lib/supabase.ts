@@ -530,7 +530,20 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
 
       const specsStr = specs.length ? ` (${specs.join(', ')})` : '';
 
-      const discount = p.discount_percentage ?? 0;
+      // Defense-in-depth: even though /api/cron/sync-inventory has its own
+      // spike guard, a direct DB write or a bug upstream could still land a
+      // bogus discount on the catalog. We clamp to [0, 50] at the moment of
+      // formatting the prompt so Sol can never quote a price below half sell_price.
+      // Anything above 50 is a signal of data corruption — we log loudly and
+      // show the product at 50% off rather than giving it away.
+      const rawDiscount = p.discount_percentage ?? 0;
+      const discount = Math.max(0, Math.min(50, rawDiscount));
+      if (rawDiscount !== discount) {
+        console.warn(
+          `[formatProductCatalogForPrompt] discount clamped for SKU ${p.sku}: ` +
+            `${rawDiscount}% -> ${discount}% (check agent_product_catalog + inventory sync log)`
+        );
+      }
       const effectiveUsa = discount > 0 ? p.sell_price * (1 - discount / 100) : p.sell_price;
       const cubaDelivery = p.cuba_shipping_fee + p.cuba_handling_fee;
       const effectiveCubaTotal = effectiveUsa + cubaDelivery;
@@ -1106,12 +1119,17 @@ export async function getOverviewMetrics(windowDays = 7): Promise<OverviewMetric
     { count: msgsUser },
     { count: msgsSol },
     { count: escalated },
+    { count: conversions },
     { data: deepData },
   ] = await Promise.all([
     supabase.from('conversations').select('*', { count: 'exact', head: true }).gte('created_at', since),
     supabase.from('messages').select('*', { count: 'exact', head: true }).eq('role', 'user').gte('created_at', since),
     supabase.from('messages').select('*', { count: 'exact', head: true }).eq('role', 'assistant').gte('created_at', since),
     supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('escalated', true).gte('updated_at', since),
+    // Conversions are counted by converted_at (operator-confirmed), not
+    // updated_at, so a conversion that happens this week counts this week
+    // even if the conversation started months ago.
+    supabase.from('conversations').select('*', { count: 'exact', head: true }).gte('converted_at', since),
     supabase
       .from('messages')
       .select('conversation_id')
@@ -1132,7 +1150,56 @@ export async function getOverviewMetrics(windowDays = 7): Promise<OverviewMetric
     messages_sol: msgsSol ?? 0,
     escalated: escalated ?? 0,
     deep_conversations: deep,
+    conversions: conversions ?? 0,
   };
+}
+
+/**
+ * Mark a conversation as a closed/won sale. Sets converted_at=now() and
+ * also sets status='closed' so it drops out of the active-work list.
+ *
+ * This is operator-only — never called from the Claude response path.
+ * The counter it feeds (OverviewMetrics.conversions) is only trustworthy
+ * if it reflects ground truth, not model inference.
+ *
+ * Idempotent: repeated calls re-stamp converted_at without creating
+ * duplicate rows or log entries. If the operator needs to *undo* a won
+ * mark, do it via Supabase console (deliberately friction-heavy — losing
+ * a conversion shouldn't be a one-command operation).
+ */
+export async function markConversationWon(conversationId: string): Promise<void> {
+  const supabase = createServiceClient();
+  const { error } = await supabase
+    .from('conversations')
+    .update({
+      converted_at: new Date().toISOString(),
+      status: 'closed',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId);
+  if (error) {
+    console.error('[markConversationWon] error:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Resolve a phone number (raw, as typed by the operator) to the conversation
+ * row. Used by the /won <phone> command so the operator can close a sale
+ * without having to copy a UUID.
+ *
+ * Tries a direct match first, then falls back to the normalized (digits-only)
+ * lookup. Returns null if no match — the caller should surface a helpful
+ * error to the operator.
+ */
+export async function getConversationByAnyPhone(rawPhone: string): Promise<Conversation | null> {
+  // Try the exact stored phone first (saves a normalize call on the hot path)
+  const direct = await getConversationByPhone(rawPhone);
+  if (direct) return direct;
+  // Fall through to digits-only match for operator convenience
+  const digitsOnly = rawPhone.replace(/\D/g, '');
+  if (!digitsOnly || digitsOnly === rawPhone) return null;
+  return getConversationByPhone(digitsOnly);
 }
 
 export async function listTopQuestions(windowDays = 7, limit = 10): Promise<RepeatedQuestion[]> {

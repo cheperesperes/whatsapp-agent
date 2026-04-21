@@ -64,12 +64,13 @@ export default function OverviewPage() {
         ) : (
           <>
             {/* Metrics */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
               <MetricCard label="Nuevas conversaciones" value={data.metrics.conversations_new} />
               <MetricCard label="Mensajes de clientes" value={data.metrics.messages_customer} />
               <MetricCard label="Mensajes de Sol" value={data.metrics.messages_sol} />
               <MetricCard label="Conversaciones activas (5+)" value={data.metrics.deep_conversations} hint="Clientes engaged" />
               <MetricCard label="Escaladas" value={data.metrics.escalated} hint="Requirieron operador" />
+              <MetricCard label="Ventas cerradas" value={data.metrics.conversions} hint="/won o botón verde" />
             </div>
 
             {/* Top questions */}
