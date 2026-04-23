@@ -63,6 +63,16 @@ interface AdData {
   campaigns: CampaignSpend[];
 }
 
+interface GA4Data {
+  configured: boolean;
+  error?: string;
+  last7Days?: { sessions: number; users: number; pageViews: number; bounceRate: number };
+  last30Days?: { sessions: number; users: number; pageViews: number };
+  topPages?: Array<{ page: string; views: number }>;
+  trafficSources?: Array<{ source: string; sessions: number }>;
+  sessionsByDay?: Array<{ date: string; sessions: number }>;
+}
+
 interface DashboardData {
   campaigns: Campaign[];
   groups: Group[];
@@ -101,6 +111,7 @@ function formatDate(dateStr: string) {
 export default function MarketingPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [adData, setAdData] = useState<AdData | null>(null);
+  const [ga4, setGa4] = useState<GA4Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -110,10 +121,12 @@ export default function MarketingPage() {
     Promise.all([
       fetch('/api/marketing/campaigns', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/marketing/ad-spend', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/marketing/analytics', { cache: 'no-store' }).then((r) => r.json()).catch(() => null),
     ])
-      .then(([campaigns, ads]) => {
+      .then(([campaigns, ads, analytics]) => {
         setData(campaigns as DashboardData);
         setAdData(ads as AdData);
+        setGa4(analytics as GA4Data | null);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -236,6 +249,65 @@ export default function MarketingPage() {
                 Agrega <span className="font-mono text-gray-400">META_AD_ACCOUNT_ID</span> a las variables de entorno de Vercel para ver tu gasto.
               </p>
             </div>
+          </section>
+        )}
+
+        {/* ── GOOGLE ANALYTICS ────────────────────────────────── */}
+        {ga4?.configured && !ga4.error && ga4.last7Days && (
+          <section>
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
+              Sitio Web — oiikon.com (GA4)
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Usuarios (7d)', value: ga4.last7Days.users.toLocaleString() },
+                { label: 'Sesiones (7d)', value: ga4.last7Days.sessions.toLocaleString() },
+                { label: 'Páginas vistas (7d)', value: ga4.last7Days.pageViews.toLocaleString() },
+                { label: 'Rebote', value: `${ga4.last7Days.bounceRate}%` },
+              ].map(({ label, value }) => (
+                <div key={label} className="card p-4 text-center">
+                  <p className="text-xs text-gray-500 mb-1">{label}</p>
+                  <p className="text-xl font-bold text-gray-100">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Traffic sources */}
+            {ga4.trafficSources && ga4.trafficSources.length > 0 && (
+              <div className="card mt-3 p-4">
+                <p className="text-xs text-gray-500 mb-3">Fuentes de tráfico (30 días)</p>
+                <div className="space-y-2">
+                  {ga4.trafficSources.slice(0, 6).map((s) => {
+                    const max = ga4.trafficSources![0].sessions;
+                    const pct = Math.round((s.sessions / max) * 100);
+                    return (
+                      <div key={s.source}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-gray-300">{s.source}</span>
+                          <span className="text-gray-500">{s.sessions.toLocaleString()}</span>
+                        </div>
+                        <div className="h-1.5 bg-surface-600 rounded-full">
+                          <div className="h-full bg-brand-500 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Top pages */}
+            {ga4.topPages && ga4.topPages.length > 0 && (
+              <div className="card mt-3 divide-y divide-surface-700">
+                <p className="text-xs text-gray-500 px-4 py-2">Páginas más visitadas (30 días)</p>
+                {ga4.topPages.slice(0, 5).map((p) => (
+                  <div key={p.page} className="flex justify-between px-4 py-2">
+                    <span className="text-xs text-gray-400 truncate max-w-xs">{p.page}</span>
+                    <span className="text-xs text-gray-500 shrink-0 ml-4">{p.views.toLocaleString()} vistas</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 

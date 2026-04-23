@@ -13,6 +13,7 @@ import {
   publishToInstagram,
   publishToYouTube,
 } from '@/lib/marketing/publisher';
+import { postVideoToTikTok } from '@/lib/marketing/integrations/tiktok';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
     facebook: null,
     instagram: null,
     youtube: null,
+    tiktok: null,
   };
   const errors: string[] = [];
 
@@ -133,6 +135,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── TikTok ────────────────────────────────────────────────────────────────
+  if (content.video_url && process.env.TIKTOK_CLIENT_KEY) {
+    try {
+      const tt = await postVideoToTikTok(
+        content.video_url,
+        content.instagram_caption ?? content.facebook_post ?? '',
+        content.youtube_title ?? ''
+      );
+      results.tiktok = tt?.publish_id ?? null;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`TikTok: ${msg}`);
+      console.error('[marketing/approve] TikTok publish error:', msg);
+    }
+  }
+
   // ── Save publish results ───────────────────────────────────────────────────
   await updateContent(campaign.id, {
     facebook_post_id: results.facebook ?? undefined,
@@ -153,6 +171,7 @@ export async function POST(req: NextRequest) {
     results.facebook && `✅ Facebook: publicado`,
     results.instagram && `✅ Instagram: publicado`,
     results.youtube && `✅ YouTube: publicado`,
+    results.tiktok && `✅ TikTok: publicado`,
     errors.length > 0 && `⚠️ Errores: ${errors.join(', ')}`,
   ]
     .filter(Boolean)
