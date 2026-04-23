@@ -40,7 +40,13 @@ import {
   buildDynamicDirectives,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
-import { loadCompetitorModels, formatCompetitorsForPrompt } from '@/lib/competitors';
+import {
+  loadCompetitorModels,
+  formatCompetitorsForPrompt,
+  loadCompetitorStats,
+  formatCompetitorStatsForPrompt,
+} from '@/lib/competitors';
+import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-extractor';
 import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
 import {
   detectLanguageFromHistory,
@@ -269,6 +275,15 @@ async function processWebhook(body: unknown) {
       await handleOwnerCommand(command.command, command.args, senderPhone);
       return;
     }
+
+    // Marketing campaign approval: operator replies SI or NO to a pending campaign
+    const approvalWord = messageText.trim().toLowerCase().replace(/[áéíóú]/g, (c) =>
+      ({ á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u' }[c] ?? c)
+    );
+    if (approvalWord === 'si' || approvalWord === 'sí' || approvalWord === 'no') {
+      const handled = await handleMarketingApproval(approvalWord !== 'no');
+      if (handled) return;
+    }
   }
 
   // ── Non-text messages ───────────────────────────────────
@@ -383,21 +398,37 @@ async function processWebhook(body: unknown) {
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
       loadCustomerProfile(senderPhone),
       getRecentDispatchedSkus(conversation.id),
       loadCompetitorModels(),
+      loadCompetitorStats(),
     ]);
+
+    // Fire-and-forget: learn from competitor mentions in this message.
+    // Stored WITHOUT phone / conversation_id so aggregate stats can't be
+    // de-anonymized. Extraction failure is a no-op by design.
+    const recentUserMessages = history
+      .filter((m) => m.role === 'user')
+      .slice(-3, -1)
+      .map((m) => m.content);
+    waitUntil(extractCompetitorMention(
+      messageText,
+      products.map((p) => ({ sku: p.sku, name: p.name })),
+      recentUserMessages,
+    ));
 
     const historyWithoutLast = history.slice(0, -1);
 
     const catalog = formatProductCatalogForPrompt(products);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
-    const competitorPrompt = formatCompetitorsForPrompt(competitors, products);
+    const competitorPrompt =
+      formatCompetitorsForPrompt(competitors, products) +
+      formatCompetitorStatsForPrompt(competitorStats);
     const dispatchedPrompt =
       alreadySentSkus.length > 0
         ? `\nFOTOS YA ENVIADAS EN ESTA CONVERSACIÓN: [${alreadySentSkus.join(', ')}]\nNO incluyas [SEND_IMAGE:SKU] para estos SKUs — el cliente ya los tiene.\n`
@@ -695,6 +726,29 @@ async function runBackgroundLearning(
       `[learning] Lead score for ${phone}: ${leadScore.quality} — ${leadScore.reason.slice(0, 80)}`
     );
   }
+}
+
+// ============================================================
+// Marketing approval handler (SI / NO reply from operator)
+// ============================================================
+async function handleMarketingApproval(approved: boolean): Promise<boolean> {
+  const { getPendingApprovalCampaign } = await import('@/lib/marketing/db');
+  const campaign = await getPendingApprovalCampaign();
+  if (!campaign) return false; // no pending campaign — not a marketing reply
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? `https://${process.env.VERCEL_URL}`;
+  const approveUrl = `${appUrl}/api/marketing/approve`;
+
+  await fetch(approveUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-secret': process.env.CRON_SECRET ?? '',
+    },
+    body: JSON.stringify({ approved, campaign_id: campaign.id }),
+  });
+
+  return true; // consumed — skip normal Sol flow
 }
 
 // ============================================================

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
-const PUBLIC_PATHS = ['/login', '/api/webhook'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/webhook',
+  '/api/marketing/heygen-webhook', // HeyGen calls this directly — no user session
+  '/api/cron/',                     // Vercel cron calls with CRON_SECRET, not cookies
+];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

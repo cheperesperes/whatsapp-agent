@@ -1,0 +1,181 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
+import {
+  getPendingApprovalCampaign,
+  updateCampaign,
+  getContent,
+  updateContent,
+  getActiveGroups,
+  markGroupPosted,
+} from '@/lib/marketing/db';
+import {
+  publishToFacebook,
+  publishToInstagram,
+  publishToYouTube,
+} from '@/lib/marketing/publisher';
+import { sendWhatsAppMessage } from '@/lib/whatsapp';
+
+async function sendWhatsAppSafe(to: string, msg: string): Promise<void> {
+  try {
+    await sendWhatsAppMessage(to, msg);
+  } catch (err) {
+    console.warn('[marketing/approve] WhatsApp send skipped:', err instanceof Error ? err.message : err);
+  }
+}
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 120;
+
+async function isAuthenticated(req: NextRequest): Promise<boolean> {
+  // Allow internal calls from webhook (same server, no cookie)
+  const internalSecret = process.env.CRON_SECRET;
+  if (internalSecret && req.headers.get('x-internal-secret') === internalSecret) return true;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) return true; // dev with no env
+
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll: () => req.cookies.getAll(),
+      setAll: () => {},
+    },
+  });
+  const { data: { user } } = await supabase.auth.getUser();
+  return Boolean(user);
+}
+
+const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
+
+export async function POST(req: NextRequest) {
+  if (!(await isAuthenticated(req))) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
+  let body: { approved?: boolean; campaign_id?: string } = {};
+  try {
+    body = await req.json();
+  } catch {
+    // ignore — manual trigger from dashboard sends empty body
+  }
+
+  // Find the campaign to approve/reject
+  const campaign = body.campaign_id
+    ? await (async () => {
+        const { createServiceClient } = await import('@/lib/supabase');
+        const { data } = await createServiceClient()
+          .from('marketing_campaigns')
+          .select('*')
+          .eq('id', body.campaign_id)
+          .single();
+        return data;
+      })()
+    : await getPendingApprovalCampaign();
+
+  if (!campaign) {
+    return NextResponse.json({ ok: false, error: 'No pending campaign found' }, { status: 404 });
+  }
+
+  const approved = body.approved !== false; // default true
+
+  if (!approved) {
+    await updateCampaign(campaign.id, { status: 'rejected' });
+    await sendWhatsAppSafe(
+      OPERATOR_PHONE,
+      `❌ Campaña del ${campaign.date} cancelada. La próxima campaña se generará mañana a las 7am.`
+    );
+    return NextResponse.json({ ok: true, status: 'rejected' });
+  }
+
+  // Approve → publish
+  await updateCampaign(campaign.id, { status: 'publishing' });
+
+  const content = await getContent(campaign.id);
+  if (!content) {
+    await updateCampaign(campaign.id, { status: 'failed', error_message: 'content row missing' });
+    return NextResponse.json({ ok: false, error: 'content not found' }, { status: 500 });
+  }
+
+  const results: Record<string, string | null> = {
+    facebook: null,
+    instagram: null,
+    youtube: null,
+  };
+  const errors: string[] = [];
+
+  // ── Facebook ───────────────────────────────────────────────────────────────
+  try {
+    const fb = await publishToFacebook(content.facebook_post ?? '', content.video_url ?? null);
+    results.facebook = fb.post_id;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errors.push(`Facebook: ${msg}`);
+    console.error('[marketing/approve] Facebook publish error:', msg);
+  }
+
+  // ── Instagram ─────────────────────────────────────────────────────────────
+  try {
+    const ig = await publishToInstagram(content.instagram_caption ?? '', content.video_url ?? null);
+    results.instagram = ig?.post_id ?? null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errors.push(`Instagram: ${msg}`);
+    console.error('[marketing/approve] Instagram publish error:', msg);
+  }
+
+  // ── YouTube ────────────────────────────────────────────────────────────────
+  if (content.video_url && content.youtube_title) {
+    try {
+      const yt = await publishToYouTube(
+        content.video_url,
+        content.youtube_title,
+        content.youtube_description ?? '',
+        content.youtube_tags ?? []
+      );
+      results.youtube = yt?.video_id ?? null;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`YouTube: ${msg}`);
+      console.error('[marketing/approve] YouTube publish error:', msg);
+    }
+  }
+
+  // ── Save publish results ───────────────────────────────────────────────────
+  await updateContent(campaign.id, {
+    facebook_post_id: results.facebook ?? undefined,
+    instagram_post_id: results.instagram ?? undefined,
+    youtube_video_id: results.youtube ?? undefined,
+    published_at: new Date().toISOString(),
+  });
+
+  // Mark top groups as posted (so rotation works next time)
+  const groups = await getActiveGroups();
+  await Promise.all(groups.slice(0, 5).map((g) => markGroupPosted(g.id)));
+
+  const finalStatus = errors.length === 0 ? 'published' : 'published';
+  await updateCampaign(campaign.id, { status: finalStatus });
+
+  // Confirm to Eduardo via WhatsApp
+  const successLines = [
+    results.facebook && `✅ Facebook: publicado`,
+    results.instagram && `✅ Instagram: publicado`,
+    results.youtube && `✅ YouTube: publicado`,
+    errors.length > 0 && `⚠️ Errores: ${errors.join(', ')}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  await sendWhatsAppSafe(
+    OPERATOR_PHONE,
+    `🚀 *Campaña ${campaign.date} publicada*\n\n${successLines}\n\nTema: _${campaign.daily_theme}_`
+  );
+
+  return NextResponse.json({
+    ok: true,
+    campaign_id: campaign.id,
+    status: finalStatus,
+    published: results,
+    errors: errors.length > 0 ? errors : undefined,
+  });
+}

@@ -166,3 +166,69 @@ export function formatCompetitorsForPrompt(
     ...rows,
   ].join('\n');
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Competitor-mention stats — aggregates of what customers have told us they
+// see at other stores (Amazon, Alibaba, etc.). Populated by the extractor
+// via /api/cron/competitor-stats. Anecdotal (not official), but gold for
+// honest pivots when the customer volunteers a competitor price.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CompetitorStat {
+  product_sku: string;
+  competitor_name: string;
+  sample_size: number;
+  median_price_usd: number | null;
+  min_price_usd: number | null;
+  max_price_usd: number | null;
+  last_mentioned_at: string | null;
+  recomputed_at: string;
+}
+
+/** Load stats with enough sample size to be quotable (n≥2 by default). */
+export async function loadCompetitorStats(minSampleSize = 2): Promise<CompetitorStat[]> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('competitor_stats')
+    .select('*')
+    .gte('sample_size', minSampleSize)
+    .order('sample_size', { ascending: false });
+  if (error) {
+    console.error('[competitors] stats load failed:', error.message);
+    return [];
+  }
+  return (data ?? []) as CompetitorStat[];
+}
+
+/**
+ * Render heard-from-customers stats as a prompt block. Labeled as anecdotal
+ * so Sol quotes them with honest framing ("hemos escuchado que…"), never
+ * as authoritative pricing.
+ */
+export function formatCompetitorStatsForPrompt(stats: CompetitorStat[]): string {
+  if (stats.length === 0) return '';
+
+  const rows: string[] = [];
+  for (const s of stats.slice(0, 20)) {
+    if (!s.median_price_usd) continue;
+    const range =
+      s.min_price_usd != null && s.max_price_usd != null && s.min_price_usd !== s.max_price_usd
+        ? ` (rango $${Number(s.min_price_usd).toFixed(0)}–$${Number(s.max_price_usd).toFixed(0)})`
+        : '';
+    rows.push(
+      `• ${s.product_sku} — ${s.competitor_name}: mediana $${Number(s.median_price_usd).toFixed(0)} (n=${s.sample_size})${range}`
+    );
+  }
+
+  if (rows.length === 0) return '';
+
+  return [
+    '',
+    '=== PRECIOS QUE CLIENTES DICEN VER EN OTRAS TIENDAS (últimos 30 días) ===',
+    'Datos ANECDÓTICOS recopilados de mensajes de clientes — NO precios oficiales.',
+    'Úsalos solo si el cliente menciona el competidor específico. Frase sugerida:',
+    '  "Hemos escuchado que en Amazon ronda los $X — nosotros $Y con envío a Cuba incluido."',
+    'Reglas: nunca trash-talkees al competidor. Enfatiza valor agregado (envío a Cuba bajo License Exception SCP, soporte en español, garantía US-based). NO cites si n<2.',
+    ...rows,
+  ].join('\n');
+}
