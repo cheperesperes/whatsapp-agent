@@ -142,8 +142,12 @@ export default function MarketingPage() {
   async function generate(force = false) {
     if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
-    await fetch(`/api/cron/marketing-daily${force ? '?force=true' : ''}`);
-    setTimeout(() => { setGenerating(false); reload(); }, 3000);
+    try {
+      await fetch(`/api/cron/marketing-daily${force ? '?force=true' : ''}`, { cache: 'no-store' });
+    } finally {
+      setGenerating(false);
+      reload();
+    }
   }
 
   if (loading) {

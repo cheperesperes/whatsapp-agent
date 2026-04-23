@@ -119,9 +119,12 @@ export async function createContent(
   data: Partial<Omit<MarketingContent, 'id' | 'campaign_id' | 'created_at'>>
 ): Promise<MarketingContent> {
   const sb = createServiceClient();
+  // Upsert on campaign_id so a regenerate run replaces the previous content row
+  // instead of appending a duplicate. Concurrent regen requests can otherwise
+  // race: both delete, both insert, we end up with two rows for the same campaign.
   const { data: row, error } = await sb
     .from('marketing_content')
-    .insert({ campaign_id: campaignId, ...data })
+    .upsert({ campaign_id: campaignId, ...data }, { onConflict: 'campaign_id' })
     .select()
     .single();
   if (error) throw new Error(`createContent: ${error.message}`);
