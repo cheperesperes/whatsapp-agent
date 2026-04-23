@@ -16,6 +16,15 @@
     },
     "app/api/cron/hallucination-check/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/cron/marketing-daily/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/marketing/heygen-webhook/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/marketing/approve/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -34,6 +43,10 @@
     {
       "path": "/api/cron/hallucination-check",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/marketing-daily",
+      "schedule": "0 12 * * *"
     }
   ],
   "headers": [

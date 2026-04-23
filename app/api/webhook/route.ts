@@ -269,6 +269,15 @@ async function processWebhook(body: unknown) {
       await handleOwnerCommand(command.command, command.args, senderPhone);
       return;
     }
+
+    // Marketing campaign approval: operator replies SI or NO to a pending campaign
+    const approvalWord = messageText.trim().toLowerCase().replace(/[áéíóú]/g, (c) =>
+      ({ á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u' }[c] ?? c)
+    );
+    if (approvalWord === 'si' || approvalWord === 'sí' || approvalWord === 'no') {
+      const handled = await handleMarketingApproval(approvalWord !== 'no');
+      if (handled) return;
+    }
   }
 
   // ── Non-text messages ───────────────────────────────────
@@ -695,6 +704,29 @@ async function runBackgroundLearning(
       `[learning] Lead score for ${phone}: ${leadScore.quality} — ${leadScore.reason.slice(0, 80)}`
     );
   }
+}
+
+// ============================================================
+// Marketing approval handler (SI / NO reply from operator)
+// ============================================================
+async function handleMarketingApproval(approved: boolean): Promise<boolean> {
+  const { getPendingApprovalCampaign } = await import('@/lib/marketing/db');
+  const campaign = await getPendingApprovalCampaign();
+  if (!campaign) return false; // no pending campaign — not a marketing reply
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? `https://${process.env.VERCEL_URL}`;
+  const approveUrl = `${appUrl}/api/marketing/approve`;
+
+  await fetch(approveUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-secret': process.env.CRON_SECRET ?? '',
+    },
+    body: JSON.stringify({ approved, campaign_id: campaign.id }),
+  });
+
+  return true; // consumed — skip normal Sol flow
 }
 
 // ============================================================
