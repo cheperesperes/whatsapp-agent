@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { conductDailyResearch } from '@/lib/marketing/research';
-import { generateMarketingContent } from '@/lib/marketing/content';
+import { generateMarketingContent, validateContent } from '@/lib/marketing/content';
 import { createProductReviewVideo } from '@/lib/marketing/heygen';
 import {
   createCampaign,
@@ -99,8 +99,8 @@ export async function GET(req: NextRequest) {
     // ── Step 4: Load products ──────────────────────────────────────────────
     const sb = createServiceClient();
     const { data: products } = await sb
-      .from('products')
-      .select('sku, name, category, capacity_wh, output_watts, price_usd')
+      .from('agent_product_catalog')
+      .select('sku, name, category, battery_capacity_wh, battery_capacity_ah, output_watts, sell_price, original_price, discount_percentage, cuba_total_price, ideal_for')
       .eq('in_stock', true)
       .order('sku');
 
@@ -108,14 +108,20 @@ export async function GET(req: NextRequest) {
       throw new Error('No in-stock products found in catalog');
     }
 
-    // ── Step 5: Generate content ───────────────────────────────────────────
+    // ── Step 5: Generate content + compliance check ────────────────────────
     console.log(`[marketing-daily] ${runId} — generating content`);
     const content = await generateMarketingContent(fullBrief, products);
+
+    const warnings = validateContent(content);
+    if (warnings.length > 0) {
+      console.warn(`[marketing-daily] ${runId} — compliance warnings:`, warnings);
+    }
 
     await updateCampaign(campaignId, {
       status: 'creating_video',
       daily_theme: content.daily_theme,
       product_sku: content.product_sku,
+      error_message: warnings.length > 0 ? `⚠️ Revisión recomendada: ${warnings.join(' · ')}` : null,
     });
 
     // ── Step 6: Save content to DB ─────────────────────────────────────────

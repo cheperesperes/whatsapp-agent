@@ -40,7 +40,13 @@ import {
   buildDynamicDirectives,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
-import { loadCompetitorModels, formatCompetitorsForPrompt } from '@/lib/competitors';
+import {
+  loadCompetitorModels,
+  formatCompetitorsForPrompt,
+  loadCompetitorStats,
+  formatCompetitorStatsForPrompt,
+} from '@/lib/competitors';
+import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-extractor';
 import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
 import {
   detectLanguageFromHistory,
@@ -392,21 +398,37 @@ async function processWebhook(body: unknown) {
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
       loadCustomerProfile(senderPhone),
       getRecentDispatchedSkus(conversation.id),
       loadCompetitorModels(),
+      loadCompetitorStats(),
     ]);
+
+    // Fire-and-forget: learn from competitor mentions in this message.
+    // Stored WITHOUT phone / conversation_id so aggregate stats can't be
+    // de-anonymized. Extraction failure is a no-op by design.
+    const recentUserMessages = history
+      .filter((m) => m.role === 'user')
+      .slice(-3, -1)
+      .map((m) => m.content);
+    waitUntil(extractCompetitorMention(
+      messageText,
+      products.map((p) => ({ sku: p.sku, name: p.name })),
+      recentUserMessages,
+    ));
 
     const historyWithoutLast = history.slice(0, -1);
 
     const catalog = formatProductCatalogForPrompt(products);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
-    const competitorPrompt = formatCompetitorsForPrompt(competitors, products);
+    const competitorPrompt =
+      formatCompetitorsForPrompt(competitors, products) +
+      formatCompetitorStatsForPrompt(competitorStats);
     const dispatchedPrompt =
       alreadySentSkus.length > 0
         ? `\nFOTOS YA ENVIADAS EN ESTA CONVERSACIÓN: [${alreadySentSkus.join(', ')}]\nNO incluyas [SEND_IMAGE:SKU] para estos SKUs — el cliente ya los tiene.\n`

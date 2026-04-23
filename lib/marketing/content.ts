@@ -17,10 +17,14 @@ interface Product {
   sku: string;
   name: string;
   category: string;
-  capacity_wh?: number;
-  output_watts?: number;
-  price_usd?: number;
-  sell_price?: number;
+  battery_capacity_wh?: number | null;
+  battery_capacity_ah?: number | null;
+  output_watts?: number | null;
+  sell_price?: number | null;
+  original_price?: number | null;
+  discount_percentage?: number | null;
+  cuba_total_price?: number | null;
+  ideal_for?: string | null;
 }
 
 function pickDailyProduct(products: Product[]): Product {
@@ -36,18 +40,34 @@ export async function generateMarketingContent(
   products: Product[]
 ): Promise<GeneratedContent> {
   const product = pickDailyProduct(products);
-  const price = product.sell_price ?? product.price_usd ?? 0;
+  const sellPrice = Number(product.sell_price ?? 0);
+  const originalPrice = Number(product.original_price ?? 0);
+  const discount = Number(product.discount_percentage ?? 0);
+  const cubaTotal = Number(product.cuba_total_price ?? 0);
+
+  const specs: string[] = [];
+  if (product.battery_capacity_wh) specs.push(`${product.battery_capacity_wh} Wh`);
+  if (product.battery_capacity_ah) specs.push(`${product.battery_capacity_ah} Ah`);
+  if (product.output_watts) specs.push(`${product.output_watts} W salida`);
+
+  const priceLines: string[] = [];
+  if (sellPrice > 0) priceLines.push(`  • Precio USA: $${sellPrice.toFixed(2)}`);
+  if (originalPrice > 0 && discount > 0) {
+    priceLines.push(`  • Antes: $${originalPrice.toFixed(2)} (${discount}% descuento activo)`);
+  }
+  if (cubaTotal > 0) priceLines.push(`  • Precio total entregado en Cuba: $${cubaTotal.toFixed(2)} (incluye envío + aduana)`);
+  const pricesBlock = priceLines.length > 0 ? priceLines.join('\n') : '  • Precio: consultar en tienda';
 
   const anthropic = new Anthropic();
 
-  const prompt = `Eres el director de marketing de Oiikon (oiikon.com), tienda especializada en estaciones solares portátiles PECRON para hispanos en EE.UU. que envían equipos a familiares en países con apagones prolongados.
+  const prompt = `Eres el director de marketing de Oiikon (oiikon.com), tienda especializada en estaciones solares portátiles para hispanos en EE.UU. que envían equipos a familiares en países con apagones prolongados.
 
-PRODUCTO DEL DÍA:
+PRODUCTO DEL DÍA (ÚNICOS DATOS PERMITIDOS — no inventes otros):
 - Nombre: ${product.name}
 - SKU: ${product.sku}
-- Capacidad: ${product.capacity_wh ? product.capacity_wh + ' Wh' : 'N/A'}
-- Potencia: ${product.output_watts ? product.output_watts + ' W' : 'N/A'}
-- Precio: $${price} USD
+- Especificaciones: ${specs.length > 0 ? specs.join(', ') : 'no publicadas'}
+${pricesBlock}
+- Ideal para: ${product.ideal_for ?? 'no especificado'}
 - URL: https://oiikon.com/product/${product.sku.toLowerCase()}
 
 INVESTIGACIÓN DE HOY:
@@ -169,4 +189,76 @@ Genera el siguiente contenido de marketing en formato JSON válido. TODO en espa
   content.google_ad_descriptions = content.google_ad_descriptions.map((d) => d.slice(0, 90));
 
   return content;
+}
+
+/**
+ * Post-generation compliance check for Luz content.
+ * Returns a list of human-readable warnings for the reviewer. Never throws —
+ * a borderline violation should surface to the operator, not kill the pipeline.
+ *
+ * Keep keyword lists short and specific: false positives annoy the reviewer
+ * more than they help.
+ */
+export function validateContent(content: GeneratedContent): string[] {
+  const warnings: string[] = [];
+  const allText = [
+    content.daily_theme,
+    content.facebook_post,
+    content.instagram_caption,
+    content.youtube_script,
+    content.youtube_title,
+    content.youtube_description,
+    ...content.google_ad_headlines,
+    ...content.google_ad_descriptions,
+  ].join(' \n ').toLowerCase();
+
+  // §3.1 Political neutrality
+  const politicalTerms = [
+    'gobierno cubano', 'régimen', 'regimen', 'embargo', 'dictadura',
+    'castrista', 'chavista', 'maduro', 'díaz-canel', 'diaz-canel',
+    'comunismo', 'comunista', 'el sistema cubano', 'el régimen',
+  ];
+  for (const term of politicalTerms) {
+    if (allText.includes(term)) warnings.push(`Mención política: "${term}"`);
+  }
+
+  // §3.5 Guilt phrases (banned verbatim)
+  const guiltPhrases = [
+    'tú estás aquí', 'tu estas aqui',
+    'tú desde aquí', 'tu desde aqui',
+    'mientras ellos sufren', 'mientras ellos no',
+    'sintiéndote impotente', 'sintiendote impotente',
+    'tú cómodo', 'tu comodo',
+  ];
+  for (const phrase of guiltPhrases) {
+    if (allText.includes(phrase)) warnings.push(`Frase de culpa: "${phrase}"`);
+  }
+
+  // §3.2 False urgency
+  const urgencyPhrases = [
+    'últimas unidades', 'ultimas unidades',
+    'solo hoy', 'sólo hoy',
+    'quedan pocas', 'stock limitado',
+    'última oportunidad', 'ultima oportunidad',
+    'vence hoy',
+  ];
+  for (const phrase of urgencyPhrases) {
+    if (allText.includes(phrase)) warnings.push(`Urgencia falsa: "${phrase}"`);
+  }
+
+  // §3.2 Competitor mentions (not a hard ban but reviewer should confirm)
+  const competitors = ['bluetti', 'ecoflow', 'jackery', 'anker solix', 'goalzero', 'goal zero'];
+  for (const c of competitors) {
+    if (allText.includes(c)) warnings.push(`Competidor mencionado: "${c}" (revisar)`);
+  }
+
+  // §3.6 AI disclosure must appear
+  if (!content.facebook_post.includes('IA') && !content.facebook_post.toLowerCase().includes('inteligencia artificial')) {
+    warnings.push('Falta disclosure de IA en facebook_post');
+  }
+  if (!content.instagram_caption.includes('IA') && !content.instagram_caption.toLowerCase().includes('inteligencia artificial')) {
+    warnings.push('Falta disclosure de IA en instagram_caption');
+  }
+
+  return warnings;
 }
