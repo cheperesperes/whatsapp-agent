@@ -45,15 +45,18 @@ export async function sendMarketingPreview(
     `Responde *SI* para publicar en todos los canales\n` +
     `Responde *NO* para cancelar esta campaña`;
 
-  await sendWhatsAppMessage(OPERATOR_PHONE, msg);
+  try {
+    await sendWhatsAppMessage(OPERATOR_PHONE, msg);
 
-  // Send groups list as a separate message if there are groups
-  if (groups.length > 0 && content.facebook_post) {
-    const groupsMsg = buildGroupsWhatsAppMessage(
-      content.facebook_post,
-      groups,
-      campaign.daily_theme ?? 'Campaña Oiikon'
-    );
-    await sendWhatsAppMessage(OPERATOR_PHONE, groupsMsg);
+    if (groups.length > 0 && content.facebook_post) {
+      const groupsMsg = buildGroupsWhatsAppMessage(
+        content.facebook_post,
+        groups,
+        campaign.daily_theme ?? 'Campaña Oiikon'
+      );
+      await sendWhatsAppMessage(OPERATOR_PHONE, groupsMsg);
+    }
+  } catch (err) {
+    console.warn('[marketing] WhatsApp preview skipped:', err instanceof Error ? err.message : err);
   }
 }

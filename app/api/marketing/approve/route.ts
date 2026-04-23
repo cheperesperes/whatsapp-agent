@@ -15,6 +15,14 @@ import {
 } from '@/lib/marketing/publisher';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
+async function sendWhatsAppSafe(to: string, msg: string): Promise<void> {
+  try {
+    await sendWhatsAppMessage(to, msg);
+  } catch (err) {
+    console.warn('[marketing/approve] WhatsApp send skipped:', err instanceof Error ? err.message : err);
+  }
+}
+
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -73,7 +81,7 @@ export async function POST(req: NextRequest) {
 
   if (!approved) {
     await updateCampaign(campaign.id, { status: 'rejected' });
-    await sendWhatsAppMessage(
+    await sendWhatsAppSafe(
       OPERATOR_PHONE,
       `❌ Campaña del ${campaign.date} cancelada. La próxima campaña se generará mañana a las 7am.`
     );
@@ -158,7 +166,7 @@ export async function POST(req: NextRequest) {
     .filter(Boolean)
     .join('\n');
 
-  await sendWhatsAppMessage(
+  await sendWhatsAppSafe(
     OPERATOR_PHONE,
     `🚀 *Campaña ${campaign.date} publicada*\n\n${successLines}\n\nTema: _${campaign.daily_theme}_`
   );

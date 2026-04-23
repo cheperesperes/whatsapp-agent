@@ -139,9 +139,10 @@ export default function MarketingPage() {
     reload();
   }
 
-  async function generate() {
+  async function generate(force = false) {
+    if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
-    await fetch('/api/cron/marketing-daily');
+    await fetch(`/api/cron/marketing-daily${force ? '?force=true' : ''}`);
     setTimeout(() => { setGenerating(false); reload(); }, 3000);
   }
 
@@ -164,7 +165,7 @@ export default function MarketingPage() {
         {!today && (
           <button
             type="button"
-            onClick={generate}
+            onClick={() => generate()}
             disabled={generating}
             className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
           >
@@ -249,7 +250,7 @@ export default function MarketingPage() {
               <p className="text-sm text-gray-400">No hay campaña para hoy.</p>
               <button
                 type="button"
-                onClick={generate}
+                onClick={() => generate()}
                 disabled={generating}
                 className="mt-4 px-6 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
               >
@@ -300,6 +301,17 @@ export default function MarketingPage() {
                 <p className="text-xs text-red-400 bg-red-950/30 rounded p-2">
                   ⚠️ {today.error_message}
                 </p>
+              )}
+
+              {['pending_approval', 'rejected', 'failed'].includes(today.status) && (
+                <button
+                  type="button"
+                  onClick={() => generate(true)}
+                  disabled={generating}
+                  className="w-full px-4 py-2 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs font-medium transition-colors disabled:opacity-50"
+                >
+                  {generating ? 'Regenerando...' : '🔄 Regenerar campaña'}
+                </button>
               )}
             </div>
           )}

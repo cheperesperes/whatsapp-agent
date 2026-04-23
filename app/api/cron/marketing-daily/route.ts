@@ -35,10 +35,11 @@ export async function GET(req: NextRequest) {
   const today = new Date().toISOString().split('T')[0];
   const runId = `marketing-${today}`;
   const startedAt = Date.now();
+  const force = req.nextUrl.searchParams.get('force') === 'true';
 
-  // Skip if already ran today
-  const existing = await getCampaignByDate(today);
-  if (existing && !['failed'].includes(existing.status)) {
+  // Skip if already ran today (unless force=true)
+  let existing = await getCampaignByDate(today);
+  if (existing && !force && !['failed'].includes(existing.status)) {
     return NextResponse.json({
       ok: true,
       skipped: true,
@@ -47,17 +48,30 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // force=true → reset existing campaign in place (drop content, reset status)
+  if (existing && force) {
+    const sb = createServiceClient();
+    await sb.from('marketing_content').delete().eq('campaign_id', existing.id);
+    await sb.from('marketing_performance').delete().eq('campaign_id', existing.id);
+  }
+
   let campaignId = existing?.id ?? '';
 
   try {
-    // ── Step 1: Create campaign record ─────────────────────────────────────
+    // ── Step 1: Create or reset campaign record ────────────────────────────
     if (!existing) {
       const campaign = await createCampaign(today);
       campaignId = campaign.id;
     } else {
-      // Retry failed campaign
+      // Retry failed / force-regenerate
       campaignId = existing.id;
-      await updateCampaign(campaignId, { status: 'researching', error_message: null });
+      await updateCampaign(campaignId, {
+        status: 'researching',
+        error_message: null,
+        daily_theme: null,
+        product_sku: null,
+        research_brief: null,
+      });
     }
 
     // ── Step 2: Consolidate memory from previous campaigns ─────────────────

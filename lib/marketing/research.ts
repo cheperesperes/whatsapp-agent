@@ -32,7 +32,7 @@ const GROUP_QUERIES = [
 
 async function searchSerper(query: string, num = 5): Promise<SearchResult[]> {
   const apiKey = process.env.SERPER_API_KEY;
-  if (!apiKey) throw new Error('SERPER_API_KEY not set');
+  if (!apiKey) return [];
 
   const res = await fetch('https://google.serper.dev/search', {
     method: 'POST',
@@ -84,31 +84,48 @@ export async function conductDailyResearch(): Promise<ResearchResult> {
 
   // Claude synthesizes the research brief
   const anthropic = new Anthropic();
-  let brief = snippets[0] ?? 'Tendencias no disponibles hoy.';
+  let brief = 'Tendencias no disponibles hoy.';
 
-  if (snippets.length > 0) {
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 350,
-      messages: [
-        {
-          role: 'user',
-          content: `Eres el estratega de marketing de Oiikon, tienda de estaciones solares portátiles PECRON para cubano-americanos que envían a Cuba (apagones 8-20h diarias).
+  const rulesBlock = `REGLAS OBLIGATORIAS DE TONO Y CONTENIDO:
+- CERO política: no menciones gobiernos, regímenes, partidos, "el sistema", ni causas políticas del apagón. Habla del apagón como hecho.
+- CERO culpar al lector: prohibido hacer sentir mal a la diáspora por estar en EE.UU. Nada de "tú estás aquí mientras ellos sufren".
+- Tono educado, cálido, respetuoso, optimista. Somos educación + venta, no drama.
+- Enfatiza que la estación solar es una INVERSIÓN FAMILIAR accesible al mejor precio posible.
+- Aplica sentido común: sin urgencia falsa, sin promesas milagrosas, sin amarillismo.`;
+
+  const prompt = snippets.length > 0
+    ? `Eres el estratega de marketing de Oiikon, tienda de estaciones solares portátiles PECRON para hispanos en EE.UU. que envían equipos a familiares afectados por apagones.
+
+${rulesBlock}
 
 Resultados de búsqueda de hoy:
 ${snippets.join('\n\n')}
 
 En 3-4 oraciones en ESPAÑOL resume:
-1. Tema/tendencia más relevante hoy para nuestra audiencia
-2. Conexión con el problema de apagones en Cuba
-3. Ángulo emocional o urgencia para la campaña de hoy
+1. Tema positivo y solidario relevante hoy para nuestra audiencia
+2. Conexión práctica con la necesidad de energía confiable en el país de la familia
+3. Ángulo emocional constructivo (amor familiar, solidaridad, solución)
 
-Solo el resumen, sin introducción.`,
-        },
-      ],
-    });
-    if (msg.content[0].type === 'text') brief = msg.content[0].text;
-  }
+Solo el resumen, sin introducción, sin menciones políticas.`
+    : `Eres el estratega de marketing de Oiikon, tienda de estaciones solares portátiles PECRON para hispanos en EE.UU. que envían equipos a familiares afectados por apagones.
+
+${rulesBlock}
+
+Sin datos de búsqueda externa hoy. Genera un brief basado en el valor del producto y la necesidad constante de energía confiable.
+
+En 3-4 oraciones en ESPAÑOL:
+1. Tema positivo y solidario para hoy
+2. Conexión con la necesidad concreta de energía confiable
+3. Ángulo constructivo (ej: "ayudar desde la distancia", "regalar tranquilidad")
+
+Solo el resumen, sin introducción, sin menciones políticas.`;
+
+  const msg = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 350,
+    messages: [{ role: 'user', content: prompt }],
+  });
+  if (msg.content[0].type === 'text') brief = msg.content[0].text;
 
   return { brief, facebookGroups };
 }

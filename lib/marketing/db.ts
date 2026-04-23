@@ -81,12 +81,13 @@ export async function updateCampaign(
 
 export async function getCampaignByDate(date: string): Promise<MarketingCampaign | null> {
   const sb = createServiceClient();
-  const { data } = await sb
+  const { data, error } = await sb
     .from('marketing_campaigns')
     .select('*')
     .eq('date', date)
-    .maybeSingle();
-  return data as MarketingCampaign | null;
+    .limit(1);
+  if (error) console.error('[getCampaignByDate] error:', error.message, error.code);
+  return (data?.[0] as MarketingCampaign | undefined) ?? null;
 }
 
 export async function getPendingApprovalCampaign(): Promise<MarketingCampaign | null> {
