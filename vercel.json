@@ -25,6 +25,9 @@
     },
     "app/api/marketing/approve/route.ts": {
       "maxDuration": 120
+    },
+    "app/api/cron/competitor-stats/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -47,6 +50,10 @@
     {
       "path": "/api/cron/marketing-daily",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/competitor-stats",
+      "schedule": "0 6 * * *"
     }
   ],
   "headers": [
