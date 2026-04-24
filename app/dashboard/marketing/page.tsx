@@ -77,6 +77,13 @@ interface DashboardData {
   groups: Group[];
 }
 
+interface ProductOption {
+  sku: string;
+  name: string;
+  category: string | null;
+  sell_price: number | null;
+}
+
 const STATUS_EMOJI: Record<string, string> = {
   researching: '🔍',
   generating: '✍️',
@@ -257,6 +264,8 @@ function ContentPreview({ content }: { content: ContentRow }) {
 export default function MarketingPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [adData, setAdData] = useState<AdData | null>(null);
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [selectedSku, setSelectedSku] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -284,6 +293,13 @@ export default function MarketingPage() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    fetch('/api/marketing/products', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setProducts((d.products ?? []) as ProductOption[]))
+      .catch(() => setProducts([]));
+  }, []);
 
   const today = data?.campaigns.find(
     (c) => c.date === new Date().toISOString().split('T')[0]
@@ -316,14 +332,15 @@ export default function MarketingPage() {
     reload();
   }
 
-  async function generate(options: { force?: boolean; category?: string | null } = {}) {
-    const { force = false, category } = options;
+  async function generate(options: { force?: boolean; category?: string | null; productSku?: string | null } = {}) {
+    const { force = false, category, productSku = selectedSku || null } = options;
     if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
     try {
       const qs = new URLSearchParams();
       if (force) qs.set('force', 'true');
       if (category) qs.set('category', category);
+      if (productSku) qs.set('product_sku', productSku);
       const suffix = qs.toString() ? `?${qs.toString()}` : '';
       await fetch(`/api/cron/marketing-daily${suffix}`, { cache: 'no-store' });
     } finally {
@@ -370,6 +387,15 @@ export default function MarketingPage() {
       </div>
 
       <div className="p-6 space-y-5 max-w-3xl mx-auto w-full">
+
+        {/* ─────────────  PRODUCT PICKER (opcional)  ───────────── */}
+        {products.length > 0 && (
+          <ProductPicker
+            products={products}
+            selected={selectedSku}
+            onChange={setSelectedSku}
+          />
+        )}
 
         {/* ─────────────────  HERO  ───────────────── */}
         {!today ? (
@@ -577,6 +603,50 @@ function CampaignHero({
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProductPicker({
+  products,
+  selected,
+  onChange,
+}: {
+  products: ProductOption[];
+  selected: string;
+  onChange: (sku: string) => void;
+}) {
+  return (
+    <div className="card px-4 py-3 flex items-center gap-3 flex-wrap">
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-gray-300 font-medium">Producto para la próxima campaña</p>
+        <p className="text-[11px] text-gray-500">
+          Opcional. Si no eliges, el sistema rota un producto por día automáticamente.
+        </p>
+      </div>
+      <select
+        value={selected}
+        onChange={(e) => onChange(e.target.value)}
+        className="px-3 py-1.5 rounded bg-surface-800 border border-surface-600 text-xs text-gray-200 min-w-[220px] focus:outline-none focus:border-brand-500"
+      >
+        <option value="">Rotación automática (por día)</option>
+        {products.map((p) => (
+          <option key={p.sku} value={p.sku}>
+            {p.sku} — {p.name}
+            {p.sell_price ? ` · $${Number(p.sell_price).toFixed(0)}` : ''}
+          </option>
+        ))}
+      </select>
+      {selected && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          className="text-[11px] text-gray-500 hover:text-gray-300 underline"
+          title="Volver a rotación automática"
+        >
+          limpiar
+        </button>
+      )}
     </div>
   );
 }

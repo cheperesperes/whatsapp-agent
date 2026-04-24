@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
   const categoryParam = req.nextUrl.searchParams.get('category');
   const validCategories = ['educacion', 'tips', 'instalacion', 'baterias', 'apagones', 'familia', 'producto'] as const;
   const category = validCategories.find((v) => v === categoryParam) ?? null;
+  const pinnedSku = req.nextUrl.searchParams.get('product_sku');
 
   // Skip if already ran today (unless force=true)
   let existing = await getCampaignByDate(today);
@@ -133,7 +134,7 @@ export async function GET(req: NextRequest) {
 
     // ── Step 5: Generate content + compliance check ────────────────────────
     console.log(`[marketing-daily] ${runId} — generating content`);
-    const content = await generateMarketingContent(fullBrief, products, category);
+    const content = await generateMarketingContent(fullBrief, products, category, pinnedSku);
 
     const warnings = validateContent(content);
     if (warnings.length > 0) {

@@ -27,9 +27,13 @@ interface Product {
   ideal_for?: string | null;
 }
 
-function pickDailyProduct(products: Product[]): Product {
+function pickDailyProduct(products: Product[], pinnedSku?: string | null): Product {
   const inStock = products.filter((p) => p.sku);
   if (inStock.length === 0) return products[0];
+  if (pinnedSku) {
+    const pinned = inStock.find((p) => p.sku.toLowerCase() === pinnedSku.toLowerCase());
+    if (pinned) return pinned;
+  }
   // Rotate by day-of-year so each day features a different product
   const dayOfYear = Math.floor(Date.now() / 86400000);
   return inStock[dayOfYear % inStock.length];
@@ -57,9 +61,10 @@ export const CATEGORIES: Array<{ value: MarketingCategory; label: string; angle:
 export async function generateMarketingContent(
   researchBrief: string,
   products: Product[],
-  category?: MarketingCategory | null
+  category?: MarketingCategory | null,
+  pinnedSku?: string | null
 ): Promise<GeneratedContent> {
-  const product = pickDailyProduct(products);
+  const product = pickDailyProduct(products, pinnedSku);
   const categoryEntry = category ? CATEGORIES.find((c) => c.value === category) : null;
   const categoryBrief = categoryEntry
     ? `\nCATEGORÍA DE HOY: ${categoryEntry.label}\nÁngulo específico: ${categoryEntry.angle}\n`
