@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase';
 import { createServerClient } from '@supabase/ssr';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export async function GET(req: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
