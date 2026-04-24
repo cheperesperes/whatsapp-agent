@@ -22,8 +22,11 @@ export async function GET(req: NextRequest) {
       id, date, status, daily_theme, product_sku, error_message, created_at,
       marketing_content (
         facebook_post_id, instagram_post_id, youtube_video_id,
-        video_url, video_status, youtube_title, google_ad_headlines,
-        facebook_post, published_at
+        video_url, video_status,
+        facebook_post, instagram_caption,
+        youtube_title, youtube_description, youtube_script, youtube_tags,
+        google_ad_headlines, google_ad_descriptions,
+        published_at
       ),
       marketing_performance (
         facebook_likes, facebook_comments, facebook_shares, facebook_reach,
