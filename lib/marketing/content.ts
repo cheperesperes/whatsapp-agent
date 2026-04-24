@@ -35,11 +35,35 @@ function pickDailyProduct(products: Product[]): Product {
   return inStock[dayOfYear % inStock.length];
 }
 
+export type MarketingCategory =
+  | 'educacion'
+  | 'tips'
+  | 'instalacion'
+  | 'baterias'
+  | 'apagones'
+  | 'familia'
+  | 'producto';
+
+export const CATEGORIES: Array<{ value: MarketingCategory; label: string; angle: string }> = [
+  { value: 'producto', label: '🔌 Producto', angle: 'Destaca un producto específico (specs, precio, beneficio concreto).' },
+  { value: 'educacion', label: '📚 Educación', angle: 'Educa sobre energía solar básica — qué es Wh, cómo funciona, por qué LiFePO4. Informativo, no vendedor.' },
+  { value: 'tips', label: '💡 Tips', angle: 'Consejos prácticos: cómo ahorrar energía, qué cargar primero en apagón, mantenimiento del equipo.' },
+  { value: 'instalacion', label: '🔧 Instalación', angle: 'Cómo conectar paneles, cómo recargar con solar, montaje en hogar. Práctico pero sin riesgo eléctrico.' },
+  { value: 'baterias', label: '🔋 Baterías', angle: 'Foco en la batería LiFePO4: ciclos de vida, seguridad vs baterías de plomo, expansión con EP3800.' },
+  { value: 'apagones', label: '⚡ Apagones', angle: 'Contexto emocional del apagón en Cuba: cómo preparar a la familia, qué mantener funcionando.' },
+  { value: 'familia', label: '👨‍👩‍👧 Familia', angle: 'Historia humana — cómo la energía impacta la vida diaria de la familia en Cuba: nevera, estudios de niños, comunicación.' },
+];
+
 export async function generateMarketingContent(
   researchBrief: string,
-  products: Product[]
+  products: Product[],
+  category?: MarketingCategory | null
 ): Promise<GeneratedContent> {
   const product = pickDailyProduct(products);
+  const categoryEntry = category ? CATEGORIES.find((c) => c.value === category) : null;
+  const categoryBrief = categoryEntry
+    ? `\nCATEGORÍA DE HOY: ${categoryEntry.label}\nÁngulo específico: ${categoryEntry.angle}\n`
+    : '';
   const sellPrice = Number(product.sell_price ?? 0);
   const originalPrice = Number(product.original_price ?? 0);
   const discount = Number(product.discount_percentage ?? 0);
@@ -72,7 +96,7 @@ ${pricesBlock}
 
 INVESTIGACIÓN DE HOY:
 ${researchBrief}
-
+${categoryBrief}
 AUDIENCIA PRINCIPAL:
 Hispanos en EE.UU. (Miami, Tampa, Houston, NY, NJ, LA) con familia en países afectados por apagones. Motivación: amor familiar, solidaridad, solución práctica.
 
@@ -199,17 +223,18 @@ Genera el siguiente contenido de marketing en formato JSON válido. TODO en espa
   content.google_ad_headlines = content.google_ad_headlines.map((h) => h.slice(0, 30));
   content.google_ad_descriptions = content.google_ad_descriptions.map((d) => d.slice(0, 90));
 
-  // Strip any legal disclaimer lines the model keeps regenerating despite
-  // prompt instructions. Belt-and-suspenders: the model trained on a lot of
-  // Oiikon content that ended with the SCP disclosure, so negative prompting
-  // alone isn't enough — we scrub the output as well.
-  content.facebook_post = stripLegalDisclaimer(content.facebook_post);
-  content.instagram_caption = stripLegalDisclaimer(content.instagram_caption);
-  content.youtube_description = stripLegalDisclaimer(content.youtube_description);
+  // Strip legal disclaimers + inject WhatsApp CTA. The model keeps
+  // re-adding the SCP line and dropping the WhatsApp link no matter what
+  // the prompt says, so we scrub + inject deterministically.
+  content.facebook_post = normalizeCaption(content.facebook_post, 'facebook');
+  content.instagram_caption = normalizeCaption(content.instagram_caption, 'instagram');
+  content.youtube_description = normalizeCaption(content.youtube_description, 'youtube');
   content.youtube_script = stripLegalDisclaimer(content.youtube_script);
 
   return content;
 }
+
+const WHATSAPP_LINK = 'https://wa.me/14848644191';
 
 function stripLegalDisclaimer(text: string): string {
   if (!text) return text;
@@ -223,6 +248,26 @@ function stripLegalDisclaimer(text: string): string {
   let out = text;
   for (const p of patterns) out = out.replace(p, '');
   return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function normalizeCaption(text: string, channel: 'facebook' | 'instagram' | 'youtube'): string {
+  if (!text) return text;
+  const stripped = stripLegalDisclaimer(text);
+  if (stripped.includes(WHATSAPP_LINK) || stripped.includes('wa.me/14848644191')) {
+    return stripped;
+  }
+  // Inject WhatsApp CTA. For IG/YT keep short form ("💬 WhatsApp: ...").
+  const line =
+    channel === 'facebook'
+      ? `💬 Chatea con nosotros por WhatsApp: ${WHATSAPP_LINK}`
+      : `💬 WhatsApp: ${WHATSAPP_LINK}`;
+
+  // Insert before the hashtags block if present, otherwise append.
+  const hashtagIdx = stripped.search(/\n#\w/);
+  if (hashtagIdx > 0) {
+    return `${stripped.slice(0, hashtagIdx)}\n${line}${stripped.slice(hashtagIdx)}`;
+  }
+  return `${stripped}\n${line}`;
 }
 
 /**

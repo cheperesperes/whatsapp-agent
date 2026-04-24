@@ -1,7 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(~/bin/gh pr *)",
+      "Bash(ls -la .env*)",
+      "Bash(ls -la ../../../.env*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(ln -s \"/Users/almiraspropertymanagementllc/Whatsapp Agent/.env.local\" .env.local)",
+      "Bash(lsof -iTCP:3000 -sTCP:LISTEN -n -P)",
+      "Bash(ps -o cwd= -p 22975)",
+      "Bash(ps -o command= -p 22975)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\({path:'.env.local'}\\); console.log\\('SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'NOT SET'\\);\")",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__get_page_text",
+      "mcp__Claude_in_Chrome__find"
     ]
   }
 }

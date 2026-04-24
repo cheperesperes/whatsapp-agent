@@ -10,6 +10,8 @@ interface Campaign {
   status: string;
   daily_theme: string | null;
   product_sku: string | null;
+  category: string | null;
+  updated_at?: string | null;
   error_message: string | null;
   marketing_content?: Array<{
     video_url: string | null;
@@ -96,6 +98,45 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: 'Cancelado',
   failed: 'Error',
 };
+
+const STATUS_DETAIL: Record<string, string> = {
+  researching: 'Buscando tendencias, noticias y grupos relevantes en Facebook (Serper + Claude). ~20-40 seg.',
+  generating: 'Claude está escribiendo el post de Facebook, caption de Instagram, script de YouTube y anuncios de Google. ~20-40 seg.',
+  creating_video: 'HeyGen está renderizando el video con el avatar y la voz. 3-10 min — puedes cerrar esta página y volver.',
+  pending_approval: 'El contenido está listo. Revisa antes de publicar.',
+  publishing: 'Subiendo a Facebook, Instagram y YouTube...',
+  published: 'Publicado en todas las plataformas configuradas.',
+  rejected: 'Cancelaste esta campaña. Regenera para crear una nueva versión.',
+  failed: 'La pipeline falló — revisa el mensaje de error.',
+};
+
+const PIPELINE_STEPS: Array<{ id: string; label: string }> = [
+  { id: 'researching', label: 'Investigación' },
+  { id: 'generating', label: 'Contenido' },
+  { id: 'creating_video', label: 'Video' },
+  { id: 'pending_approval', label: 'Aprobación' },
+  { id: 'published', label: 'Publicación' },
+];
+
+const CATEGORIES: Array<{ value: string; label: string; desc: string }> = [
+  { value: 'producto', label: '🔌 Producto', desc: 'Destacar un producto específico' },
+  { value: 'educacion', label: '📚 Educación', desc: 'Enseñar sobre energía solar' },
+  { value: 'tips', label: '💡 Tips', desc: 'Consejos prácticos' },
+  { value: 'instalacion', label: '🔧 Instalación', desc: 'Cómo conectar / instalar' },
+  { value: 'baterias', label: '🔋 Baterías', desc: 'Foco en LiFePO4, ciclos, seguridad' },
+  { value: 'apagones', label: '⚡ Apagones', desc: 'Contexto del apagón en Cuba' },
+  { value: 'familia', label: '👨‍👩‍👧 Familia', desc: 'Historia humana de impacto' },
+];
+
+function humanDuration(fromIso: string | null | undefined): string {
+  if (!fromIso) return '';
+  const secs = Math.floor((Date.now() - new Date(fromIso).getTime()) / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ${secs % 60}s`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m`;
+}
 
 function formatDate(dateStr: string) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('es-ES', {
@@ -271,11 +312,16 @@ export default function MarketingPage() {
     reload();
   }
 
-  async function generate(force = false) {
+  async function generate(options: { force?: boolean; category?: string | null } = {}) {
+    const { force = false, category } = options;
     if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
     try {
-      await fetch(`/api/cron/marketing-daily${force ? '?force=true' : ''}`, { cache: 'no-store' });
+      const qs = new URLSearchParams();
+      if (force) qs.set('force', 'true');
+      if (category) qs.set('category', category);
+      const suffix = qs.toString() ? `?${qs.toString()}` : '';
+      await fetch(`/api/cron/marketing-daily${suffix}`, { cache: 'no-store' });
     } finally {
       setGenerating(false);
       reload();
@@ -381,25 +427,43 @@ export default function MarketingPage() {
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Hoy</p>
 
           {!today ? (
-            <div className="card p-6 text-center">
-              <p className="text-2xl mb-2">📭</p>
-              <p className="text-sm text-gray-400">No hay campaña para hoy.</p>
-              <button
-                type="button"
-                onClick={() => generate()}
-                disabled={generating}
-                className="mt-4 px-6 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
-              >
-                {generating ? 'Generando...' : 'Crear campaña ahora'}
-              </button>
+            <div className="card p-6">
+              <div className="text-center mb-5">
+                <p className="text-2xl mb-2">📭</p>
+                <p className="text-sm text-gray-400">No hay campaña para hoy.</p>
+                <p className="text-xs text-gray-500 mt-1">Elige el tipo de publicación a crear:</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {CATEGORIES.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => generate({ category: c.value })}
+                    disabled={generating}
+                    className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
+                  >
+                    <p className="text-sm font-medium text-gray-200">{c.label}</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">{c.desc}</p>
+                  </button>
+                ))}
+              </div>
+              {generating && (
+                <p className="text-xs text-brand-400 mt-4 text-center flex items-center justify-center gap-2">
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                  Iniciando pipeline...
+                </p>
+              )}
             </div>
           ) : (
             <div className="card p-5 space-y-4">
-              <div className="flex items-start justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <p className="text-lg font-semibold text-gray-100 flex items-center gap-2">
                     {inFlight ? (
-                      <svg className="animate-spin w-5 h-5 text-brand-500" fill="none" viewBox="0 0 24 24">
+                      <svg className="animate-spin w-5 h-5 text-brand-500 shrink-0" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                       </svg>
@@ -411,40 +475,65 @@ export default function MarketingPage() {
                   {today.daily_theme && (
                     <p className="text-sm text-gray-400 mt-1">"{today.daily_theme}"</p>
                   )}
-                  {today.product_sku && (
-                    <p className="text-xs text-gray-600 mt-0.5">Producto: {today.product_sku}</p>
-                  )}
-                  {inFlight && (
-                    <p className="text-xs text-gray-500 mt-2 italic">
-                      Actualizando automáticamente cada 5 segundos...
-                    </p>
-                  )}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600 mt-1">
+                    {today.product_sku && (
+                      <span>Producto: <span className="text-gray-400">{today.product_sku}</span></span>
+                    )}
+                    {today.category && (
+                      <span>
+                        Tipo: <span className="text-gray-400">{CATEGORIES.find((c) => c.value === today.category)?.label ?? today.category}</span>
+                      </span>
+                    )}
+                    {today.updated_at && inFlight && (
+                      <span>En este paso: <span className="text-gray-400">{humanDuration(today.updated_at)}</span></span>
+                    )}
+                  </div>
                 </div>
-                <span className="text-xs text-gray-600">
+                <span className="text-xs text-gray-600 shrink-0 text-right">
                   {formatDate(today.date)}
                 </span>
               </div>
 
-              {/* Progress bar for in-flight steps */}
-              {['researching', 'generating', 'creating_video'].includes(today.status) && (
-                <div className="space-y-1">
-                  {['researching', 'generating', 'creating_video'].map((step) => {
-                    const steps = ['researching', 'generating', 'creating_video'];
-                    const currentIdx = steps.indexOf(today.status);
-                    const stepIdx = steps.indexOf(step);
-                    const done = stepIdx < currentIdx;
-                    const active = stepIdx === currentIdx;
-                    return (
-                      <div key={step} className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full shrink-0 ${done ? 'bg-green-500' : active ? 'bg-brand-500 animate-pulse' : 'bg-surface-600'}`} />
-                        <span className={`text-xs ${active ? 'text-gray-200' : done ? 'text-gray-500 line-through' : 'text-gray-600'}`}>
-                          {STATUS_LABEL[step]}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              {/* Full pipeline step tracker */}
+              {(() => {
+                const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === today.status);
+                const terminal = today.status === 'failed' || today.status === 'rejected';
+                return (
+                  <div>
+                    <div className="flex items-stretch gap-1">
+                      {PIPELINE_STEPS.map((step, i) => {
+                        const done = !terminal && currentIdx >= 0 && i < currentIdx;
+                        const active = !terminal && currentIdx >= 0 && i === currentIdx;
+                        const bar = terminal
+                          ? 'bg-red-800/40'
+                          : done
+                          ? 'bg-green-600'
+                          : active
+                          ? 'bg-brand-500 animate-pulse'
+                          : 'bg-surface-700';
+                        return (
+                          <div key={step.id} className="flex-1 flex flex-col items-center gap-1">
+                            <div className={`h-1.5 w-full rounded-full ${bar}`} />
+                            <span
+                              className={`text-[10px] ${
+                                active ? 'text-brand-400 font-semibold' : done ? 'text-gray-400' : 'text-gray-600'
+                              }`}
+                            >
+                              {step.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {STATUS_DETAIL[today.status] && (
+                      <p className="text-xs text-gray-500 mt-3 italic">{STATUS_DETAIL[today.status]}</p>
+                    )}
+                    {inFlight && (
+                      <p className="text-[11px] text-gray-600 mt-1">🔄 Actualizando cada 5 segundos...</p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {today.error_message && (
                 <p className="text-xs text-red-400 bg-red-950/30 rounded p-2">
@@ -468,14 +557,26 @@ export default function MarketingPage() {
               )}
 
               {['pending_approval', 'rejected', 'failed'].includes(today.status) && (
-                <button
-                  type="button"
-                  onClick={() => generate(true)}
-                  disabled={generating}
-                  className="w-full px-4 py-2 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs font-medium transition-colors disabled:opacity-50"
-                >
-                  {generating ? 'Regenerando...' : '🔄 Regenerar campaña'}
-                </button>
+                <div className="space-y-2">
+                  <p className="text-[11px] text-gray-500">Regenerar con tipo distinto:</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {CATEGORIES.map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => generate({ force: true, category: c.value })}
+                        disabled={generating}
+                        className={`px-2 py-1.5 rounded text-[11px] transition-colors disabled:opacity-50 ${
+                          today.category === c.value
+                            ? 'bg-brand-600/30 border border-brand-500/50 text-brand-200'
+                            : 'bg-surface-700 hover:bg-surface-600 text-gray-300'
+                        }`}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
