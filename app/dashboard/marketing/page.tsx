@@ -14,10 +14,17 @@ interface Campaign {
   marketing_content?: Array<{
     video_url: string | null;
     video_status: string;
-    youtube_title: string | null;
     facebook_post: string | null;
     facebook_post_id: string | null;
+    instagram_caption: string | null;
+    instagram_post_id: string | null;
+    youtube_title: string | null;
+    youtube_description: string | null;
+    youtube_script: string | null;
+    youtube_tags: string[] | null;
     youtube_video_id: string | null;
+    google_ad_headlines: string[] | null;
+    google_ad_descriptions: string[] | null;
     published_at: string | null;
   }>;
   marketing_performance?: Array<{
@@ -98,13 +105,129 @@ function formatDate(dateStr: string) {
   });
 }
 
+type ContentRow = NonNullable<Campaign['marketing_content']>[number];
+
+function ContentPreview({ content }: { content: ContentRow }) {
+  const blocks: Array<{ label: string; body: React.ReactNode }> = [];
+
+  if (content.video_url) {
+    blocks.push({
+      label: '🎬 Video',
+      body: (
+        <video
+          controls
+          src={content.video_url}
+          className="w-full max-h-64 rounded bg-black"
+        />
+      ),
+    });
+  }
+
+  if (content.facebook_post) {
+    blocks.push({
+      label: '📘 Facebook',
+      body: <p className="whitespace-pre-wrap">{content.facebook_post}</p>,
+    });
+  }
+
+  if (content.instagram_caption) {
+    blocks.push({
+      label: '📸 Instagram',
+      body: <p className="whitespace-pre-wrap">{content.instagram_caption}</p>,
+    });
+  }
+
+  const ytParts: React.ReactNode[] = [];
+  if (content.youtube_title) {
+    ytParts.push(
+      <div key="t"><span className="text-gray-500">Título: </span>{content.youtube_title}</div>
+    );
+  }
+  if (content.youtube_description) {
+    ytParts.push(
+      <div key="d" className="whitespace-pre-wrap"><span className="text-gray-500">Descripción: </span>{content.youtube_description}</div>
+    );
+  }
+  if (content.youtube_script) {
+    ytParts.push(
+      <div key="s" className="whitespace-pre-wrap"><span className="text-gray-500">Guión: </span>{content.youtube_script}</div>
+    );
+  }
+  if (content.youtube_tags?.length) {
+    ytParts.push(
+      <div key="tags" className="flex flex-wrap gap-1 mt-1">
+        {content.youtube_tags.map((t) => (
+          <span key={t} className="px-2 py-0.5 rounded bg-surface-700 text-gray-400 text-[10px]">#{t}</span>
+        ))}
+      </div>
+    );
+  }
+  if (ytParts.length) {
+    blocks.push({ label: '▶️ YouTube', body: <div className="space-y-2">{ytParts}</div> });
+  }
+
+  const adParts: React.ReactNode[] = [];
+  if (content.google_ad_headlines?.length) {
+    adParts.push(
+      <div key="h">
+        <div className="text-gray-500 mb-1">Headlines:</div>
+        <ul className="list-disc list-inside space-y-0.5">
+          {content.google_ad_headlines.map((h, i) => <li key={i}>{h}</li>)}
+        </ul>
+      </div>
+    );
+  }
+  if (content.google_ad_descriptions?.length) {
+    adParts.push(
+      <div key="d">
+        <div className="text-gray-500 mb-1">Descripciones:</div>
+        <ul className="list-disc list-inside space-y-0.5">
+          {content.google_ad_descriptions.map((d, i) => <li key={i}>{d}</li>)}
+        </ul>
+      </div>
+    );
+  }
+  if (adParts.length) {
+    blocks.push({ label: '📢 Google Ads', body: <div className="space-y-2">{adParts}</div> });
+  }
+
+  if (blocks.length === 0) {
+    return (
+      <div className="bg-surface-800 rounded-lg p-3 text-xs text-gray-500">
+        Sin contenido generado todavía.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-surface-800 rounded-lg divide-y divide-surface-700 max-h-96 overflow-y-auto">
+      {blocks.map(({ label, body }) => (
+        <div key={label} className="p-3 text-xs text-gray-300 space-y-2">
+          <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+            {label}
+          </div>
+          {body}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function MarketingPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [adData, setAdData] = useState<AdData | null>(null);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [preview, setPreview] = useState<Campaign | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const togglePreview = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const reload = useCallback(() => {
     Promise.all([
@@ -307,6 +430,21 @@ export default function MarketingPage() {
                 </p>
               )}
 
+              {today.marketing_content?.[0] && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => togglePreview(today.id)}
+                    className="text-xs text-brand-400 hover:text-brand-300"
+                  >
+                    {expanded.has(today.id) ? 'Ocultar contenido ▲' : 'Ver contenido ▼'}
+                  </button>
+                  {expanded.has(today.id) && (
+                    <ContentPreview content={today.marketing_content[0]} />
+                  )}
+                </>
+              )}
+
               {['pending_approval', 'rejected', 'failed'].includes(today.status) && (
                 <button
                   type="button"
@@ -344,20 +482,18 @@ export default function MarketingPage() {
               </div>
 
               {/* Preview button */}
-              {pending.marketing_content?.[0]?.facebook_post && (
+              {pending.marketing_content?.[0] && (
                 <button
                   type="button"
-                  onClick={() => setPreview(preview?.id === pending.id ? null : pending)}
+                  onClick={() => togglePreview(pending.id)}
                   className="text-xs text-brand-400 hover:text-brand-300"
                 >
-                  {preview?.id === pending.id ? 'Ocultar preview ▲' : 'Ver contenido ▼'}
+                  {expanded.has(pending.id) ? 'Ocultar contenido ▲' : 'Ver contenido completo ▼'}
                 </button>
               )}
 
-              {preview?.id === pending.id && pending.marketing_content?.[0] && (
-                <div className="bg-surface-800 rounded-lg p-3 text-xs text-gray-400 whitespace-pre-wrap max-h-48 overflow-y-auto">
-                  {pending.marketing_content[0].facebook_post}
-                </div>
+              {expanded.has(pending.id) && pending.marketing_content?.[0] && (
+                <ContentPreview content={pending.marketing_content[0]} />
               )}
 
               <div className="flex gap-3">
@@ -398,42 +534,64 @@ export default function MarketingPage() {
                   ? perf.facebook_likes + perf.facebook_comments * 3 +
                     perf.facebook_shares * 5 + perf.instagram_likes
                   : null;
+                const isOpen = expanded.has(c.id);
+                const canExpand = !!content;
                 return (
-                  <div key={c.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="min-w-0">
-                      <p className="text-xs text-gray-300 truncate">
-                        {c.daily_theme ?? c.product_sku}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        {new Date(c.date + 'T12:00:00').toLocaleDateString('es-ES', {
-                          day: 'numeric',
-                          month: 'short',
-                        })}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4 shrink-0 ml-4">
-                      {perf && (
-                        <div className="hidden sm:flex gap-3 text-xs text-gray-500">
-                          <span>❤️ {perf.facebook_likes}</span>
-                          <span>👁️ {perf.youtube_views}</span>
+                  <div key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => canExpand && togglePreview(c.id)}
+                      disabled={!canExpand}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-800/50 transition-colors disabled:hover:bg-transparent disabled:cursor-default"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        {canExpand && (
+                          <span className="text-xs text-gray-500 shrink-0">
+                            {isOpen ? '▼' : '▶'}
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs text-gray-300 truncate">
+                            {c.daily_theme ?? c.product_sku}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            {new Date(c.date + 'T12:00:00').toLocaleDateString('es-ES', {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </p>
                         </div>
-                      )}
-                      {engagement !== null && (
-                        <span className={`text-xs font-medium ${engagement > 50 ? 'text-green-400' : engagement > 20 ? 'text-yellow-400' : 'text-gray-500'}`}>
-                          {engagement} pts
-                        </span>
-                      )}
-                      {content?.youtube_video_id && (
-                        <a
-                          href={`https://youtube.com/watch?v=${content.youtube_video_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-brand-400 hover:underline"
-                        >
-                          YT →
-                        </a>
-                      )}
-                    </div>
+                      </div>
+                      <div className="flex items-center gap-4 shrink-0 ml-4">
+                        {perf && (
+                          <div className="hidden sm:flex gap-3 text-xs text-gray-500">
+                            <span>❤️ {perf.facebook_likes}</span>
+                            <span>👁️ {perf.youtube_views}</span>
+                          </div>
+                        )}
+                        {engagement !== null && (
+                          <span className={`text-xs font-medium ${engagement > 50 ? 'text-green-400' : engagement > 20 ? 'text-yellow-400' : 'text-gray-500'}`}>
+                            {engagement} pts
+                          </span>
+                        )}
+                        {content?.youtube_video_id && (
+                          <a
+                            href={`https://youtube.com/watch?v=${content.youtube_video_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-brand-400 hover:underline"
+                          >
+                            YT →
+                          </a>
+                        )}
+                      </div>
+                    </button>
+                    {isOpen && content && (
+                      <div className="px-4 pb-3">
+                        <ContentPreview content={content} />
+                      </div>
+                    )}
                   </div>
                 );
               })}
