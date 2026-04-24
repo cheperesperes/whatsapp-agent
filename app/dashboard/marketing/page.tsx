@@ -247,6 +247,15 @@ export default function MarketingPage() {
   const today = data?.campaigns.find(
     (c) => c.date === new Date().toISOString().split('T')[0]
   );
+
+  // Auto-poll while the daily pipeline is in-flight so the operator sees
+  // research → generating → creating_video progress without manual refresh.
+  const inFlight = today && ['researching', 'generating', 'creating_video'].includes(today.status);
+  useEffect(() => {
+    if (!inFlight) return;
+    const id = setInterval(reload, 5000);
+    return () => clearInterval(id);
+  }, [inFlight, reload]);
   const pending = data?.campaigns.find((c) => c.status === 'pending_approval');
   const history = data?.campaigns.filter((c) => c.status === 'published').slice(0, 10) ?? [];
 
@@ -388,14 +397,27 @@ export default function MarketingPage() {
             <div className="card p-5 space-y-4">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-lg font-semibold text-gray-100">
-                    {STATUS_EMOJI[today.status]} {STATUS_LABEL[today.status] ?? today.status}
+                  <p className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+                    {inFlight ? (
+                      <svg className="animate-spin w-5 h-5 text-brand-500" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
+                    ) : (
+                      <span>{STATUS_EMOJI[today.status]}</span>
+                    )}
+                    <span>{STATUS_LABEL[today.status] ?? today.status}</span>
                   </p>
                   {today.daily_theme && (
                     <p className="text-sm text-gray-400 mt-1">"{today.daily_theme}"</p>
                   )}
                   {today.product_sku && (
                     <p className="text-xs text-gray-600 mt-0.5">Producto: {today.product_sku}</p>
+                  )}
+                  {inFlight && (
+                    <p className="text-xs text-gray-500 mt-2 italic">
+                      Actualizando automáticamente cada 5 segundos...
+                    </p>
                   )}
                 </div>
                 <span className="text-xs text-gray-600">
