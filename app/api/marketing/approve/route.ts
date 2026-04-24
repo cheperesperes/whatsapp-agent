@@ -153,8 +153,12 @@ export async function POST(req: NextRequest) {
   const groups = await getActiveGroups();
   await Promise.all(groups.slice(0, 5).map((g) => markGroupPosted(g.id)));
 
-  const finalStatus = errors.length === 0 ? 'published' : 'published';
-  await updateCampaign(campaign.id, { status: finalStatus });
+  const anyPublished = Boolean(results.facebook || results.instagram || results.youtube);
+  const finalStatus = anyPublished ? 'published' : 'failed';
+  await updateCampaign(campaign.id, {
+    status: finalStatus,
+    error_message: errors.length > 0 ? errors.join(' | ') : null,
+  });
 
   // Confirm to Eduardo via WhatsApp
   const successLines = [
