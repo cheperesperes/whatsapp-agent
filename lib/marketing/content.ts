@@ -27,9 +27,13 @@ interface Product {
   ideal_for?: string | null;
 }
 
-function pickDailyProduct(products: Product[]): Product {
+function pickDailyProduct(products: Product[], pinnedSku?: string | null): Product {
   const inStock = products.filter((p) => p.sku);
   if (inStock.length === 0) return products[0];
+  if (pinnedSku) {
+    const pinned = inStock.find((p) => p.sku.toLowerCase() === pinnedSku.toLowerCase());
+    if (pinned) return pinned;
+  }
   // Rotate by day-of-year so each day features a different product
   const dayOfYear = Math.floor(Date.now() / 86400000);
   return inStock[dayOfYear % inStock.length];
@@ -57,9 +61,10 @@ export const CATEGORIES: Array<{ value: MarketingCategory; label: string; angle:
 export async function generateMarketingContent(
   researchBrief: string,
   products: Product[],
-  category?: MarketingCategory | null
+  category?: MarketingCategory | null,
+  pinnedSku?: string | null
 ): Promise<GeneratedContent> {
-  const product = pickDailyProduct(products);
+  const product = pickDailyProduct(products, pinnedSku);
   const categoryEntry = category ? CATEGORIES.find((c) => c.value === category) : null;
   const categoryBrief = categoryEntry
     ? `\nCATEGORÍA DE HOY: ${categoryEntry.label}\nÁngulo específico: ${categoryEntry.angle}\n`
@@ -226,15 +231,23 @@ Genera el siguiente contenido de marketing en formato JSON válido. TODO en espa
   // Strip legal disclaimers + inject WhatsApp CTA. The model keeps
   // re-adding the SCP line and dropping the WhatsApp link no matter what
   // the prompt says, so we scrub + inject deterministically.
-  content.facebook_post = normalizeCaption(content.facebook_post, 'facebook');
-  content.instagram_caption = normalizeCaption(content.instagram_caption, 'instagram');
-  content.youtube_description = normalizeCaption(content.youtube_description, 'youtube');
+  const productRef = product.name || product.sku;
+  content.facebook_post = normalizeCaption(content.facebook_post, 'facebook', productRef);
+  content.instagram_caption = normalizeCaption(content.instagram_caption, 'instagram', productRef);
+  content.youtube_description = normalizeCaption(content.youtube_description, 'youtube', productRef);
   content.youtube_script = stripLegalDisclaimer(content.youtube_script);
 
   return content;
 }
 
-const WHATSAPP_LINK = 'https://wa.me/14848644191';
+const WHATSAPP_PHONE = '14848644191';
+
+function buildWhatsAppUrl(productRef?: string | null): string {
+  const base = `https://wa.me/${WHATSAPP_PHONE}`;
+  if (!productRef) return base;
+  const msg = encodeURIComponent(`Hola! ¿Me pueden dar más info sobre el ${productRef}?`);
+  return `${base}?text=${msg}`;
+}
 
 function stripLegalDisclaimer(text: string): string {
   if (!text) return text;
@@ -250,24 +263,31 @@ function stripLegalDisclaimer(text: string): string {
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function normalizeCaption(text: string, channel: 'facebook' | 'instagram' | 'youtube'): string {
+function normalizeCaption(
+  text: string,
+  channel: 'facebook' | 'instagram' | 'youtube',
+  productRef?: string | null,
+): string {
   if (!text) return text;
-  const stripped = stripLegalDisclaimer(text);
-  if (stripped.includes(WHATSAPP_LINK) || stripped.includes('wa.me/14848644191')) {
-    return stripped;
-  }
-  // Inject WhatsApp CTA. For IG/YT keep short form ("💬 WhatsApp: ...").
+  const waUrl = buildWhatsAppUrl(productRef);
+
+  // Strip any existing wa.me/14848644191 link (with or without query). The AI
+  // often injects a plain link without the ?text= payload that prefills the
+  // customer's message; we re-inject our canonical SKU-aware URL.
+  const waLinkPattern = /https?:\/\/wa\.me\/14848644191(?:\?[^\s)]*)?/gi;
+  const scrubbed = stripLegalDisclaimer(text).replace(waLinkPattern, '').replace(/\n{3,}/g, '\n\n').trim();
+
   const line =
     channel === 'facebook'
-      ? `💬 Chatea con nosotros por WhatsApp: ${WHATSAPP_LINK}`
-      : `💬 WhatsApp: ${WHATSAPP_LINK}`;
+      ? `💬 Chatea con nosotros por WhatsApp: ${waUrl}`
+      : `💬 WhatsApp: ${waUrl}`;
 
   // Insert before the hashtags block if present, otherwise append.
-  const hashtagIdx = stripped.search(/\n#\w/);
+  const hashtagIdx = scrubbed.search(/\n#\w/);
   if (hashtagIdx > 0) {
-    return `${stripped.slice(0, hashtagIdx)}\n${line}${stripped.slice(hashtagIdx)}`;
+    return `${scrubbed.slice(0, hashtagIdx)}\n${line}${scrubbed.slice(hashtagIdx)}`;
   }
-  return `${stripped}\n${line}`;
+  return `${scrubbed}\n${line}`;
 }
 
 /**
