@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@supabase/ssr';
 import { conductDailyResearch } from '@/lib/marketing/research';
 import { generateMarketingContent, validateContent } from '@/lib/marketing/content';
 import { createProductReviewVideo } from '@/lib/marketing/heygen';
@@ -16,14 +17,32 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-function isAuthorized(req: NextRequest): boolean {
+async function isAuthorized(req: NextRequest): Promise<boolean> {
+  // Path 1: Vercel cron — Bearer CRON_SECRET
   const secret = process.env.CRON_SECRET;
-  if (!secret) return process.env.VERCEL_ENV !== 'production';
-  return req.headers.get('authorization') === `Bearer ${secret}`;
+  if (secret && req.headers.get('authorization') === `Bearer ${secret}`) {
+    return true;
+  }
+
+  // Path 2: dashboard button — authenticated Supabase user via session cookie
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (supabaseUrl && supabaseAnonKey) {
+    const sb = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: { getAll: () => req.cookies.getAll(), setAll: () => {} },
+    });
+    const { data: { user } } = await sb.auth.getUser();
+    if (user) return true;
+  }
+
+  // Local dev without CRON_SECRET — allow
+  if (!secret && process.env.VERCEL_ENV !== 'production') return true;
+
+  return false;
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
