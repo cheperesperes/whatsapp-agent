@@ -290,8 +290,8 @@ export default function MarketingPage() {
   );
 
   // Auto-poll while the daily pipeline is in-flight so the operator sees
-  // research → generating → creating_video progress without manual refresh.
-  const inFlight = today && ['researching', 'generating', 'creating_video'].includes(today.status);
+  // research → generating → creating_video → publishing progress without manual refresh.
+  const inFlight = today && ['researching', 'generating', 'creating_video', 'publishing'].includes(today.status);
   useEffect(() => {
     if (!inFlight) return;
     const id = setInterval(reload, 5000);
@@ -303,11 +303,15 @@ export default function MarketingPage() {
   async function approve(approved: boolean) {
     if (!pending) return;
     setApproving(true);
-    await fetch('/api/marketing/approve', {
+    const request = fetch('/api/marketing/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ approved, campaign_id: pending.id }),
     });
+    // Pick up the server-side status='publishing' transition so the card
+    // shows the spinner while the request (up to 2 min) is still in flight.
+    setTimeout(reload, 500);
+    await request;
     setApproving(false);
     reload();
   }
