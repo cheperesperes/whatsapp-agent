@@ -219,7 +219,15 @@ export default function MarketingPage() {
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [preview, setPreview] = useState<Campaign | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const togglePreview = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const reload = useCallback(() => {
     Promise.all([
@@ -422,6 +430,21 @@ export default function MarketingPage() {
                 </p>
               )}
 
+              {today.marketing_content?.[0] && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => togglePreview(today.id)}
+                    className="text-xs text-brand-400 hover:text-brand-300"
+                  >
+                    {expanded.has(today.id) ? 'Ocultar contenido ▲' : 'Ver contenido ▼'}
+                  </button>
+                  {expanded.has(today.id) && (
+                    <ContentPreview content={today.marketing_content[0]} />
+                  )}
+                </>
+              )}
+
               {['pending_approval', 'rejected', 'failed'].includes(today.status) && (
                 <button
                   type="button"
@@ -462,14 +485,14 @@ export default function MarketingPage() {
               {pending.marketing_content?.[0] && (
                 <button
                   type="button"
-                  onClick={() => setPreview(preview?.id === pending.id ? null : pending)}
+                  onClick={() => togglePreview(pending.id)}
                   className="text-xs text-brand-400 hover:text-brand-300"
                 >
-                  {preview?.id === pending.id ? 'Ocultar contenido ▲' : 'Ver contenido completo ▼'}
+                  {expanded.has(pending.id) ? 'Ocultar contenido ▲' : 'Ver contenido completo ▼'}
                 </button>
               )}
 
-              {preview?.id === pending.id && pending.marketing_content?.[0] && (
+              {expanded.has(pending.id) && pending.marketing_content?.[0] && (
                 <ContentPreview content={pending.marketing_content[0]} />
               )}
 
@@ -511,42 +534,64 @@ export default function MarketingPage() {
                   ? perf.facebook_likes + perf.facebook_comments * 3 +
                     perf.facebook_shares * 5 + perf.instagram_likes
                   : null;
+                const isOpen = expanded.has(c.id);
+                const canExpand = !!content;
                 return (
-                  <div key={c.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="min-w-0">
-                      <p className="text-xs text-gray-300 truncate">
-                        {c.daily_theme ?? c.product_sku}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        {new Date(c.date + 'T12:00:00').toLocaleDateString('es-ES', {
-                          day: 'numeric',
-                          month: 'short',
-                        })}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4 shrink-0 ml-4">
-                      {perf && (
-                        <div className="hidden sm:flex gap-3 text-xs text-gray-500">
-                          <span>❤️ {perf.facebook_likes}</span>
-                          <span>👁️ {perf.youtube_views}</span>
+                  <div key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => canExpand && togglePreview(c.id)}
+                      disabled={!canExpand}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-800/50 transition-colors disabled:hover:bg-transparent disabled:cursor-default"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        {canExpand && (
+                          <span className="text-xs text-gray-500 shrink-0">
+                            {isOpen ? '▼' : '▶'}
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-xs text-gray-300 truncate">
+                            {c.daily_theme ?? c.product_sku}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            {new Date(c.date + 'T12:00:00').toLocaleDateString('es-ES', {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </p>
                         </div>
-                      )}
-                      {engagement !== null && (
-                        <span className={`text-xs font-medium ${engagement > 50 ? 'text-green-400' : engagement > 20 ? 'text-yellow-400' : 'text-gray-500'}`}>
-                          {engagement} pts
-                        </span>
-                      )}
-                      {content?.youtube_video_id && (
-                        <a
-                          href={`https://youtube.com/watch?v=${content.youtube_video_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-brand-400 hover:underline"
-                        >
-                          YT →
-                        </a>
-                      )}
-                    </div>
+                      </div>
+                      <div className="flex items-center gap-4 shrink-0 ml-4">
+                        {perf && (
+                          <div className="hidden sm:flex gap-3 text-xs text-gray-500">
+                            <span>❤️ {perf.facebook_likes}</span>
+                            <span>👁️ {perf.youtube_views}</span>
+                          </div>
+                        )}
+                        {engagement !== null && (
+                          <span className={`text-xs font-medium ${engagement > 50 ? 'text-green-400' : engagement > 20 ? 'text-yellow-400' : 'text-gray-500'}`}>
+                            {engagement} pts
+                          </span>
+                        )}
+                        {content?.youtube_video_id && (
+                          <a
+                            href={`https://youtube.com/watch?v=${content.youtube_video_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-brand-400 hover:underline"
+                          >
+                            YT →
+                          </a>
+                        )}
+                      </div>
+                    </button>
+                    {isOpen && content && (
+                      <div className="px-4 pb-3">
+                        <ContentPreview content={content} />
+                      </div>
+                    )}
                   </div>
                 );
               })}
