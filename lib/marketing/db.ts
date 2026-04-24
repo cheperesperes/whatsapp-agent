@@ -7,6 +7,7 @@ export interface MarketingCampaign {
   research_brief: string | null;
   daily_theme: string | null;
   product_sku: string | null;
+  category: string | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;
@@ -59,11 +60,11 @@ export interface CampaignPerformance {
 
 // ── Campaigns ─────────────────────────────────────────────────────────────────
 
-export async function createCampaign(date: string): Promise<MarketingCampaign> {
+export async function createCampaign(date: string, category?: string | null): Promise<MarketingCampaign> {
   const sb = createServiceClient();
   const { data, error } = await sb
     .from('marketing_campaigns')
-    .insert({ date, status: 'researching' })
+    .insert({ date, status: 'researching', category: category ?? null })
     .select()
     .single();
   if (error) throw new Error(`createCampaign: ${error.message}`);
@@ -72,7 +73,7 @@ export async function createCampaign(date: string): Promise<MarketingCampaign> {
 
 export async function updateCampaign(
   id: string,
-  patch: Partial<Pick<MarketingCampaign, 'status' | 'research_brief' | 'daily_theme' | 'product_sku' | 'error_message'>>
+  patch: Partial<Pick<MarketingCampaign, 'status' | 'research_brief' | 'daily_theme' | 'product_sku' | 'error_message' | 'category'>>
 ) {
   const sb = createServiceClient();
   const { error } = await sb.from('marketing_campaigns').update(patch).eq('id', id);

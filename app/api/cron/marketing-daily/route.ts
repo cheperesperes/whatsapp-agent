@@ -55,6 +55,9 @@ export async function GET(req: NextRequest) {
   const runId = `marketing-${today}`;
   const startedAt = Date.now();
   const force = req.nextUrl.searchParams.get('force') === 'true';
+  const categoryParam = req.nextUrl.searchParams.get('category');
+  const validCategories = ['educacion', 'tips', 'instalacion', 'baterias', 'apagones', 'familia', 'producto'] as const;
+  const category = validCategories.find((v) => v === categoryParam) ?? null;
 
   // Skip if already ran today (unless force=true)
   let existing = await getCampaignByDate(today);
@@ -79,7 +82,7 @@ export async function GET(req: NextRequest) {
   try {
     // ── Step 1: Create or reset campaign record ────────────────────────────
     if (!existing) {
-      const campaign = await createCampaign(today);
+      const campaign = await createCampaign(today, category);
       campaignId = campaign.id;
     } else {
       // Retry failed / force-regenerate
@@ -90,6 +93,7 @@ export async function GET(req: NextRequest) {
         daily_theme: null,
         product_sku: null,
         research_brief: null,
+        category,
       });
     }
 
@@ -129,7 +133,7 @@ export async function GET(req: NextRequest) {
 
     // ── Step 5: Generate content + compliance check ────────────────────────
     console.log(`[marketing-daily] ${runId} — generating content`);
-    const content = await generateMarketingContent(fullBrief, products);
+    const content = await generateMarketingContent(fullBrief, products, category);
 
     const warnings = validateContent(content);
     if (warnings.length > 0) {

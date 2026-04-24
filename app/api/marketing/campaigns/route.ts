@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   ] = await Promise.all([
     sb
       .from('marketing_campaigns')
-      .select('id, date, status, daily_theme, product_sku, error_message, created_at')
+      .select('id, date, status, daily_theme, product_sku, category, error_message, created_at, updated_at')
       .order('date', { ascending: false })
       .limit(30),
     sb
