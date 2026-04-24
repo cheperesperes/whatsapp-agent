@@ -91,9 +91,10 @@ brief de investigación entran en conflicto, GANA LA REGLA.
 • Neutralidad política: NUNCA menciones el embargo, el gobierno cubano o
   venezolano, políticas de EE.UU.-Cuba, regímenes, partidos, ni causas
   políticas de los apagones. Habla del apagón como un HECHO.
-• NO incluyas disclaimers legales, referencias a licencias de exportación,
-  ni menciones de 15 CFR §740.21, License Exception SCP, BIS, OFAC. El
-  contenido de marketing debe mantenerse limpio y emocional.
+• PROHIBIDO terminar con cualquier disclaimer legal, referencia regulatoria,
+  número de CFR, license exception, BIS, OFAC, aduana, o texto tipo pie de
+  página legal. El último contenido del post debe ser el CTA + hashtags.
+  NUNCA escribas frases como "Envíos a Cuba operan bajo..." o similares.
 
 §3.2 INTEGRIDAD DE CLAIMS (FTC — TRUTH IN ADVERTISING)
 • SUBSTANCIACIÓN: solo usa especificaciones que aparezcan LITERALMENTE en la
@@ -198,7 +199,30 @@ Genera el siguiente contenido de marketing en formato JSON válido. TODO en espa
   content.google_ad_headlines = content.google_ad_headlines.map((h) => h.slice(0, 30));
   content.google_ad_descriptions = content.google_ad_descriptions.map((d) => d.slice(0, 90));
 
+  // Strip any legal disclaimer lines the model keeps regenerating despite
+  // prompt instructions. Belt-and-suspenders: the model trained on a lot of
+  // Oiikon content that ended with the SCP disclosure, so negative prompting
+  // alone isn't enough — we scrub the output as well.
+  content.facebook_post = stripLegalDisclaimer(content.facebook_post);
+  content.instagram_caption = stripLegalDisclaimer(content.instagram_caption);
+  content.youtube_description = stripLegalDisclaimer(content.youtube_description);
+  content.youtube_script = stripLegalDisclaimer(content.youtube_script);
+
   return content;
+}
+
+function stripLegalDisclaimer(text: string): string {
+  if (!text) return text;
+  const patterns = [
+    /\n?\s*Envíos a Cuba operan bajo[^\n]*\.?/gi,
+    /\n?\s*Envíos a Cuba\.?\s*(?=\n|$)/gi,
+    /\n?\s*[^\n]*15\s*CFR\s*§?\s*740\.21[^\n]*/gi,
+    /\n?\s*[^\n]*License Exception SCP[^\n]*/gi,
+    /\n?\s*[^\n]*(BIS|OFAC)\b[^\n]*/g,
+  ];
+  let out = text;
+  for (const p of patterns) out = out.replace(p, '');
+  return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
