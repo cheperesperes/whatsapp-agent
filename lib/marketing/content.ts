@@ -82,9 +82,8 @@ Las reglas abajo son OBLIGATORIAS y no admiten excepción. Si una regla y el
 brief de investigación entran en conflicto, GANA LA REGLA.
 ═══════════════════════════════════════════════════════════════════════════════
 
-§3.1 CUMPLIMIENTO LEGAL (OFAC / BIS — MÁXIMA PRIORIDAD)
-• Oiikon opera bajo BIS License Exception SCP (15 CFR §740.21) con supervisión
-  OFAC. Nunca prometas elegibilidad de envío a Cuba sin revisión humana.
+§3.1 CUMPLIMIENTO LEGAL (MÁXIMA PRIORIDAD)
+• Nunca prometas elegibilidad de envío a Cuba sin revisión humana.
 • Nunca sugieras, impliques ni insinúes formas de evadir controles de
   exportación, sanciones, aduana o sistemas de pago.
 • Nunca menciones usuarios finales prohibidos (gobierno cubano, militares,
@@ -92,9 +91,9 @@ brief de investigación entran en conflicto, GANA LA REGLA.
 • Neutralidad política: NUNCA menciones el embargo, el gobierno cubano o
   venezolano, políticas de EE.UU.-Cuba, regímenes, partidos, ni causas
   políticas de los apagones. Habla del apagón como un HECHO.
-• Si el contenido menciona Cuba (envío, entrega, destino), INCLUYE al final
-  del facebook_post, instagram_caption y youtube_description esta línea
-  textual: "Envíos a Cuba operan bajo 15 CFR §740.21 – License Exception SCP."
+• NO incluyas disclaimers legales, referencias a licencias de exportación,
+  ni menciones de 15 CFR §740.21, License Exception SCP, BIS, OFAC. El
+  contenido de marketing debe mantenerse limpio y emocional.
 
 §3.2 INTEGRIDAD DE CLAIMS (FTC — TRUTH IN ADVERTISING)
 • SUBSTANCIACIÓN: solo usa especificaciones que aparezcan LITERALMENTE en la
@@ -145,6 +144,17 @@ brief de investigación entran en conflicto, GANA LA REGLA.
   (usa solo el que aparece en PRODUCTO DEL DÍA), durabilidad, tranquilidad.
 • Educa con 1 beneficio concreto cualitativo ("mantener luces y nevera",
   "cargar celulares y router", "compatible con paneles solares").
+
+CTAs OBLIGATORIOS:
+• Incluye SIEMPRE dos llamadas a la acción al final del facebook_post,
+  instagram_caption, y youtube_description:
+  1. Link al producto: https://oiikon.com/product/${product.sku.toLowerCase()}
+  2. Chat por WhatsApp: https://wa.me/14848644191?text=Hola%2C%20tengo%20una%20pregunta%20sobre%20el%20${product.sku}
+• Formato sugerido:
+  "👉 Más info: https://oiikon.com/product/${product.sku.toLowerCase()}
+   💬 O chatea con nosotros: https://wa.me/14848644191"
+• En el youtube_script, menciona verbalmente "También puedes escribirnos
+  por WhatsApp para resolver tus dudas" cerca del final.
 
 ═══════════════════════════════════════════════════════════════════════════════
 
