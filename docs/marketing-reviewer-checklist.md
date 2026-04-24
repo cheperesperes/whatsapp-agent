@@ -9,7 +9,7 @@ Cada casilla debe estar marcada con ✅. Si alguna falla, marca ❌ y usa el bot
 
 - [ ] **Sin lenguaje político.** No menciona gobierno, régimen, partido, dictador, embargo, "el sistema".
 - [ ] **Sin promesas de Cuba sin OFAC.** Nada de "garantizado a Cuba", "envío 100% asegurado a La Habana".
-- [ ] **Disclosure SCP presente.** Si el post menciona Cuba (envío/destino/entrega), incluye *"Envíos a Cuba operan bajo 15 CFR §740.21 – License Exception SCP."* en FB, IG y YouTube description.
+- [ ] **Disclosure de envíos presente.** Si el post menciona Cuba (envío/destino/entrega), incluye *"Envíos a Cuba."* en FB, IG y YouTube description.
 - [ ] **Sin mención de usuarios finales prohibidos.** No apunta a entidades del gobierno cubano, militares o listas restrictivas.
 
 ## 2. Integridad de Claims (§3.2)

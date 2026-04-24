@@ -94,7 +94,7 @@ brief de investigación entran en conflicto, GANA LA REGLA.
   políticas de los apagones. Habla del apagón como un HECHO.
 • Si el contenido menciona Cuba (envío, entrega, destino), INCLUYE al final
   del facebook_post, instagram_caption y youtube_description esta línea
-  textual: "Envíos a Cuba operan bajo 15 CFR §740.21 – License Exception SCP."
+  textual: "Envíos a Cuba."
 
 §3.2 INTEGRIDAD DE CLAIMS (FTC — TRUTH IN ADVERTISING)
 • SUBSTANCIACIÓN: solo usa especificaciones que aparezcan LITERALMENTE en la
@@ -145,6 +145,17 @@ brief de investigación entran en conflicto, GANA LA REGLA.
   (usa solo el que aparece en PRODUCTO DEL DÍA), durabilidad, tranquilidad.
 • Educa con 1 beneficio concreto cualitativo ("mantener luces y nevera",
   "cargar celulares y router", "compatible con paneles solares").
+
+CTAs OBLIGATORIOS:
+• Incluye SIEMPRE dos llamadas a la acción al final del facebook_post,
+  instagram_caption, y youtube_description:
+  1. Link al producto: https://oiikon.com/product/${product.sku.toLowerCase()}
+  2. Chat por WhatsApp: https://wa.me/14848644191?text=Hola%2C%20tengo%20una%20pregunta%20sobre%20el%20${product.sku}
+• Formato sugerido:
+  "👉 Más info: https://oiikon.com/product/${product.sku.toLowerCase()}
+   💬 O chatea con nosotros: https://wa.me/14848644191"
+• En el youtube_script, menciona verbalmente "También puedes escribirnos
+  por WhatsApp para resolver tus dudas" cerca del final.
 
 ═══════════════════════════════════════════════════════════════════════════════
 
