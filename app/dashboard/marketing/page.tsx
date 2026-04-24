@@ -556,28 +556,28 @@ export default function MarketingPage() {
                 </>
               )}
 
-              {['pending_approval', 'rejected', 'failed'].includes(today.status) && (
-                <div className="space-y-2">
-                  <p className="text-[11px] text-gray-500">Regenerar con tipo distinto:</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    {CATEGORIES.map((c) => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        onClick={() => generate({ force: true, category: c.value })}
-                        disabled={generating}
-                        className={`px-2 py-1.5 rounded text-[11px] transition-colors disabled:opacity-50 ${
-                          today.category === c.value
-                            ? 'bg-brand-600/30 border border-brand-500/50 text-brand-200'
-                            : 'bg-surface-700 hover:bg-surface-600 text-gray-300'
-                        }`}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
+              <div className="space-y-2">
+                <p className="text-[11px] text-gray-500">
+                  {inFlight ? 'Cancelar y regenerar con otro tipo:' : 'Regenerar con tipo distinto:'}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  {CATEGORIES.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => generate({ force: true, category: c.value })}
+                      disabled={generating}
+                      className={`px-2 py-1.5 rounded text-[11px] transition-colors disabled:opacity-50 ${
+                        today.category === c.value
+                          ? 'bg-brand-600/30 border border-brand-500/50 text-brand-200'
+                          : 'bg-surface-700 hover:bg-surface-600 text-gray-300'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
             </div>
           )}
         </section>
