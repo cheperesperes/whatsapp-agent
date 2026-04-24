@@ -336,401 +336,72 @@ export default function MarketingPage() {
     );
   }
 
+  const content0 = today?.marketing_content?.[0];
+
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-surface-900">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-surface-600 bg-surface-800 flex items-center justify-between shrink-0">
+      {/* Minimal header */}
+      <div className="px-6 py-3 border-b border-surface-600 bg-surface-800 flex items-center justify-between shrink-0">
         <div>
-          <h2 className="text-base font-semibold text-gray-100">Marketing Oiikon</h2>
-          <p className="text-xs text-gray-500">Facebook · Instagram · YouTube · Google Ads</p>
+          <h2 className="text-base font-semibold text-gray-100">Marketing</h2>
+          <p className="text-[11px] text-gray-500">
+            {formatDate(new Date().toISOString().split('T')[0])}
+          </p>
         </div>
-        {!today && (
+        <div className="flex items-center gap-2">
+          {adData?.configured && adData.spend && adData.spend.this_week > 0 && (
+            <span className="text-[11px] text-gray-500">
+              Gasto semana: <span className="text-brand-400 font-semibold">${adData.spend.this_week.toFixed(2)}</span>
+            </span>
+          )}
           <button
             type="button"
-            onClick={() => generate()}
-            disabled={generating}
-            className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+            onClick={() => reload()}
+            className="text-xs text-gray-500 hover:text-gray-300"
+            title="Refrescar"
           >
-            {generating ? 'Generando...' : '▶ Generar hoy'}
+            ↻
           </button>
-        )}
+        </div>
       </div>
 
-      <div className="p-6 space-y-6 max-w-2xl mx-auto w-full">
+      <div className="p-6 space-y-5 max-w-3xl mx-auto w-full">
 
-        {/* ── AD SPEND ────────────────────────────────────────── */}
-        {adData?.configured && adData.spend && (
-          <section>
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
-              Gasto en Anuncios (Facebook Ads)
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'Hoy', value: adData.spend.today },
-                { label: 'Ayer', value: adData.spend.yesterday },
-                { label: 'Esta semana', value: adData.spend.this_week },
-                { label: 'Este mes', value: adData.spend.this_month },
-              ].map(({ label, value }) => (
-                <div key={label} className="card p-4 text-center">
-                  <p className="text-xs text-gray-500 mb-1">{label}</p>
-                  <p className="text-2xl font-bold text-brand-400">
-                    ${value.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-gray-600">{adData.spend!.currency}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Campaign breakdown */}
-            {adData.campaigns.length > 0 && (
-              <div className="card mt-3 divide-y divide-surface-700">
-                {adData.campaigns
-                  .filter((c) => c.spend > 0 || c.status === 'ACTIVE')
-                  .map((c) => (
-                    <div key={c.id} className="flex items-center justify-between px-4 py-3">
-                      <div className="min-w-0">
-                        <p className="text-xs text-gray-300 truncate">{c.name}</p>
-                        <p className="text-xs text-gray-600">
-                          {c.impressions.toLocaleString()} imp ·{' '}
-                          {c.ctr > 0 ? `${c.ctr.toFixed(2)}% CTR` : '—'}
-                          {c.daily_budget ? ` · Budget $${c.daily_budget}/día` : ''}
-                        </p>
-                      </div>
-                      <div className="shrink-0 ml-4 text-right">
-                        <p className="text-sm font-semibold text-gray-200">
-                          ${c.spend.toFixed(2)}
-                        </p>
-                        {c.cpc > 0 && (
-                          <p className="text-xs text-gray-500">${c.cpc.toFixed(2)}/clic</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </section>
+        {/* ─────────────────  HERO  ───────────────── */}
+        {!today ? (
+          <CategoryLauncher onPick={(cat) => generate({ category: cat })} busy={generating} />
+        ) : (
+          <CampaignHero
+            campaign={today}
+            inFlight={!!inFlight}
+            approving={approving}
+            generating={generating}
+            onApprove={approve}
+            onRegenerate={(cat) => generate({ force: true, category: cat })}
+          />
         )}
 
-        {adData && !adData.configured && (
-          <section>
-            <div className="card p-4 border border-dashed border-surface-600">
-              <p className="text-xs text-gray-500 font-medium mb-1">Gasto en Anuncios</p>
-              <p className="text-xs text-gray-600">
-                Agrega <span className="font-mono text-gray-400">META_AD_ACCOUNT_ID</span> a las variables de entorno de Vercel para ver tu gasto.
-              </p>
-            </div>
-          </section>
-        )}
-
-        {/* ── TODAY'S STATUS ─────────────────────────────────── */}
-        <section>
-          <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Hoy</p>
-
-          {!today ? (
-            <div className="card p-6">
-              <div className="text-center mb-5">
-                <p className="text-2xl mb-2">📭</p>
-                <p className="text-sm text-gray-400">No hay campaña para hoy.</p>
-                <p className="text-xs text-gray-500 mt-1">Elige el tipo de publicación a crear:</p>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {CATEGORIES.map((c) => (
-                  <button
-                    key={c.value}
-                    type="button"
-                    onClick={() => generate({ category: c.value })}
-                    disabled={generating}
-                    className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
-                  >
-                    <p className="text-sm font-medium text-gray-200">{c.label}</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">{c.desc}</p>
-                  </button>
-                ))}
-              </div>
-              {generating && (
-                <p className="text-xs text-brand-400 mt-4 text-center flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                  Iniciando pipeline...
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="card p-5 space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-                    {inFlight ? (
-                      <svg className="animate-spin w-5 h-5 text-brand-500 shrink-0" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                      </svg>
-                    ) : (
-                      <span>{STATUS_EMOJI[today.status]}</span>
-                    )}
-                    <span>{STATUS_LABEL[today.status] ?? today.status}</span>
-                  </p>
-                  {today.daily_theme && (
-                    <p className="text-sm text-gray-400 mt-1">"{today.daily_theme}"</p>
-                  )}
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600 mt-1">
-                    {today.product_sku && (
-                      <span>Producto: <span className="text-gray-400">{today.product_sku}</span></span>
-                    )}
-                    {today.category && (
-                      <span>
-                        Tipo: <span className="text-gray-400">{CATEGORIES.find((c) => c.value === today.category)?.label ?? today.category}</span>
-                      </span>
-                    )}
-                    {today.updated_at && inFlight && (
-                      <span>En este paso: <span className="text-gray-400">{humanDuration(today.updated_at)}</span></span>
-                    )}
-                  </div>
-                </div>
-                <span className="text-xs text-gray-600 shrink-0 text-right">
-                  {formatDate(today.date)}
-                </span>
-              </div>
-
-              {/* Full pipeline step tracker */}
-              {(() => {
-                const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === today.status);
-                const terminal = today.status === 'failed' || today.status === 'rejected';
-                return (
-                  <div>
-                    <div className="flex items-stretch gap-1">
-                      {PIPELINE_STEPS.map((step, i) => {
-                        const done = !terminal && currentIdx >= 0 && i < currentIdx;
-                        const active = !terminal && currentIdx >= 0 && i === currentIdx;
-                        const bar = terminal
-                          ? 'bg-red-800/40'
-                          : done
-                          ? 'bg-green-600'
-                          : active
-                          ? 'bg-brand-500 animate-pulse'
-                          : 'bg-surface-700';
-                        return (
-                          <div key={step.id} className="flex-1 flex flex-col items-center gap-1">
-                            <div className={`h-1.5 w-full rounded-full ${bar}`} />
-                            <span
-                              className={`text-[10px] ${
-                                active ? 'text-brand-400 font-semibold' : done ? 'text-gray-400' : 'text-gray-600'
-                              }`}
-                            >
-                              {step.label}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {STATUS_DETAIL[today.status] && (
-                      <p className="text-xs text-gray-500 mt-3 italic">{STATUS_DETAIL[today.status]}</p>
-                    )}
-                    {inFlight && (
-                      <p className="text-[11px] text-gray-600 mt-1">🔄 Actualizando cada 5 segundos...</p>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {today.error_message && (
-                <p className="text-xs text-red-400 bg-red-950/30 rounded p-2">
-                  ⚠️ {today.error_message}
-                </p>
-              )}
-
-              {today.marketing_content?.[0] && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => togglePreview(today.id)}
-                    className="text-xs text-brand-400 hover:text-brand-300"
-                  >
-                    {expanded.has(today.id) ? 'Ocultar contenido ▲' : 'Ver contenido ▼'}
-                  </button>
-                  {expanded.has(today.id) && (
-                    <ContentPreview content={today.marketing_content[0]} />
-                  )}
-                </>
-              )}
-
-              {['pending_approval', 'rejected', 'failed'].includes(today.status) && (
-                <div className="space-y-2">
-                  <p className="text-[11px] text-gray-500">Regenerar con tipo distinto:</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    {CATEGORIES.map((c) => (
-                      <button
-                        key={c.value}
-                        type="button"
-                        onClick={() => generate({ force: true, category: c.value })}
-                        disabled={generating}
-                        className={`px-2 py-1.5 rounded text-[11px] transition-colors disabled:opacity-50 ${
-                          today.category === c.value
-                            ? 'bg-brand-600/30 border border-brand-500/50 text-brand-200'
-                            : 'bg-surface-700 hover:bg-surface-600 text-gray-300'
-                        }`}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* ── APPROVAL ───────────────────────────────────────── */}
-        {pending && (
-          <section>
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
-              Acción requerida
-            </p>
-            <div className="card p-5 space-y-4 ring-1 ring-brand-500/40">
-              <div>
-                <p className="text-sm font-semibold text-gray-100 mb-1">
-                  La campaña está lista para publicar
-                </p>
-                <p className="text-xs text-gray-400">
-                  Tema: <span className="text-gray-300">{pending.daily_theme}</span>
-                  {' · '}Producto: <span className="text-gray-300">{pending.product_sku}</span>
-                </p>
-                {pending.marketing_content?.[0]?.video_url && (
-                  <p className="text-xs mt-1">
-                    <span className="text-green-400">✅ Video listo</span>
-                  </p>
-                )}
-              </div>
-
-              {/* Preview button */}
-              {pending.marketing_content?.[0] && (
-                <button
-                  type="button"
-                  onClick={() => togglePreview(pending.id)}
-                  className="text-xs text-brand-400 hover:text-brand-300"
-                >
-                  {expanded.has(pending.id) ? 'Ocultar contenido ▲' : 'Ver contenido completo ▼'}
-                </button>
-              )}
-
-              {expanded.has(pending.id) && pending.marketing_content?.[0] && (
-                <ContentPreview content={pending.marketing_content[0]} />
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => approve(true)}
-                  disabled={approving}
-                  className="flex-1 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold text-sm transition-colors disabled:opacity-50"
-                >
-                  {approving ? 'Publicando...' : '✅ Publicar ahora'}
-                </button>
-                <button
-                  onClick={() => approve(false)}
-                  disabled={approving}
-                  className="px-4 py-3 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-400 text-sm transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-              </div>
-
-              <p className="text-xs text-gray-600 text-center">
-                También puedes responder <strong className="text-gray-400">SI</strong> o <strong className="text-gray-400">NO</strong> por WhatsApp
-              </p>
-            </div>
-          </section>
-        )}
-
-        {/* ── HISTORY ────────────────────────────────────────── */}
+        {/* ─────────────  HISTORY  ───────────── */}
         {history.length > 0 && (
-          <section>
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
-              Campañas publicadas
-            </p>
-            <div className="card divide-y divide-surface-700">
-              {history.map((c) => {
-                const perf = c.marketing_performance?.[0];
-                const content = c.marketing_content?.[0];
-                const engagement = perf
-                  ? perf.facebook_likes + perf.facebook_comments * 3 +
-                    perf.facebook_shares * 5 + perf.instagram_likes
-                  : null;
-                const isOpen = expanded.has(c.id);
-                const canExpand = !!content;
-                return (
-                  <div key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => canExpand && togglePreview(c.id)}
-                      disabled={!canExpand}
-                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-800/50 transition-colors disabled:hover:bg-transparent disabled:cursor-default"
-                    >
-                      <div className="min-w-0 flex items-center gap-2">
-                        {canExpand && (
-                          <span className="text-xs text-gray-500 shrink-0">
-                            {isOpen ? '▼' : '▶'}
-                          </span>
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-300 truncate">
-                            {c.daily_theme ?? c.product_sku}
-                          </p>
-                          <p className="text-xs text-gray-600">
-                            {new Date(c.date + 'T12:00:00').toLocaleDateString('es-ES', {
-                              day: 'numeric',
-                              month: 'short',
-                            })}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 shrink-0 ml-4">
-                        {perf && (
-                          <div className="hidden sm:flex gap-3 text-xs text-gray-500">
-                            <span>❤️ {perf.facebook_likes}</span>
-                            <span>👁️ {perf.youtube_views}</span>
-                          </div>
-                        )}
-                        {engagement !== null && (
-                          <span className={`text-xs font-medium ${engagement > 50 ? 'text-green-400' : engagement > 20 ? 'text-yellow-400' : 'text-gray-500'}`}>
-                            {engagement} pts
-                          </span>
-                        )}
-                        {content?.youtube_video_id && (
-                          <a
-                            href={`https://youtube.com/watch?v=${content.youtube_video_id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs text-brand-400 hover:underline"
-                          >
-                            YT →
-                          </a>
-                        )}
-                      </div>
-                    </button>
-                    {isOpen && content && (
-                      <div className="px-4 pb-3">
-                        <ContentPreview content={content} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <HistorySection
+            campaigns={history}
+            expanded={expanded}
+            onToggle={togglePreview}
+          />
         )}
 
-        {/* ── FACEBOOK GROUPS ────────────────────────────────── */}
+        {/* ───────  AD SPEND (collapsed when zero) ─────── */}
+        {adData && <AdSpendStrip data={adData} />}
+
+        {/* ───────  FB GROUPS ─────── */}
         {data && data.groups.length > 0 && (
-          <section>
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">
+          <details className="card">
+            <summary className="px-4 py-2.5 text-xs text-gray-400 cursor-pointer hover:bg-surface-800/50">
               Grupos de Facebook ({data.groups.length})
-            </p>
-            <div className="card divide-y divide-surface-700 max-h-64 overflow-y-auto">
+            </summary>
+            <div className="divide-y divide-surface-700 max-h-64 overflow-y-auto">
               {data.groups.map((g) => (
-                <div key={g.id} className="flex items-center justify-between px-4 py-2.5">
+                <div key={g.id} className="flex items-center justify-between px-4 py-2">
                   <a
                     href={g.url}
                     target="_blank"
@@ -747,21 +418,488 @@ export default function MarketingPage() {
                 </div>
               ))}
             </div>
-          </section>
+          </details>
         )}
 
-        {/* ── ENV REMINDER ────────────────────────────────────── */}
-        <section className="card p-4 bg-surface-800/50 space-y-1">
-          <p className="text-xs text-gray-500 font-medium">Variables de entorno necesarias</p>
-          {[
-            'SERPER_API_KEY', 'HEYGEN_API_KEY', 'HEYGEN_AVATAR_ID', 'HEYGEN_VOICE_ID',
-            'META_PAGE_ID', 'META_PAGE_ACCESS_TOKEN', 'META_IG_ACCOUNT_ID',
-            'YOUTUBE_CLIENT_ID', 'YOUTUBE_CLIENT_SECRET', 'YOUTUBE_REFRESH_TOKEN',
-          ].map((v) => (
-            <p key={v} className="text-xs font-mono text-gray-600">{v}</p>
-          ))}
-        </section>
+        {/* ─────────────  CHANNEL / ENV STATUS  ───────────── */}
+        <EnvStatusRow content={content0} />
       </div>
     </div>
+  );
+}
+
+// ─────────────────  CAMPAIGN HERO  ─────────────────
+
+function CampaignHero({
+  campaign,
+  inFlight,
+  approving,
+  generating,
+  onApprove,
+  onRegenerate,
+}: {
+  campaign: Campaign;
+  inFlight: boolean;
+  approving: boolean;
+  generating: boolean;
+  onApprove: (approved: boolean) => void;
+  onRegenerate: (cat: string) => void;
+}) {
+  const content = campaign.marketing_content?.[0];
+  const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === campaign.status);
+  const terminal = campaign.status === 'failed' || campaign.status === 'rejected';
+  const readyToApprove = campaign.status === 'pending_approval';
+  const categoryLabel = campaign.category
+    ? CATEGORIES.find((c) => c.value === campaign.category)?.label
+    : null;
+
+  return (
+    <div className="card overflow-hidden ring-1 ring-surface-600">
+      {/* Pipeline strip */}
+      <div className="h-1 flex">
+        {PIPELINE_STEPS.map((step, i) => {
+          const done = !terminal && currentIdx >= 0 && i < currentIdx;
+          const active = !terminal && currentIdx >= 0 && i === currentIdx;
+          const cls = terminal
+            ? 'bg-red-800/40'
+            : done
+            ? 'bg-green-600'
+            : active
+            ? 'bg-brand-500 animate-pulse'
+            : 'bg-surface-700';
+          return <div key={step.id} className={`flex-1 ${cls}`} />;
+        })}
+      </div>
+
+      {/* Meta row */}
+      <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm">
+            {inFlight ? (
+              <svg className="animate-spin w-4 h-4 text-brand-500 shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            ) : (
+              <span>{STATUS_EMOJI[campaign.status]}</span>
+            )}
+            <span className="font-medium text-gray-200">{STATUS_LABEL[campaign.status] ?? campaign.status}</span>
+            {inFlight && campaign.updated_at && (
+              <span className="text-[11px] text-gray-500">· {humanDuration(campaign.updated_at)}</span>
+            )}
+          </p>
+          {campaign.daily_theme && (
+            <p className="text-lg text-gray-100 font-semibold mt-1 leading-snug">{campaign.daily_theme}</p>
+          )}
+          <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
+            {categoryLabel && (
+              <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">{categoryLabel}</span>
+            )}
+            {campaign.product_sku && (
+              <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">{campaign.product_sku}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Pipeline hint */}
+      {STATUS_DETAIL[campaign.status] && (
+        <p className="px-5 pb-3 text-xs text-gray-500 italic border-b border-surface-700">
+          {STATUS_DETAIL[campaign.status]}
+        </p>
+      )}
+
+      {campaign.error_message && (
+        <p className="mx-5 mt-3 text-xs text-red-300 bg-red-950/40 rounded p-2">
+          ⚠️ {campaign.error_message}
+        </p>
+      )}
+
+      {/* Channel chips */}
+      {content && <ChannelStatusChips content={content} />}
+
+      {/* Rendered FB-style preview (always visible, no toggle) */}
+      {content && <FacebookPreview content={content} />}
+
+      {/* Primary CTA */}
+      {readyToApprove && (
+        <div className="px-5 py-4 bg-surface-800/60 border-t border-surface-700 space-y-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => onApprove(true)}
+              disabled={approving}
+              className="flex-1 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold text-sm transition-colors disabled:opacity-50"
+            >
+              {approving ? 'Publicando...' : '✅ Publicar en todos los canales'}
+            </button>
+            <button
+              onClick={() => onApprove(false)}
+              disabled={approving}
+              className="px-4 py-3 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-sm transition-colors disabled:opacity-50"
+              title="Rechazar — no se publicará"
+            >
+              Rechazar
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-500 text-center">
+            También puedes responder <strong className="text-gray-400">SI</strong> / <strong className="text-gray-400">NO</strong> por WhatsApp
+          </p>
+        </div>
+      )}
+
+      {/* Secondary: regenerate tiles (always visible so you can redirect any time) */}
+      <div className="px-5 py-4 border-t border-surface-700">
+        <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">
+          {inFlight ? 'Cancelar y regenerar como' : readyToApprove ? 'O regenerar como' : 'Regenerar como'}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+          {CATEGORIES.map((c) => {
+            const current = campaign.category === c.value;
+            return (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => onRegenerate(c.value)}
+                disabled={generating}
+                className={`px-2 py-1.5 rounded text-[11px] transition-colors disabled:opacity-50 ${
+                  current
+                    ? 'bg-brand-600/20 border border-brand-500/50 text-brand-200'
+                    : 'bg-surface-700 hover:bg-surface-600 text-gray-300'
+                }`}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CategoryLauncher({
+  onPick,
+  busy,
+}: {
+  onPick: (cat: string) => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="card p-6">
+      <div className="text-center mb-5">
+        <p className="text-3xl mb-2">📭</p>
+        <p className="text-sm text-gray-300">Aún no hay campaña para hoy</p>
+        <p className="text-[11px] text-gray-500 mt-1">Elige un ángulo para generar el contenido:</p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {CATEGORIES.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            onClick={() => onPick(c.value)}
+            disabled={busy}
+            className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
+          >
+            <p className="text-sm font-medium text-gray-200">{c.label}</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">{c.desc}</p>
+          </button>
+        ))}
+      </div>
+      {busy && (
+        <p className="text-xs text-brand-400 mt-4 text-center flex items-center justify-center gap-2">
+          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+          </svg>
+          Iniciando pipeline...
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ChannelStatusChips({ content }: { content: ContentRow }) {
+  const channels: Array<{
+    label: string;
+    ready: boolean | null; // true ready to post, false not-ready, null = skipped by config
+    published: boolean;
+    note?: string;
+  }> = [
+    {
+      label: '📘 Facebook',
+      ready: !!content.facebook_post,
+      published: !!content.facebook_post_id,
+    },
+    {
+      label: '📸 Instagram',
+      ready: !!content.instagram_caption && !!content.video_url,
+      published: !!content.instagram_post_id,
+      note: !content.video_url ? 'necesita video' : undefined,
+    },
+    {
+      label: '▶️ YouTube',
+      ready: !!content.youtube_title && !!content.video_url,
+      published: !!content.youtube_video_id,
+      note: !content.video_url ? 'necesita video' : undefined,
+    },
+    {
+      label: '📢 Google Ads',
+      ready: !!(content.google_ad_headlines && content.google_ad_headlines.length > 0),
+      published: false,
+      note: 'publicador pendiente',
+    },
+  ];
+  return (
+    <div className="px-5 py-3 flex flex-wrap gap-2 border-b border-surface-700">
+      {channels.map((ch) => {
+        let state: 'published' | 'ready' | 'skip';
+        if (ch.published) state = 'published';
+        else if (ch.ready) state = 'ready';
+        else state = 'skip';
+        const cls =
+          state === 'published'
+            ? 'bg-green-900/40 text-green-300 border-green-700/40'
+            : state === 'ready'
+            ? 'bg-brand-900/40 text-brand-200 border-brand-700/40'
+            : 'bg-surface-800 text-gray-500 border-surface-600';
+        const icon = state === 'published' ? '✅' : state === 'ready' ? '•' : '○';
+        return (
+          <span
+            key={ch.label}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] ${cls}`}
+          >
+            <span>{icon}</span>
+            <span>{ch.label}</span>
+            {ch.note && <span className="text-gray-500">· {ch.note}</span>}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function FacebookPreview({ content }: { content: ContentRow }) {
+  const body = content.facebook_post ?? content.instagram_caption ?? '';
+  const lines = body.split('\n');
+  return (
+    <div className="bg-surface-800/50 px-5 py-4 border-b border-surface-700">
+      <div className="bg-white text-gray-900 rounded-lg p-4 shadow-sm max-w-xl mx-auto">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center text-white text-sm font-bold">
+            O
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
+              Oiikon <span className="text-blue-600 text-xs">✓</span>
+            </p>
+            <p className="text-[11px] text-gray-500">Vista previa · Público</p>
+          </div>
+        </div>
+        <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
+          {lines.map((l, i) => (
+            <p key={i} className="min-h-[1rem]">
+              {l}
+            </p>
+          ))}
+        </div>
+        {content.video_url && (
+          <video controls src={content.video_url} className="mt-3 w-full rounded" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────  HISTORY  ─────────────────
+
+function HistorySection({
+  campaigns,
+  expanded,
+  onToggle,
+}: {
+  campaigns: Campaign[];
+  expanded: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <section>
+      <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Publicadas</p>
+      <div className="card divide-y divide-surface-700">
+        {campaigns.map((c) => {
+          const perf = c.marketing_performance?.[0];
+          const content = c.marketing_content?.[0];
+          const engagement = perf
+            ? perf.facebook_likes + perf.facebook_comments * 3 + perf.facebook_shares * 5 + perf.instagram_likes
+            : null;
+          const isOpen = expanded.has(c.id);
+          const canExpand = !!content;
+          return (
+            <div key={c.id}>
+              <button
+                type="button"
+                onClick={() => canExpand && onToggle(c.id)}
+                disabled={!canExpand}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-800/50 transition-colors disabled:hover:bg-transparent disabled:cursor-default"
+              >
+                <div className="min-w-0 flex items-center gap-2 flex-1">
+                  {canExpand && (
+                    <span className="text-xs text-gray-500 shrink-0">{isOpen ? '▼' : '▶'}</span>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-200 truncate">{c.daily_theme ?? c.product_sku}</p>
+                    <p className="text-[11px] text-gray-600">
+                      {new Date(c.date + 'T12:00:00').toLocaleDateString('es-ES', {
+                        day: 'numeric',
+                        month: 'short',
+                      })}
+                      {c.category && ` · ${CATEGORIES.find((x) => x.value === c.category)?.label ?? c.category}`}
+                      {content?.facebook_post_id && ' · 📘'}
+                      {content?.instagram_post_id && ' · 📸'}
+                      {content?.youtube_video_id && ' · ▶️'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 shrink-0 ml-3">
+                  {perf && perf.facebook_likes > 0 && (
+                    <span className="text-[11px] text-gray-400">❤️ {perf.facebook_likes}</span>
+                  )}
+                  {perf && perf.youtube_views > 0 && (
+                    <span className="text-[11px] text-gray-400">👁️ {perf.youtube_views}</span>
+                  )}
+                  {engagement !== null && engagement > 0 && (
+                    <span
+                      className={`text-[11px] font-medium ${
+                        engagement > 50
+                          ? 'text-green-400'
+                          : engagement > 20
+                          ? 'text-yellow-400'
+                          : 'text-gray-500'
+                      }`}
+                    >
+                      {engagement} pts
+                    </span>
+                  )}
+                  {content?.youtube_video_id && (
+                    <a
+                      href={`https://youtube.com/watch?v=${content.youtube_video_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-[11px] text-brand-400 hover:underline"
+                    >
+                      YT →
+                    </a>
+                  )}
+                </div>
+              </button>
+              {isOpen && content && (
+                <div className="px-4 pb-3">
+                  <ContentPreview content={content} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ─────────────────  AD SPEND  ─────────────────
+
+function AdSpendStrip({ data }: { data: AdData }) {
+  if (!data.configured) {
+    return (
+      <div className="card p-3 border border-dashed border-surface-600 flex items-center gap-2">
+        <span className="text-[11px] text-gray-500">
+          Gasto en anuncios no configurado —
+          <span className="font-mono text-gray-400 ml-1">META_AD_ACCOUNT_ID</span>
+        </span>
+      </div>
+    );
+  }
+  if (!data.spend) return null;
+  const allZero =
+    data.spend.today === 0 &&
+    data.spend.yesterday === 0 &&
+    data.spend.this_week === 0 &&
+    data.spend.this_month === 0;
+
+  return (
+    <details className="card" open={!allZero}>
+      <summary className="px-4 py-2.5 cursor-pointer text-xs text-gray-400 hover:bg-surface-800/50 flex items-center justify-between">
+        <span>Gasto en Anuncios (Facebook Ads)</span>
+        <span className="text-gray-500">
+          {allZero
+            ? 'Sin gasto este mes'
+            : `Mes: $${data.spend.this_month.toFixed(2)} ${data.spend.currency}`}
+        </span>
+      </summary>
+      <div className="border-t border-surface-700 grid grid-cols-4 divide-x divide-surface-700">
+        {[
+          { label: 'Hoy', value: data.spend.today },
+          { label: 'Ayer', value: data.spend.yesterday },
+          { label: 'Semana', value: data.spend.this_week },
+          { label: 'Mes', value: data.spend.this_month },
+        ].map(({ label, value }) => (
+          <div key={label} className="p-3 text-center">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</p>
+            <p className="text-sm font-semibold text-gray-200">${value.toFixed(2)}</p>
+          </div>
+        ))}
+      </div>
+      {data.campaigns.length > 0 && (
+        <div className="divide-y divide-surface-700 border-t border-surface-700">
+          {data.campaigns
+            .filter((c) => c.spend > 0 || c.status === 'ACTIVE')
+            .map((c) => (
+              <div key={c.id} className="flex items-center justify-between px-4 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs text-gray-300 truncate">{c.name}</p>
+                  <p className="text-[11px] text-gray-600">
+                    {c.impressions.toLocaleString()} imp ·{' '}
+                    {c.ctr > 0 ? `${c.ctr.toFixed(2)}% CTR` : '—'}
+                    {c.daily_budget ? ` · $${c.daily_budget}/día` : ''}
+                  </p>
+                </div>
+                <p className="text-sm font-semibold text-gray-200 ml-3">${c.spend.toFixed(2)}</p>
+              </div>
+            ))}
+        </div>
+      )}
+    </details>
+  );
+}
+
+// ─────────────────  ENV STATUS  ─────────────────
+
+function EnvStatusRow({ content }: { content?: ContentRow }) {
+  // We can't read env from the client, but we can infer from content fields
+  // whether each integration produced output today.
+  const checks = [
+    { label: 'Meta Page', key: 'facebook_post_id', got: !!content?.facebook_post_id, needs: 'META_PAGE_ID / META_PAGE_ACCESS_TOKEN' },
+    { label: 'Instagram', key: 'instagram_post_id', got: !!content?.instagram_post_id, needs: 'META_IG_ACCOUNT_ID' },
+    { label: 'YouTube', key: 'youtube_video_id', got: !!content?.youtube_video_id, needs: 'YOUTUBE_CLIENT_*' },
+    { label: 'HeyGen', key: 'video_url', got: !!content?.video_url, needs: 'HEYGEN_API_KEY / AVATAR_ID / VOICE_ID' },
+  ];
+  return (
+    <details className="card">
+      <summary className="px-4 py-2.5 cursor-pointer text-xs text-gray-500 hover:bg-surface-800/50">
+        Estado de integraciones
+      </summary>
+      <div className="divide-y divide-surface-700 border-t border-surface-700">
+        {checks.map((c) => (
+          <div key={c.key} className="flex items-center justify-between px-4 py-2">
+            <div>
+              <p className="text-xs text-gray-300">{c.label}</p>
+              <p className="text-[10px] font-mono text-gray-600">{c.needs}</p>
+            </div>
+            <span className={`text-[11px] ${c.got ? 'text-green-400' : 'text-gray-500'}`}>
+              {c.got ? '✅ activo' : '○ sin datos hoy'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
