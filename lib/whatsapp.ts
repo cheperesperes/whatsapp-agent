@@ -1,12 +1,29 @@
 // ============================================================
 // WhatsApp / Twilio API helpers
 // ============================================================
+// Twilio is the original provider for the Oiikon WhatsApp number
+// (+14848644191). Meta WhatsApp Cloud API was added later (file:
+// lib/whatsapp-meta.ts) for a second sender that needs to serve markets
+// Twilio doesn't support. Inbound payload shape determines provider:
+// form-urlencoded → Twilio, JSON `whatsapp_business_account` → Meta.
+
+import {
+  sendMetaWhatsAppMessage,
+  sendMetaWhatsAppImage,
+  parseMetaIncomingMessage,
+  isMetaWebhookPayload,
+} from './whatsapp-meta';
 
 export type MessageChannel = 'whatsapp' | 'sms';
+export type MessageProvider = 'twilio' | 'meta';
 
 /**
  * Send a text message via Twilio. Defaults to WhatsApp for backward compat;
  * callers that know the inbound channel should pass `channel`.
+ *
+ * `from` lets the caller pin a specific sender — used by the webhook so a
+ * reply leaves from the same business number the customer messaged
+ * (multi-number support). Falls back to TWILIO_WHATSAPP_NUMBER.
  *
  * For SMS we prefer TWILIO_MESSAGING_SERVICE_SID if set (lets Twilio pick the
  * right sender), falling back to the bare TWILIO_WHATSAPP_NUMBER as a plain
@@ -15,7 +32,8 @@ export type MessageChannel = 'whatsapp' | 'sms';
 export async function sendMessage(
   to: string,
   body: string,
-  channel: MessageChannel = 'whatsapp'
+  channel: MessageChannel = 'whatsapp',
+  from?: string
 ): Promise<void> {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
@@ -30,9 +48,10 @@ export async function sendMessage(
 
   // ── Build To / From depending on channel ─────────────────────
   const bareTo = to.startsWith('whatsapp:') ? to.slice('whatsapp:'.length) : to;
-  const bareFrom = twilioWhatsAppNumber.startsWith('whatsapp:')
-    ? twilioWhatsAppNumber.slice('whatsapp:'.length)
-    : twilioWhatsAppNumber;
+  const fromRaw = from ?? twilioWhatsAppNumber;
+  const bareFrom = fromRaw.startsWith('whatsapp:')
+    ? fromRaw.slice('whatsapp:'.length)
+    : fromRaw;
 
   const params = new URLSearchParams({ Body: body });
 
@@ -70,8 +89,12 @@ export async function sendMessage(
  * Back-compat wrapper. Existing code calls sendWhatsAppMessage(to, body) —
  * keep it sending via WhatsApp.
  */
-export async function sendWhatsAppMessage(to: string, body: string): Promise<void> {
-  return sendMessage(to, body, 'whatsapp');
+export async function sendWhatsAppMessage(
+  to: string,
+  body: string,
+  from?: string
+): Promise<void> {
+  return sendMessage(to, body, 'whatsapp', from);
 }
 
 /**
@@ -83,7 +106,8 @@ export async function sendImage(
   to: string,
   mediaUrl: string,
   caption?: string,
-  channel: MessageChannel = 'whatsapp'
+  channel: MessageChannel = 'whatsapp',
+  from?: string
 ): Promise<void> {
   if (channel !== 'whatsapp') {
     throw new Error('sendImage only supports the whatsapp channel');
@@ -99,9 +123,10 @@ export async function sendImage(
 
   const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
   const bareTo = to.startsWith('whatsapp:') ? to.slice('whatsapp:'.length) : to;
-  const bareFrom = twilioWhatsAppNumber.startsWith('whatsapp:')
-    ? twilioWhatsAppNumber.slice('whatsapp:'.length)
-    : twilioWhatsAppNumber;
+  const fromRaw = from ?? twilioWhatsAppNumber;
+  const bareFrom = fromRaw.startsWith('whatsapp:')
+    ? fromRaw.slice('whatsapp:'.length)
+    : fromRaw;
 
   const params = new URLSearchParams();
   if (caption && caption.trim()) params.set('Body', caption.trim());
@@ -179,14 +204,47 @@ export interface ParsedIncomingMessage {
   timestamp: number;
   /** Channel the inbound arrived on — used to route the reply. */
   channel: MessageChannel;
+  /** Which provider delivered this inbound — controls the outbound API used for the reply. */
+  provider: MessageProvider;
+  /**
+   * Twilio only. The business number that received this message (Twilio `To`
+   * field, with `whatsapp:` prefix preserved for WA). Used as the reply's
+   * `From` so multi-Twilio-number setups reply from the right sender.
+   */
+  recipientPhone: string | null;
+  /**
+   * Meta only. The Meta phone-number ID that received this message — used in
+   * the outbound Graph API path so the reply goes through the same sender.
+   */
+  metaRecipientPhoneNumberId?: string;
 }
 
 export function parseIncomingMessage(body: unknown): ParsedIncomingMessage | null {
+  // ── Meta JSON payload (whatsapp_business_account) ─────────
+  if (isMetaWebhookPayload(body)) {
+    const meta = parseMetaIncomingMessage(body);
+    if (!meta) return null;
+    return {
+      senderPhone: meta.senderPhone,
+      senderName: meta.senderName,
+      messageText: meta.messageText,
+      messageType: meta.messageType,
+      messageId: meta.messageId,
+      timestamp: meta.timestamp,
+      channel: 'whatsapp',
+      provider: 'meta',
+      recipientPhone: null,
+      metaRecipientPhoneNumberId: meta.recipientPhoneNumberId,
+    };
+  }
+
+  // ── Twilio form-encoded payload ───────────────────────────
   try {
     const payload = body as Record<string, string | undefined>;
 
     // Extract Twilio webhook fields
     const from = payload.From; // "whatsapp:+1234567890" for WA, "+1234567890" for SMS
+    const to = payload.To ?? null; // "whatsapp:+1234567890" — our business number
     const messageText = payload.Body ?? '';
     const messageSid = payload.MessageSid ?? '';
     const profileName = payload.ProfileName ?? null;
@@ -204,10 +262,69 @@ export function parseIncomingMessage(body: unknown): ParsedIncomingMessage | nul
       messageId: messageSid,
       timestamp: Math.floor(Date.now() / 1000), // Twilio doesn't include timestamp, use current time
       channel: isWhatsApp ? 'whatsapp' : 'sms',
+      provider: 'twilio',
+      recipientPhone: to,
     };
   } catch {
     return null;
   }
+}
+
+// ── Unified outbound (provider-aware) ─────────────────────
+// Picks the right backend (Meta Graph API vs Twilio REST) based on the
+// `parsed` inbound. Used by the webhook handler so each reply is sent
+// from the same sender that received the original message.
+
+export async function sendReplyForParsed(
+  parsed: ParsedIncomingMessage,
+  body: string,
+): Promise<void> {
+  if (parsed.provider === 'meta') {
+    const accessToken = process.env.META_WHATSAPP_ACCESS_TOKEN;
+    if (!accessToken) throw new Error('META_WHATSAPP_ACCESS_TOKEN not set');
+    if (!parsed.metaRecipientPhoneNumberId) {
+      throw new Error('Meta inbound missing metaRecipientPhoneNumberId');
+    }
+    await sendMetaWhatsAppMessage(
+      parsed.senderPhone,
+      body,
+      parsed.metaRecipientPhoneNumberId,
+      accessToken,
+    );
+    return;
+  }
+  // Twilio — preserve existing per-sender routing via `from`.
+  await sendMessage(
+    parsed.senderPhone,
+    body,
+    parsed.channel,
+    parsed.recipientPhone ?? undefined,
+  );
+}
+
+export async function sendImageForParsed(
+  parsed: ParsedIncomingMessage,
+  to: string,
+  mediaUrl: string,
+  caption?: string,
+): Promise<void> {
+  if (parsed.provider === 'meta') {
+    const accessToken = process.env.META_WHATSAPP_ACCESS_TOKEN;
+    if (!accessToken) throw new Error('META_WHATSAPP_ACCESS_TOKEN not set');
+    if (!parsed.metaRecipientPhoneNumberId) {
+      throw new Error('Meta inbound missing metaRecipientPhoneNumberId');
+    }
+    await sendMetaWhatsAppImage(
+      to,
+      mediaUrl,
+      caption,
+      parsed.metaRecipientPhoneNumberId,
+      accessToken,
+    );
+    return;
+  }
+  // Twilio — image only supported on the whatsapp channel.
+  await sendImage(to, mediaUrl, caption, 'whatsapp', parsed.recipientPhone ?? undefined);
 }
 
 /**
