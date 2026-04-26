@@ -62,8 +62,11 @@ import {
   sendEscalatedMessageAlert,
   parseIncomingMessage,
   parseOwnerCommand,
+  sendReplyForParsed,
+  sendImageForParsed,
 } from '@/lib/whatsapp';
 import { verifyTwilioSignature } from '@/lib/twilio-signature';
+import { isMetaWebhookPayload, verifyMetaSignature } from '@/lib/whatsapp-meta';
 import type { CustomerProfile, Message } from '@/lib/types';
 
 // ── Rate limiting: per-phone debounce ──────────────────────
@@ -78,6 +81,10 @@ const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
 // Allow signature verification to be disabled ONLY via explicit env flag,
 // so local/dev can post without Twilio headers. Production must not set this.
 const SKIP_SIG_VERIFY = process.env.SKIP_TWILIO_SIGNATURE === '1';
+// Same escape hatch for the Meta path — needed during initial onboarding
+// before META_APP_SECRET is set. Production MUST NOT set this; once the App
+// Secret is in Vercel, drop this flag.
+const SKIP_META_SIG_VERIFY = process.env.SKIP_META_SIGNATURE === '1';
 
 // Opt-out keywords (case-insensitive, whole message or substring match)
 const OPT_OUT_KEYWORDS_EXACT = new Set([
@@ -100,9 +107,15 @@ export async function GET(request: NextRequest) {
   const token = searchParams.get('hub.verify_token');
   const challenge = searchParams.get('hub.challenge');
 
-  console.log('[WEBHOOK GET] mode:', mode, '| token match:', token === process.env.WHATSAPP_VERIFY_TOKEN);
+  // Accept either env var — META_WHATSAPP_VERIFY_TOKEN is the canonical one
+  // for the new Meta Cloud API path; WHATSAPP_VERIFY_TOKEN is the legacy
+  // name kept for back-compat.
+  const expectedToken =
+    process.env.META_WHATSAPP_VERIFY_TOKEN ?? process.env.WHATSAPP_VERIFY_TOKEN;
 
-  if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+  console.log('[WEBHOOK GET] mode:', mode, '| token match:', token === expectedToken);
+
+  if (mode === 'subscribe' && token === expectedToken) {
     console.log('[WEBHOOK GET] Verification successful, returning challenge');
     return new NextResponse(challenge, { status: 200 });
   }
@@ -117,9 +130,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   console.log('[WEBHOOK POST] Incoming webhook payload received');
 
-  // Parse form-urlencoded body from Twilio
+  // Parse the body — could be Twilio form-urlencoded OR Meta JSON.
+  // We capture rawJson when the request is JSON so the Meta signature
+  // verifier can hash the exact byte-for-byte body Meta signed.
   const contentType = request.headers.get('content-type') || '';
-  let body: Record<string, string> = {};
+  let body: Record<string, unknown> = {};
+  let rawJson = '';
 
   if (contentType.includes('application/x-www-form-urlencoded')) {
     try {
@@ -130,7 +146,8 @@ export async function POST(request: NextRequest) {
     }
   } else if (contentType.includes('application/json')) {
     try {
-      body = await request.json();
+      rawJson = await request.text();
+      body = JSON.parse(rawJson);
     } catch {
       console.warn('[WEBHOOK POST] Failed to parse JSON');
     }
@@ -141,7 +158,29 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Signature verification (rejects spoofed posts) ────────────────
-  if (!SKIP_SIG_VERIFY) {
+  // Two providers, two schemes:
+  //   - Meta: HMAC-SHA256 of raw body, header `x-hub-signature-256`
+  //   - Twilio: HMAC-SHA1 of url + sorted form params, header `x-twilio-signature`
+  // We branch on payload shape, then enforce the matching scheme.
+  const isMetaPayload = isMetaWebhookPayload(body);
+
+  if (isMetaPayload) {
+    if (!SKIP_META_SIG_VERIFY) {
+      const appSecret = process.env.META_APP_SECRET ?? '';
+      const sigHeader = request.headers.get('x-hub-signature-256');
+      if (!appSecret) {
+        console.warn('[WEBHOOK POST] META_APP_SECRET not set — rejecting Meta payload');
+        return new NextResponse('Forbidden', { status: 403 });
+      }
+      if (!verifyMetaSignature(appSecret, sigHeader, rawJson)) {
+        console.warn('[WEBHOOK POST] Meta signature mismatch — rejecting');
+        return new NextResponse('Forbidden', { status: 403 });
+      }
+      console.log('[WEBHOOK POST] Meta signature OK');
+    } else {
+      console.log('[WEBHOOK POST] SKIP_META_SIGNATURE=1 — Meta verification bypassed');
+    }
+  } else if (!SKIP_SIG_VERIFY) {
     const authToken = process.env.TWILIO_AUTH_TOKEN ?? '';
     const sigHeader = request.headers.get('x-twilio-signature');
 
@@ -149,7 +188,7 @@ export async function POST(request: NextRequest) {
     let ok = false;
     let matchedUrl = '';
     for (const candidate of candidates) {
-      if (verifyTwilioSignature(authToken, sigHeader, candidate, body)) {
+      if (verifyTwilioSignature(authToken, sigHeader, candidate, body as Record<string, string>)) {
         ok = true;
         matchedUrl = candidate;
         break;
@@ -168,13 +207,14 @@ export async function POST(request: NextRequest) {
       return new NextResponse('Forbidden', { status: 403 });
     }
 
-    console.log('[WEBHOOK POST] Signature OK (matched URL:', matchedUrl, ')');
+    console.log('[WEBHOOK POST] Twilio signature OK (matched URL:', matchedUrl, ')');
   } else {
     console.log('[WEBHOOK POST] SKIP_TWILIO_SIGNATURE=1 — verification bypassed');
   }
 
   // ── Idempotency: short-circuit Twilio retries for the same MessageSid ──
-  const sid = body.MessageSid;
+  // (Meta payloads have no MessageSid field — this is a no-op for them.)
+  const sid = typeof body.MessageSid === 'string' ? body.MessageSid : '';
   if (sid && (await hasProcessedMessageSid(sid))) {
     console.log(`[WEBHOOK POST] Duplicate MessageSid ${sid} — ack without reprocess`);
     return twimlOk();
@@ -258,12 +298,20 @@ async function processWebhook(body: unknown) {
     return;
   }
 
-  const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId, channel } = parsed;
+  const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId, channel, provider, recipientPhone } = parsed;
   const senderPhone = rawSenderPhone.startsWith('+')
     ? '+' + rawSenderPhone.slice(1).replace(/[^\d]/g, '')
     : '+' + rawSenderPhone.replace(/[^\d]/g, '');
 
-  console.log(`[WEBHOOK] Message from ${senderPhone} | channel: ${channel} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`);
+  // Provider-aware reply routing. sendReplyForParsed picks Meta or Twilio
+  // based on `parsed.provider` and uses the matching sender (Meta phone
+  // number ID or Twilio `From` number).
+  const replyTarget =
+    provider === 'meta'
+      ? `meta:${parsed.metaRecipientPhoneNumberId}`
+      : recipientPhone ?? '(twilio default)';
+
+  console.log(`[WEBHOOK] Message from ${senderPhone} → ${replyTarget} | provider: ${provider} | channel: ${channel} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`);
 
   // ── Operator commands ───────────────────────────────────
   const normalizedOperatorPhone = OPERATOR_PHONE.replace(/\D/g, '');
@@ -288,10 +336,9 @@ async function processWebhook(body: unknown) {
 
   // ── Non-text messages ───────────────────────────────────
   if (messageType !== 'text' || !messageText.trim()) {
-    await sendMessage(
-      senderPhone,
+    await sendReplyForParsed(
+      parsed,
       'Por ahora solo puedo leer mensajes de texto. ¿Podría escribirme su pregunta?',
-      channel
     );
     return;
   }
@@ -330,10 +377,9 @@ async function processWebhook(body: unknown) {
     console.warn(`[WEBHOOK] Rate cap hit for ${senderPhone}: ${recentCount} msgs in last hour`);
     await storeMessage(conversation.id, 'user', messageText, false, messageId);
     if (recentCount === HOURLY_MESSAGE_CAP) {
-      await sendMessage(
-        senderPhone,
+      await sendReplyForParsed(
+        parsed,
         'Ha alcanzado el límite de mensajes por hora. Un especialista le contactará pronto si es urgente.',
-        channel
       );
       await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'rate_cap_exceeded', messageText);
       await escalateConversation(conversation.id, 'rate_cap_exceeded', messageText);
@@ -367,7 +413,7 @@ async function processWebhook(body: unknown) {
       ? 'Done! You have been unsubscribed. You will not receive any more messages from Oiikon. If you ever want to reach us again, just send us a message and we will be happy to help. Have a great day! 😊'
       : 'Listo, le hemos dado de baja. No recibirá más mensajes de Oiikon. Si algún día desea volver a contactarnos, puede escribirnos aquí y con gusto le atendemos. ¡Que tenga un excelente día! 😊';
 
-    await sendMessage(senderPhone, optOutMsg, channel);
+    await sendReplyForParsed(parsed, optOutMsg);
     await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'user_opt_out', messageText);
     processingPhones.delete(senderPhone);
     return;
@@ -617,17 +663,17 @@ async function processWebhook(body: unknown) {
       console.log(`[WEBHOOK] Handoff detected for ${senderPhone}: ${handoffReason}`);
       await escalateConversation(conversation.id, handoffReason, messageText);
       await storeMessage(conversation.id, 'assistant', cleanMessage, true);
-      await sendMessage(senderPhone, cleanMessage, channel);
+      await sendReplyForParsed(parsed, cleanMessage);
       await sendHandoffAlert(OPERATOR_PHONE, senderPhone, handoffReason, messageText);
     } else {
       // ── Normal AI response ──────────────────────────────
       await storeMessage(conversation.id, 'assistant', cleanMessage);
-      await sendMessage(senderPhone, cleanMessage, channel);
+      await sendReplyForParsed(parsed, cleanMessage);
 
       // ── Dispatch product images (WhatsApp only, best-effort) ──
       if (channel === 'whatsapp' && imageSkus.length > 0) {
         waitUntil(
-          dispatchProductImages(senderPhone, imageSkus)
+          dispatchProductImages(parsed, senderPhone, imageSkus)
             .then(() => recordDispatchedSkus(conversation.id, imageSkus))
             .catch((err) => console.warn('[WEBHOOK] image dispatch failed:', err))
         );
@@ -662,7 +708,7 @@ async function processWebhook(body: unknown) {
       ? 'Estoy tardando más de lo normal en responder. ¿Podría repetir su mensaje? Si persiste, un especialista le contactará.'
       : 'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.';
     try {
-      await sendMessage(senderPhone, fallback, channel);
+      await sendReplyForParsed(parsed, fallback);
     } catch (sendErr) {
       console.error(`[WEBHOOK] fallback sendMessage failed for ${senderPhone}:`, sendErr);
     }
@@ -890,7 +936,11 @@ function extractImageTags(message: string): { text: string; skus: string[] } {
   return { text, skus };
 }
 
-async function dispatchProductImages(phone: string, skus: string[]): Promise<void> {
+async function dispatchProductImages(
+  parsed: import('@/lib/whatsapp').ParsedIncomingMessage,
+  phone: string,
+  skus: string[],
+): Promise<void> {
   // Single SKU → up to 2 images (front + alt angle / use shot).
   // Multiple SKUs → 1 image each, capped at TOTAL_IMAGE_CAP_PER_REPLY.
   const perSku = skus.length === 1 ? IMAGES_PER_SKU_WHEN_SINGLE : 1;
@@ -908,7 +958,7 @@ async function dispatchProductImages(phone: string, skus: string[]): Promise<voi
         continue;
       }
       for (const url of urls) {
-        await sendImage(phone, url);
+        await sendImageForParsed(parsed, phone, url);
         sent++;
       }
       console.log(`[WEBHOOK] Sent ${urls.length} image(s) for ${sku}`);
