@@ -300,15 +300,25 @@ export default function MarketingPage() {
   const pending = data?.campaigns.find((c) => c.status === 'pending_approval');
   const history = data?.campaigns.filter((c) => c.status === 'published').slice(0, 10) ?? [];
 
-  async function approve(approved: boolean) {
+  async function approve(approved: boolean, options: { text_only?: boolean } = {}) {
     if (!pending) return;
     setApproving(true);
     await fetch('/api/marketing/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approved, campaign_id: pending.id }),
+      body: JSON.stringify({ approved, campaign_id: pending.id, text_only: options.text_only ?? false }),
     });
     setApproving(false);
+    reload();
+  }
+
+  async function deletePublished(campaignId: string) {
+    if (!confirm('¿Eliminar este post de Facebook e Instagram? Esta acción no se puede deshacer.')) return;
+    await fetch('/api/marketing/delete-post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_id: campaignId }),
+    });
     reload();
   }
 
@@ -378,6 +388,7 @@ export default function MarketingPage() {
             generating={generating}
             onApprove={approve}
             onRegenerate={(cat) => generate({ force: true, category: cat })}
+            onDeletePublished={() => deletePublished(today.id)}
           />
         )}
 
@@ -437,13 +448,15 @@ function CampaignHero({
   generating,
   onApprove,
   onRegenerate,
+  onDeletePublished,
 }: {
   campaign: Campaign;
   inFlight: boolean;
   approving: boolean;
   generating: boolean;
-  onApprove: (approved: boolean) => void;
+  onApprove: (approved: boolean, options?: { text_only?: boolean }) => void;
   onRegenerate: (cat: string) => void;
+  onDeletePublished: () => void;
 }) {
   const content = campaign.marketing_content?.[0];
   const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === campaign.status);
@@ -530,7 +543,15 @@ function CampaignHero({
               disabled={approving}
               className="flex-1 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold text-sm transition-colors disabled:opacity-50"
             >
-              {approving ? 'Publicando...' : '✅ Publicar en todos los canales'}
+              {approving ? 'Publicando...' : '✅ Publicar con video'}
+            </button>
+            <button
+              onClick={() => onApprove(true, { text_only: true })}
+              disabled={approving}
+              className="px-4 py-3 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-200 text-sm transition-colors disabled:opacity-50"
+              title="Publica solo el texto (FB) y la imagen del producto (IG). Omite YouTube."
+            >
+              📝 Solo texto
             </button>
             <button
               onClick={() => onApprove(false)}
@@ -544,6 +565,23 @@ function CampaignHero({
           <p className="text-[11px] text-gray-500 text-center">
             También puedes responder <strong className="text-gray-400">SI</strong> / <strong className="text-gray-400">NO</strong> por WhatsApp
           </p>
+        </div>
+      )}
+
+      {/* Already published — allow operator to delete + republish */}
+      {campaign.status === 'published' && (
+        <div className="px-5 py-4 bg-surface-800/60 border-t border-surface-700 flex items-center justify-between gap-3">
+          <p className="text-[11px] text-gray-500">
+            Publicado en Facebook{content?.instagram_post_id ? ' + Instagram' : ''}
+            {content?.youtube_video_id ? ' + YouTube' : ''}.
+          </p>
+          <button
+            onClick={onDeletePublished}
+            className="px-3 py-2 rounded-lg bg-red-900/40 hover:bg-red-800/60 border border-red-800/40 text-red-200 text-xs transition-colors"
+            title="Borra el post en Meta y vuelve a 'pending_approval' para que puedas re-publicar (o regenerar)"
+          >
+            🗑️ Eliminar de redes
+          </button>
         </div>
       )}
 

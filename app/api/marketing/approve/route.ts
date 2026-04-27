@@ -15,6 +15,7 @@ import {
 } from '@/lib/marketing/publisher';
 import { getVideoStatus } from '@/lib/marketing/heygen';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { getProductImages } from '@/lib/supabase';
 
 async function sendWhatsAppSafe(to: string, msg: string): Promise<void> {
   try {
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  let body: { approved?: boolean; campaign_id?: string } = {};
+  let body: { approved?: boolean; campaign_id?: string; text_only?: boolean } = {};
   try {
     body = await req.json();
   } catch {
@@ -98,10 +99,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'content not found' }, { status: 500 });
   }
 
+  const textOnly = body.text_only === true;
+
   // HeyGen webhook payloads sometimes arrive without the video_url even when
   // the render succeeded. If we have the heygen_video_id, resolve the URL
   // from the status API right before publishing so IG/YT don't get skipped.
-  if (!content.video_url && content.heygen_video_id) {
+  // Skip this entirely when the operator chose "text only" — they already
+  // decided they don't want the video.
+  if (!textOnly && !content.video_url && content.heygen_video_id) {
     try {
       const status = await getVideoStatus(content.heygen_video_id);
       if (status.video_url) {
@@ -113,6 +118,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Effective video URL — null in text-only mode so FB posts as text and IG
+  // falls back to the image-only path.
+  const publishVideoUrl = textOnly ? null : (content.video_url ?? null);
+
+  // For IG image-only fallback (text-only mode), pull the product photo so
+  // we have something to attach — IG can't accept a caption without media.
+  let igFallbackImage: string | null = null;
+  if (textOnly && campaign.product_sku) {
+    const imgs = await getProductImages(campaign.product_sku, 1);
+    igFallbackImage = imgs[0] ?? null;
+  }
+
   const results: Record<string, string | null> = {
     facebook: null,
     instagram: null,
@@ -122,7 +139,7 @@ export async function POST(req: NextRequest) {
 
   // ── Facebook ───────────────────────────────────────────────────────────────
   try {
-    const fb = await publishToFacebook(content.facebook_post ?? '', content.video_url ?? null);
+    const fb = await publishToFacebook(content.facebook_post ?? '', publishVideoUrl);
     results.facebook = fb.post_id;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -132,7 +149,7 @@ export async function POST(req: NextRequest) {
 
   // ── Instagram ─────────────────────────────────────────────────────────────
   try {
-    const ig = await publishToInstagram(content.instagram_caption ?? '', content.video_url ?? null);
+    const ig = await publishToInstagram(content.instagram_caption ?? '', publishVideoUrl, igFallbackImage);
     results.instagram = ig?.post_id ?? null;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -141,7 +158,9 @@ export async function POST(req: NextRequest) {
   }
 
   // ── YouTube ────────────────────────────────────────────────────────────────
-  if (content.video_url && content.youtube_title) {
+  // Skip YouTube in text-only mode — uploading text-only to YouTube is not a
+  // thing.
+  if (!textOnly && content.video_url && content.youtube_title) {
     try {
       const yt = await publishToYouTube(
         content.video_url,
