@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateCampaign, updateContent } from '@/lib/marketing/db';
 import { sendMarketingPreview } from '@/lib/marketing/notify';
+import { getVideoStatus } from '@/lib/marketing/heygen';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -10,6 +11,7 @@ interface HeyGenWebhookPayload {
   event_data: {
     video_id: string;
     video_url?: string;
+    url?: string;
     thumbnail_url?: string;
     callback_id?: string; // our campaign_id
     error?: string;
@@ -36,7 +38,19 @@ export async function POST(req: NextRequest) {
   }
 
   if (event_type === 'avatar_video.success' || event_type === 'video.completed') {
-    const videoUrl = event_data.video_url ?? null;
+    // HeyGen v2 webhooks have inconsistent payloads — sometimes the URL is
+    // under `video_url`, sometimes `url`, sometimes missing entirely. Fall
+    // back to the status API so we never leave the row without a URL when
+    // the render actually succeeded.
+    let videoUrl: string | null = event_data.video_url ?? event_data.url ?? null;
+    if (!videoUrl) {
+      try {
+        const status = await getVideoStatus(videoId);
+        videoUrl = status.video_url ?? null;
+      } catch (err) {
+        console.warn(`[heygen-webhook] status-api fallback failed for ${videoId}:`, err);
+      }
+    }
 
     await Promise.all([
       updateContent(campaignId, {
