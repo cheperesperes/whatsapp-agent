@@ -12,18 +12,48 @@ export interface HeyGenVideoStatus {
   error?: string;
 }
 
+interface AvatarPair {
+  look_id: string;
+  voice_id: string;
+  name?: string;
+}
+
+// HEYGEN_AVATARS is a JSON array of {look_id, voice_id, name?} that the
+// pipeline rotates through (one per day). When empty/missing, falls back
+// to the single HEYGEN_AVATAR_ID / HEYGEN_VOICE_ID pair so older deploys
+// keep working.
+function pickAvatar(): AvatarPair {
+  const raw = process.env.HEYGEN_AVATARS;
+  if (raw) {
+    try {
+      const list = JSON.parse(raw) as AvatarPair[];
+      if (Array.isArray(list) && list.length > 0) {
+        const dayOfYear = Math.floor(Date.now() / 86400000);
+        return list[dayOfYear % list.length];
+      }
+    } catch {
+      // fall through to legacy single-avatar env vars
+    }
+  }
+  const lookId = process.env.HEYGEN_AVATAR_ID;
+  const voiceId = process.env.HEYGEN_VOICE_ID;
+  if (!lookId) throw new Error('HEYGEN_AVATAR_ID (or HEYGEN_AVATARS) not set');
+  if (!voiceId) throw new Error('HEYGEN_VOICE_ID not set');
+  return { look_id: lookId, voice_id: voiceId };
+}
+
 export async function createProductReviewVideo(
   script: string,
   campaignId: string,
   productImages: string[] = []
 ): Promise<HeyGenVideoJob> {
   const apiKey = process.env.HEYGEN_API_KEY;
-  const avatarId = process.env.HEYGEN_AVATAR_ID;
-  const voiceId = process.env.HEYGEN_VOICE_ID;
-
   if (!apiKey) throw new Error('HEYGEN_API_KEY not set');
-  if (!avatarId) throw new Error('HEYGEN_AVATAR_ID not set');
-  if (!voiceId) throw new Error('HEYGEN_VOICE_ID not set');
+
+  const { look_id: avatarId, voice_id: voiceId, name: avatarName } = pickAvatar();
+  if (avatarName) {
+    console.log(`[heygen] using avatar=${avatarName} look=${avatarId.slice(0, 8)}…`);
+  }
 
   const callbackUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}/api/marketing/heygen-webhook`
@@ -48,11 +78,15 @@ export async function createProductReviewVideo(
 
   const videoInputs = scenes.map((sceneScript, i) => {
     const bgImage = usableImages[i] ?? usableImages[0]; // tail scenes reuse last
+    // Yali / Rafael are Photo Avatars (HeyGen Instant/Photo type), so
+    // character.type must be 'talking_photo' with talking_photo_id —
+    // 'avatar' / avatar_id is reserved for HeyGen's stock studio avatars.
     return {
       character: {
-        type: 'avatar' as const,
-        avatar_id: avatarId,
-        avatar_style: usableImages.length > 0 ? 'circle' : 'normal',
+        type: 'talking_photo' as const,
+        talking_photo_id: avatarId,
+        talking_photo_style: usableImages.length > 0 ? 'circle' : 'square',
+        talking_style: 'expressive' as const,
       },
       voice: {
         type: 'text' as const,
