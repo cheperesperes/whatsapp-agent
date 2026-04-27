@@ -11,7 +11,7 @@ import {
   upsertFacebookGroups,
 } from '@/lib/marketing/db';
 import { loadMemory, consolidateMemory, formatMemoryForPrompt } from '@/lib/marketing/memory';
-import { createServiceClient } from '@/lib/supabase';
+import { createServiceClient, getProductImages } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -161,9 +161,15 @@ export async function GET(req: NextRequest) {
     });
 
     // ── Step 7: Submit HeyGen video job ────────────────────────────────────
-    console.log(`[marketing-daily] ${runId} — submitting HeyGen video job`);
+    // Pull up to 3 product images so HeyGen can build a multi-scene Reel with
+    // the product as the background, instead of the corporate avatar against
+    // a flat blue wall (which looks like an obvious AI ad).
+    const productImages = content.product_sku
+      ? await getProductImages(content.product_sku, 3)
+      : [];
+    console.log(`[marketing-daily] ${runId} — submitting HeyGen video job (${productImages.length} bg images)`);
     try {
-      const videoJob = await createProductReviewVideo(content.youtube_script, campaignId);
+      const videoJob = await createProductReviewVideo(content.youtube_script, campaignId, productImages);
       const { updateContent } = await import('@/lib/marketing/db');
       await updateContent(campaignId, {
         heygen_video_id: videoJob.video_id,

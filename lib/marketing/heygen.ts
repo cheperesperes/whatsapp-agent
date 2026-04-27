@@ -14,7 +14,8 @@ export interface HeyGenVideoStatus {
 
 export async function createProductReviewVideo(
   script: string,
-  campaignId: string
+  campaignId: string,
+  productImages: string[] = []
 ): Promise<HeyGenVideoJob> {
   const apiKey = process.env.HEYGEN_API_KEY;
   const avatarId = process.env.HEYGEN_AVATAR_ID;
@@ -30,27 +31,46 @@ export async function createProductReviewVideo(
     ? `${process.env.NEXT_PUBLIC_APP_URL}/api/marketing/heygen-webhook`
     : null;
 
-  const payload: Record<string, unknown> = {
-    video_inputs: [
-      {
-        character: {
-          type: 'avatar',
-          avatar_id: avatarId,
-          avatar_style: 'normal',
-        },
-        voice: {
-          type: 'text',
-          input_text: script,
-          voice_id: voiceId,
-          speed: 0.95,
-        },
-        background: {
-          type: 'color',
-          value: '#0f172a',
-        },
+  // HeyGen requires JPEG/PNG backgrounds — webp from Supabase is auto-proxied
+  // through wsrv.nl by getProductImages(). Cap at 3 scenes so a 60-75s script
+  // doesn't get split into thumbnail-length chunks.
+  const usableImages = productImages
+    .filter((u): u is string => typeof u === 'string' && u.startsWith('https://'))
+    .slice(0, 3);
+
+  // Multi-scene rotation: each scene gets a different product image as the
+  // background and a different ~1/N chunk of the script. The avatar is a
+  // small circle inset so the product is the visual hero, not the talking
+  // head. Falls back to single-scene with a dark gradient if no images.
+  const scenes = usableImages.length > 0
+    ? splitScript(script, usableImages.length)
+    : [script];
+
+  const videoInputs = scenes.map((sceneScript, i) => {
+    const bgImage = usableImages[i] ?? usableImages[0]; // tail scenes reuse last
+    return {
+      character: {
+        type: 'avatar' as const,
+        avatar_id: avatarId,
+        avatar_style: usableImages.length > 0 ? 'circle' : 'normal',
       },
-    ],
-    dimension: { width: 1280, height: 720 },
+      voice: {
+        type: 'text' as const,
+        input_text: sceneScript,
+        voice_id: voiceId,
+        speed: 0.95,
+      },
+      background: bgImage
+        ? { type: 'image' as const, url: bgImage, fit: 'cover' as const }
+        : { type: 'color' as const, value: '#0f172a' },
+    };
+  });
+
+  const payload: Record<string, unknown> = {
+    video_inputs: videoInputs,
+    // 9:16 vertical for Instagram Reels / YouTube Shorts. Old 16:9 horizontal
+    // got letterboxed on IG and looked tiny on phones.
+    dimension: { width: 1080, height: 1920 },
     // callback_id is returned as-is in the webhook payload so we can correlate
     callback_id: campaignId,
   };
@@ -75,6 +95,21 @@ export async function createProductReviewVideo(
 
   const data = (await res.json()) as { data: { video_id: string } };
   return { video_id: data.data.video_id };
+}
+
+// Split a script into N roughly-equal parts on sentence boundaries, so each
+// HeyGen scene gets a coherent paragraph instead of mid-sentence cuts.
+function splitScript(script: string, parts: number): string[] {
+  if (parts <= 1) return [script];
+  const sentences = script.match(/[^.!?]+[.!?]+\s*/g);
+  if (!sentences || sentences.length < parts) return [script];
+  const perPart = Math.ceil(sentences.length / parts);
+  const out: string[] = [];
+  for (let i = 0; i < parts; i++) {
+    const chunk = sentences.slice(i * perPart, (i + 1) * perPart).join('').trim();
+    if (chunk.length > 0) out.push(chunk);
+  }
+  return out.length > 0 ? out : [script];
 }
 
 export async function getVideoStatus(videoId: string): Promise<HeyGenVideoStatus> {
