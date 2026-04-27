@@ -61,13 +61,21 @@ export async function publishToFacebook(
 
 export async function publishToInstagram(
   caption: string,
-  videoUrl: string | null
+  videoUrl: string | null,
+  fallbackImageUrl: string | null = null
 ): Promise<{ post_id: string } | null> {
   const igAccountId = process.env.META_IG_ACCOUNT_ID;
   const token = process.env.META_PAGE_ACCESS_TOKEN;
   if (!igAccountId || !token) return null; // Instagram is optional
 
-  if (!videoUrl) return null; // Instagram reels require video
+  // Image-only path: IG Reels require video, but a single-image post works
+  // with just instagram_content_publish — used when the operator chooses
+  // "publish text-only" (which on IG means image + caption, no video).
+  if (!videoUrl && fallbackImageUrl) {
+    return publishInstagramImage(igAccountId, token, caption, fallbackImageUrl);
+  }
+
+  if (!videoUrl) return null; // No video AND no image — IG can't post text-only
 
   // Step 1: Create media container
   const containerRes = await fetch(`${META_API}/${igAccountId}/media`, {
@@ -129,6 +137,65 @@ export async function publishToInstagram(
 
   const published = (await publishRes.json()) as { id: string };
   return { post_id: published.id };
+}
+
+async function publishInstagramImage(
+  igAccountId: string,
+  token: string,
+  caption: string,
+  imageUrl: string
+): Promise<{ post_id: string } | null> {
+  const containerRes = await fetch(`${META_API}/${igAccountId}/media`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_url: imageUrl, caption, access_token: token }),
+  });
+  if (!containerRes.ok) {
+    console.error(`[marketing] Instagram image container failed: ${await containerRes.text()}`);
+    return null;
+  }
+  const container = (await containerRes.json()) as { id: string };
+
+  const publishRes = await fetch(`${META_API}/${igAccountId}/media_publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ creation_id: container.id, access_token: token }),
+  });
+  if (!publishRes.ok) {
+    console.error(`[marketing] Instagram image publish failed: ${await publishRes.text()}`);
+    return null;
+  }
+  const published = (await publishRes.json()) as { id: string };
+  return { post_id: published.id };
+}
+
+// ── Delete published posts (Meta) ─────────────────────────────────────────────
+
+export async function deleteFacebookPost(postId: string): Promise<boolean> {
+  const token = process.env.META_PAGE_ACCESS_TOKEN;
+  if (!token) throw new Error('META_PAGE_ACCESS_TOKEN not set');
+  const res = await fetch(`${META_API}/${postId}?access_token=${encodeURIComponent(token)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    console.warn(`[marketing] Facebook delete failed (${res.status}): ${await res.text()}`);
+    return false;
+  }
+  return true;
+}
+
+export async function deleteInstagramPost(mediaId: string): Promise<boolean> {
+  const token = process.env.META_PAGE_ACCESS_TOKEN;
+  if (!token) throw new Error('META_PAGE_ACCESS_TOKEN not set');
+  // IG media delete uses the same DELETE endpoint as Page posts
+  const res = await fetch(`${META_API}/${mediaId}?access_token=${encodeURIComponent(token)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    console.warn(`[marketing] Instagram delete failed (${res.status}): ${await res.text()}`);
+    return false;
+  }
+  return true;
 }
 
 // ── YouTube ───────────────────────────────────────────────────────────────────
