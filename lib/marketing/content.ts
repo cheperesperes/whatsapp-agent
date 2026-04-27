@@ -207,7 +207,7 @@ Genera el siguiente contenido de marketing en formato JSON válido. TODO en espa
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
+    max_tokens: 4096,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -215,7 +215,14 @@ Genera el siguiente contenido de marketing en formato JSON válido. TODO en espa
 
   // Extract JSON from response (handle markdown code blocks)
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
-  if (!jsonMatch) throw new Error('Claude did not return valid JSON for marketing content');
+  if (!jsonMatch) {
+    const truncated = response.stop_reason === 'max_tokens';
+    throw new Error(
+      truncated
+        ? `Claude response was truncated at max_tokens — increase max_tokens. Last 200 chars: ${text.slice(-200)}`
+        : `Claude did not return valid JSON for marketing content. Response: ${text.slice(0, 300)}`
+    );
+  }
 
   const content = JSON.parse(jsonMatch[1]) as GeneratedContent;
 
