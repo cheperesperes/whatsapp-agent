@@ -13,6 +13,7 @@ import {
   publishToInstagram,
   publishToYouTube,
 } from '@/lib/marketing/publisher';
+import { getVideoStatus } from '@/lib/marketing/heygen';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
 async function sendWhatsAppSafe(to: string, msg: string): Promise<void> {
@@ -95,6 +96,21 @@ export async function POST(req: NextRequest) {
   if (!content) {
     await updateCampaign(campaign.id, { status: 'failed', error_message: 'content row missing' });
     return NextResponse.json({ ok: false, error: 'content not found' }, { status: 500 });
+  }
+
+  // HeyGen webhook payloads sometimes arrive without the video_url even when
+  // the render succeeded. If we have the heygen_video_id, resolve the URL
+  // from the status API right before publishing so IG/YT don't get skipped.
+  if (!content.video_url && content.heygen_video_id) {
+    try {
+      const status = await getVideoStatus(content.heygen_video_id);
+      if (status.video_url) {
+        content.video_url = status.video_url;
+        await updateContent(campaign.id, { video_url: status.video_url, video_status: 'ready' });
+      }
+    } catch (err) {
+      console.warn('[marketing/approve] HeyGen status resolve failed:', err instanceof Error ? err.message : err);
+    }
   }
 
   const results: Record<string, string | null> = {
