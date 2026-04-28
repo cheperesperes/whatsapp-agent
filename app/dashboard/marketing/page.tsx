@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface Campaign {
   id: string;
@@ -729,43 +729,13 @@ function CustomBriefPanel({
   onProductChange: (sku: string) => void;
   onGuidanceChange: (text: string) => void;
 }) {
-  const grouped = products.reduce<Record<string, Product[]>>((acc, p) => {
-    const key = p.category ?? 'otros';
-    (acc[key] ??= []).push(p);
-    return acc;
-  }, {});
-  const categoryOrder = Object.keys(grouped).sort();
-
   return (
     <div className="space-y-2">
-      <div>
-        <label className="block text-[11px] text-gray-500 mb-1">
-          Producto (opcional)
-        </label>
-        <select
-          value={productSku}
-          onChange={(e) => onProductChange(e.target.value)}
-          className="w-full px-2 py-1.5 rounded bg-surface-800 border border-surface-600 text-xs text-gray-200 focus:outline-none focus:border-brand-500"
-        >
-          <option value="">🔄 Rotación automática (por día del año)</option>
-          {categoryOrder.map((cat) => (
-            <optgroup key={cat} label={cat.toUpperCase()}>
-              {grouped[cat].map((p) => {
-                const specs: string[] = [];
-                if (p.battery_capacity_wh) specs.push(`${p.battery_capacity_wh}Wh`);
-                if (p.output_watts) specs.push(`${p.output_watts}W`);
-                const price = p.sell_price ? ` · $${Number(p.sell_price).toFixed(0)}` : '';
-                const specStr = specs.length ? ` · ${specs.join(' · ')}` : '';
-                return (
-                  <option key={p.sku} value={p.sku}>
-                    {p.sku} — {p.name}{specStr}{price}
-                  </option>
-                );
-              })}
-            </optgroup>
-          ))}
-        </select>
-      </div>
+      <ProductPicker
+        products={products}
+        productSku={productSku}
+        onChange={onProductChange}
+      />
 
       <div>
         <label className="block text-[11px] text-gray-500 mb-1">
@@ -783,6 +753,142 @@ function CustomBriefPanel({
           La IA respetará esta guía siempre que no choque con el código de conducta. Máx 2000 caracteres.
         </p>
       </div>
+    </div>
+  );
+}
+
+function ProductPicker({
+  products,
+  productSku,
+  onChange,
+}: {
+  products: Product[];
+  productSku: string;
+  onChange: (sku: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [popupRect, setPopupRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePos = () => {
+      const r = buttonRef.current?.getBoundingClientRect();
+      if (r) setPopupRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    updatePos();
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('resize', updatePos);
+    window.addEventListener('scroll', updatePos, true);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('resize', updatePos);
+      window.removeEventListener('scroll', updatePos, true);
+    };
+  }, [open]);
+
+  const selected = products.find((p) => p.sku === productSku);
+  const selectedLabel = selected
+    ? `${selected.sku} — ${selected.name}`
+    : '🔄 Rotación automática (por día del año)';
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? products.filter(
+        (p) =>
+          p.sku.toLowerCase().includes(q) ||
+          p.name.toLowerCase().includes(q) ||
+          (p.category ?? '').toLowerCase().includes(q)
+      )
+    : products;
+  const grouped = filtered.reduce<Record<string, Product[]>>((acc, p) => {
+    const key = p.category ?? 'otros';
+    (acc[key] ??= []).push(p);
+    return acc;
+  }, {});
+  const categoryOrder = Object.keys(grouped).sort();
+
+  function pick(sku: string) {
+    onChange(sku);
+    setOpen(false);
+    setQuery('');
+  }
+
+  return (
+    <div ref={wrapperRef}>
+      <label className="block text-[11px] text-gray-500 mb-1">Producto (opcional)</label>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full px-2 py-1.5 rounded bg-surface-800 border border-surface-600 text-xs text-gray-200 text-left hover:border-brand-500 focus:outline-none focus:border-brand-500 flex items-center justify-between gap-2"
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <span className="text-gray-500 shrink-0">▾</span>
+      </button>
+      {open && popupRect && (
+        <div
+          style={{ position: 'fixed', top: popupRect.top, left: popupRect.left, width: popupRect.width }}
+          className="z-50 rounded-lg bg-surface-800 border border-surface-600 shadow-xl max-h-72 overflow-hidden flex flex-col"
+        >
+          <div className="p-2 border-b border-surface-700">
+            <input
+              autoFocus
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar SKU o nombre..."
+              className="w-full px-2 py-1 rounded bg-surface-900 border border-surface-600 text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-brand-500"
+            />
+          </div>
+          <div className="overflow-y-auto flex-1">
+            <button
+              type="button"
+              onClick={() => pick('')}
+              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-surface-700 ${productSku === '' ? 'bg-brand-600/20 text-brand-200' : 'text-gray-300'}`}
+            >
+              🔄 Rotación automática (por día del año)
+            </button>
+            {categoryOrder.length === 0 && (
+              <p className="px-3 py-2 text-[11px] text-gray-500">Sin resultados.</p>
+            )}
+            {categoryOrder.map((cat) => (
+              <div key={cat}>
+                <p className="px-3 py-1 text-[10px] uppercase tracking-wider text-gray-500 bg-surface-900/50">
+                  {cat}
+                </p>
+                {grouped[cat].map((p) => {
+                  const specs: string[] = [];
+                  if (p.battery_capacity_wh) specs.push(`${p.battery_capacity_wh}Wh`);
+                  if (p.output_watts) specs.push(`${p.output_watts}W`);
+                  const price = p.sell_price ? `$${Number(p.sell_price).toFixed(0)}` : '';
+                  const meta = [...specs, price].filter(Boolean).join(' · ');
+                  const active = productSku === p.sku;
+                  return (
+                    <button
+                      key={p.sku}
+                      type="button"
+                      onClick={() => pick(p.sku)}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-surface-700 ${active ? 'bg-brand-600/20 text-brand-200' : 'text-gray-300'}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] text-gray-400 shrink-0">{p.sku}</span>
+                        {meta && <span className="text-[10px] text-gray-500 shrink-0">{meta}</span>}
+                      </div>
+                      <p className="text-gray-300 truncate">{p.name}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
