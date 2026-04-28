@@ -45,6 +45,15 @@ interface Group {
   last_posted_at: string | null;
 }
 
+interface Product {
+  sku: string;
+  name: string;
+  category: string | null;
+  sell_price: number | null;
+  battery_capacity_wh: number | null;
+  output_watts: number | null;
+}
+
 interface AdSpend {
   today: number;
   yesterday: number;
@@ -257,6 +266,7 @@ function ContentPreview({ content }: { content: ContentRow }) {
 export default function MarketingPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [adData, setAdData] = useState<AdData | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -274,10 +284,12 @@ export default function MarketingPage() {
     Promise.all([
       fetch('/api/marketing/campaigns', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/marketing/ad-spend', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/marketing/products', { cache: 'no-store' }).then((r) => r.json()),
     ])
-      .then(([campaigns, ads]) => {
+      .then(([campaigns, ads, prods]) => {
         setData(campaigns as DashboardData);
         setAdData(ads as AdData);
+        setProducts(((prods as { products?: Product[] }).products) ?? []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -322,14 +334,23 @@ export default function MarketingPage() {
     reload();
   }
 
-  async function generate(options: { force?: boolean; category?: string | null } = {}) {
-    const { force = false, category } = options;
+  async function generate(
+    options: {
+      force?: boolean;
+      category?: string | null;
+      productSku?: string | null;
+      guidance?: string | null;
+    } = {}
+  ) {
+    const { force = false, category, productSku, guidance } = options;
     if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
     try {
       const qs = new URLSearchParams();
       if (force) qs.set('force', 'true');
       if (category) qs.set('category', category);
+      if (productSku) qs.set('product_sku', productSku);
+      if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
       const suffix = qs.toString() ? `?${qs.toString()}` : '';
       await fetch(`/api/cron/marketing-daily${suffix}`, { cache: 'no-store' });
     } finally {
@@ -379,15 +400,20 @@ export default function MarketingPage() {
 
         {/* ─────────────────  HERO  ───────────────── */}
         {!today ? (
-          <CategoryLauncher onPick={(cat) => generate({ category: cat })} busy={generating} />
+          <CategoryLauncher
+            products={products}
+            onPick={(cat, opts) => generate({ category: cat, ...opts })}
+            busy={generating}
+          />
         ) : (
           <CampaignHero
             campaign={today}
+            products={products}
             inFlight={!!inFlight}
             approving={approving}
             generating={generating}
             onApprove={approve}
-            onRegenerate={(cat) => generate({ force: true, category: cat })}
+            onRegenerate={(cat, opts) => generate({ force: true, category: cat, ...opts })}
             onDeletePublished={() => deletePublished(today.id)}
           />
         )}
@@ -443,6 +469,7 @@ export default function MarketingPage() {
 
 function CampaignHero({
   campaign,
+  products,
   inFlight,
   approving,
   generating,
@@ -451,13 +478,16 @@ function CampaignHero({
   onDeletePublished,
 }: {
   campaign: Campaign;
+  products: Product[];
   inFlight: boolean;
   approving: boolean;
   generating: boolean;
   onApprove: (approved: boolean, options?: { text_only?: boolean }) => void;
-  onRegenerate: (cat: string) => void;
+  onRegenerate: (cat: string, opts?: { productSku?: string | null; guidance?: string | null }) => void;
   onDeletePublished: () => void;
 }) {
+  const [productSku, setProductSku] = useState<string>(campaign.product_sku ?? '');
+  const [guidance, setGuidance] = useState<string>('');
   const content = campaign.marketing_content?.[0];
   const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === campaign.status);
   const terminal = campaign.status === 'failed' || campaign.status === 'rejected';
@@ -586,10 +616,19 @@ function CampaignHero({
       )}
 
       {/* Secondary: regenerate tiles (always visible so you can redirect any time) */}
-      <div className="px-5 py-4 border-t border-surface-700">
-        <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">
+      <div className="px-5 py-4 border-t border-surface-700 space-y-3">
+        <p className="text-[11px] text-gray-500 uppercase tracking-wider">
           {inFlight ? 'Cancelar y regenerar como' : readyToApprove ? 'O regenerar como' : 'Regenerar como'}
         </p>
+
+        <CustomBriefPanel
+          products={products}
+          productSku={productSku}
+          guidance={guidance}
+          onProductChange={setProductSku}
+          onGuidanceChange={setGuidance}
+        />
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           {CATEGORIES.map((c) => {
             const current = campaign.category === c.value;
@@ -597,7 +636,12 @@ function CampaignHero({
               <button
                 key={c.value}
                 type="button"
-                onClick={() => onRegenerate(c.value)}
+                onClick={() =>
+                  onRegenerate(c.value, {
+                    productSku: productSku || null,
+                    guidance: guidance || null,
+                  })
+                }
                 disabled={generating}
                 className={`px-2 py-1.5 rounded text-[11px] transition-colors disabled:opacity-50 ${
                   current
@@ -616,12 +660,17 @@ function CampaignHero({
 }
 
 function CategoryLauncher({
+  products,
   onPick,
   busy,
 }: {
-  onPick: (cat: string) => void;
+  products: Product[];
+  onPick: (cat: string, opts: { productSku?: string | null; guidance?: string | null }) => void;
   busy: boolean;
 }) {
+  const [productSku, setProductSku] = useState<string>('');
+  const [guidance, setGuidance] = useState<string>('');
+
   return (
     <div className="card p-6">
       <div className="text-center mb-5">
@@ -629,12 +678,23 @@ function CategoryLauncher({
         <p className="text-sm text-gray-300">Aún no hay campaña para hoy</p>
         <p className="text-[11px] text-gray-500 mt-1">Elige un ángulo para generar el contenido:</p>
       </div>
+
+      <div className="mb-4">
+        <CustomBriefPanel
+          products={products}
+          productSku={productSku}
+          guidance={guidance}
+          onProductChange={setProductSku}
+          onGuidanceChange={setGuidance}
+        />
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {CATEGORIES.map((c) => (
           <button
             key={c.value}
             type="button"
-            onClick={() => onPick(c.value)}
+            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null })}
             disabled={busy}
             className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
           >
@@ -652,6 +712,77 @@ function CategoryLauncher({
           Iniciando pipeline...
         </p>
       )}
+    </div>
+  );
+}
+
+function CustomBriefPanel({
+  products,
+  productSku,
+  guidance,
+  onProductChange,
+  onGuidanceChange,
+}: {
+  products: Product[];
+  productSku: string;
+  guidance: string;
+  onProductChange: (sku: string) => void;
+  onGuidanceChange: (text: string) => void;
+}) {
+  const grouped = products.reduce<Record<string, Product[]>>((acc, p) => {
+    const key = p.category ?? 'otros';
+    (acc[key] ??= []).push(p);
+    return acc;
+  }, {});
+  const categoryOrder = Object.keys(grouped).sort();
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <label className="block text-[11px] text-gray-500 mb-1">
+          Producto (opcional)
+        </label>
+        <select
+          value={productSku}
+          onChange={(e) => onProductChange(e.target.value)}
+          className="w-full px-2 py-1.5 rounded bg-surface-800 border border-surface-600 text-xs text-gray-200 focus:outline-none focus:border-brand-500"
+        >
+          <option value="">🔄 Rotación automática (por día del año)</option>
+          {categoryOrder.map((cat) => (
+            <optgroup key={cat} label={cat.toUpperCase()}>
+              {grouped[cat].map((p) => {
+                const specs: string[] = [];
+                if (p.battery_capacity_wh) specs.push(`${p.battery_capacity_wh}Wh`);
+                if (p.output_watts) specs.push(`${p.output_watts}W`);
+                const price = p.sell_price ? ` · $${Number(p.sell_price).toFixed(0)}` : '';
+                const specStr = specs.length ? ` · ${specs.join(' · ')}` : '';
+                return (
+                  <option key={p.sku} value={p.sku}>
+                    {p.sku} — {p.name}{specStr}{price}
+                  </option>
+                );
+              })}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-[11px] text-gray-500 mb-1">
+          Guía para la IA (opcional)
+        </label>
+        <textarea
+          value={guidance}
+          onChange={(e) => onGuidanceChange(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          placeholder="Ej: Habla sobre la nueva oferta de envío gratis, enfócate en familias con niños pequeños, menciona que es ideal para apagones nocturnos..."
+          className="w-full px-2 py-1.5 rounded bg-surface-800 border border-surface-600 text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-brand-500 resize-y"
+        />
+        <p className="text-[10px] text-gray-600 mt-0.5">
+          La IA respetará esta guía siempre que no choque con el código de conducta. Máx 2000 caracteres.
+        </p>
+      </div>
     </div>
   );
 }

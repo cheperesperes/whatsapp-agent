@@ -57,12 +57,21 @@ export const CATEGORIES: Array<{ value: MarketingCategory; label: string; angle:
 export async function generateMarketingContent(
   researchBrief: string,
   products: Product[],
-  category?: MarketingCategory | null
+  category?: MarketingCategory | null,
+  options?: { productSku?: string | null; guidance?: string | null }
 ): Promise<GeneratedContent> {
-  const product = pickDailyProduct(products);
+  const requestedSku = options?.productSku?.toUpperCase() ?? null;
+  const matched = requestedSku
+    ? products.find((p) => p.sku.toUpperCase() === requestedSku)
+    : null;
+  const product = matched ?? pickDailyProduct(products);
   const categoryEntry = category ? CATEGORIES.find((c) => c.value === category) : null;
   const categoryBrief = categoryEntry
     ? `\nCATEGORÍA DE HOY: ${categoryEntry.label}\nÁngulo específico: ${categoryEntry.angle}\n`
+    : '';
+  const guidanceText = options?.guidance?.trim() ?? '';
+  const guidanceBrief = guidanceText
+    ? `\nGUÍA ADICIONAL DEL OPERADOR (alta prioridad — respétala salvo que choque con el código de conducta):\n"""${guidanceText}"""\n`
     : '';
   const sellPrice = Number(product.sell_price ?? 0);
   const originalPrice = Number(product.original_price ?? 0);
@@ -96,7 +105,7 @@ ${pricesBlock}
 
 INVESTIGACIÓN DE HOY:
 ${researchBrief}
-${categoryBrief}
+${categoryBrief}${guidanceBrief}
 AUDIENCIA PRINCIPAL:
 Hispanos en EE.UU. (Miami, Tampa, Houston, NY, NJ, LA) con familia en países afectados por apagones. Motivación: amor familiar, solidaridad, solución práctica.
 
