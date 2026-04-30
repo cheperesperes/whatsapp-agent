@@ -1,10 +1,9 @@
 // ============================================================
 // Meta WhatsApp Cloud API helpers
 // ============================================================
-// This file is the Meta-side counterpart of lib/whatsapp.ts (Twilio).
-// The two are intentionally kept separate so the existing Twilio path
-// stays untouched while we add a parallel Meta path for a second
-// business number.
+// Direct Graph API calls (send text/image, parse incoming, verify
+// webhook signature). lib/whatsapp.ts wraps these with the public
+// API the rest of the app uses.
 
 import crypto from 'node:crypto';
 import type { WhatsAppWebhookBody, WhatsAppMessage } from './types';
@@ -113,7 +112,7 @@ export function parseMetaIncomingMessage(body: unknown): ParsedMetaIncoming | nu
   }
 }
 
-// Quick payload-shape detector (vs Twilio form-encoded payloads)
+// Quick payload-shape detector for Meta's `whatsapp_business_account` JSON.
 export function isMetaWebhookPayload(body: unknown): boolean {
   return (
     typeof body === 'object' &&

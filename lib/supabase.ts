@@ -60,7 +60,7 @@ export function createBrowserClient() {
 // ============================================================
 
 /**
- * Normalize a phone number to E.164 with leading '+'. Tolerant of Twilio
+ * Normalize a phone number to E.164 with leading '+'. Tolerant of
  * variants like "whatsapp:+15551234567" or bare digits "15551234567".
  */
 export function normalizePhone(raw: string): string {
@@ -166,14 +166,16 @@ export async function loadRecentMessages(
 
 /**
  * Store a message in the messages table.
- * Optionally pass a Twilio MessageSid for idempotent inserts.
+ * Optionally pass a provider message id (Meta wamid) for idempotent inserts.
+ * The DB column is still named `twilio_message_sid` for historical reasons —
+ * see scripts/rename-twilio-sid-column.sql for the rename migration.
  */
 export async function storeMessage(
   conversationId: string,
   role: 'user' | 'assistant' | 'system',
   content: string,
   handoffDetected = false,
-  twilioMessageSid?: string | null
+  providerMessageId?: string | null
 ): Promise<Message> {
   const supabase = createServiceClient();
 
@@ -183,7 +185,7 @@ export async function storeMessage(
     content,
     handoff_detected: handoffDetected,
   };
-  if (twilioMessageSid) payload.twilio_message_sid = twilioMessageSid;
+  if (providerMessageId) payload.twilio_message_sid = providerMessageId;
 
   const { data, error } = await supabase
     .from('messages')
@@ -211,8 +213,8 @@ export async function storeMessage(
 }
 
 /**
- * Returns true if we've already persisted a message with this Twilio SID.
- * Used for webhook idempotency against retries.
+ * Returns true if we've already persisted a message with this provider id
+ * (Meta wamid). Used for webhook idempotency against retries.
  */
 export async function hasProcessedMessageSid(sid: string): Promise<boolean> {
   if (!sid) return false;
@@ -569,9 +571,9 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
  * products whose primary/gallery were never populated).
  * Unsplash placeholders are skipped. Returns null if nothing usable.
  *
- * WhatsApp/Twilio only accept JPEG and PNG — our storage bucket is 100% webp,
- * so any webp URL is proxied through wsrv.nl which transcodes to JPEG on the
- * fly. Without this the `sendImage` call 400s and the customer gets nothing.
+ * WhatsApp media expects JPEG/PNG — our storage bucket is 100% webp, so any
+ * webp URL is proxied through wsrv.nl which transcodes to JPEG on the fly.
+ * Without this the `sendImage` call 400s and the customer gets nothing.
  */
 export async function getProductImages(sku: string, max = 2): Promise<string[]> {
   if (!sku?.trim() || max <= 0) return [];
@@ -609,7 +611,7 @@ export async function getProductImages(sku: string, max = 2): Promise<string[]> 
 }
 
 /**
- * WhatsApp (via Twilio) rejects `image/webp`. Wrap webp URLs in the free
+ * WhatsApp media is most reliable as JPEG/PNG. Wrap webp URLs in the free
  * wsrv.nl image proxy, which fetches the source and serves it as JPEG.
  * Non-webp URLs pass through unchanged.
  */
