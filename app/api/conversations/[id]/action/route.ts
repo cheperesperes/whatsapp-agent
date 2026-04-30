@@ -88,7 +88,7 @@ export async function POST(
     await escalateConversation(id, reason, lastText);
 
     // Fire the WhatsApp alert to the operator. Don't fail the API call if
-    // Twilio hiccups — the DB flag is what gates Sol's replies.
+    // the send hiccups — the DB flag is what gates Sol's replies.
     try {
       await sendHandoffAlert(OPERATOR_PHONE, conv.phone_number, reason, lastText);
     } catch (err) {

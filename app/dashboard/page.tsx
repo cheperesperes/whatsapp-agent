@@ -833,7 +833,7 @@ export default function DashboardPage() {
     await postAction('escalate', { reason: reason.trim() || undefined });
   }
 
-  // Send a text from the operator straight to the customer via Twilio.
+  // Send a text from the operator straight to the customer over WhatsApp.
   // The endpoint also flips the conversation to 'escalated' so Sol stops
   // auto-replying until the operator presses "Devolver a Sol".
   async function handleSendOperatorText(text: string) {

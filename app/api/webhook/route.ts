@@ -56,17 +56,15 @@ import { buildFirstContactDirective } from '@/lib/ad-landing';
 import { timezoneFromPhone } from '@/lib/timezone';
 import {
   sendWhatsAppMessage,
-  sendMessage,
-  sendImage,
   sendHandoffAlert,
   sendEscalatedMessageAlert,
   parseIncomingMessage,
   parseOwnerCommand,
   sendReplyForParsed,
   sendImageForParsed,
+  type ParsedIncomingMessage,
 } from '@/lib/whatsapp';
-import { verifyTwilioSignature } from '@/lib/twilio-signature';
-import { isMetaWebhookPayload, verifyMetaSignature } from '@/lib/whatsapp-meta';
+import { verifyMetaSignature } from '@/lib/whatsapp-meta';
 import type { CustomerProfile, Message } from '@/lib/types';
 
 // ── Rate limiting: per-phone debounce ──────────────────────
@@ -78,10 +76,7 @@ const HOURLY_MESSAGE_CAP = Number(process.env.HOURLY_MESSAGE_CAP ?? 40);
 
 const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
 
-// Allow signature verification to be disabled ONLY via explicit env flag,
-// so local/dev can post without Twilio headers. Production must not set this.
-const SKIP_SIG_VERIFY = process.env.SKIP_TWILIO_SIGNATURE === '1';
-// Same escape hatch for the Meta path — needed during initial onboarding
+// Escape hatch for the Meta signature check — needed during initial onboarding
 // before META_APP_SECRET is set. Production MUST NOT set this; once the App
 // Secret is in Vercel, drop this flag.
 const SKIP_META_SIG_VERIFY = process.env.SKIP_META_SIGNATURE === '1';
@@ -130,188 +125,75 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   console.log('[WEBHOOK POST] Incoming webhook payload received');
 
-  // Parse the body — could be Twilio form-urlencoded OR Meta JSON.
-  // We capture rawJson when the request is JSON so the Meta signature
+  // Meta sends JSON. We capture the raw text body so the signature
   // verifier can hash the exact byte-for-byte body Meta signed.
-  const contentType = request.headers.get('content-type') || '';
-  let body: Record<string, unknown> = {};
   let rawJson = '';
-
-  if (contentType.includes('application/x-www-form-urlencoded')) {
-    try {
-      const formData = await request.formData();
-      for (const [key, value] of formData.entries()) body[key] = String(value);
-    } catch {
-      console.warn('[WEBHOOK POST] Failed to parse form data');
-    }
-  } else if (contentType.includes('application/json')) {
-    try {
-      rawJson = await request.text();
-      body = JSON.parse(rawJson);
-    } catch {
-      console.warn('[WEBHOOK POST] Failed to parse JSON');
-    }
+  let body: unknown = null;
+  try {
+    rawJson = await request.text();
+    body = rawJson ? JSON.parse(rawJson) : null;
+  } catch {
+    console.warn('[WEBHOOK POST] Failed to parse JSON');
   }
 
-  if (!body || Object.keys(body).length === 0) {
-    return twimlOk();
+  if (!body || typeof body !== 'object') {
+    return ok200();
   }
 
-  // ── Signature verification (rejects spoofed posts) ────────────────
-  // Two providers, two schemes:
-  //   - Meta: HMAC-SHA256 of raw body, header `x-hub-signature-256`
-  //   - Twilio: HMAC-SHA1 of url + sorted form params, header `x-twilio-signature`
-  // We branch on payload shape, then enforce the matching scheme.
-  const isMetaPayload = isMetaWebhookPayload(body);
-
-  if (isMetaPayload) {
-    if (!SKIP_META_SIG_VERIFY) {
-      const appSecret = process.env.META_APP_SECRET ?? '';
-      const sigHeader = request.headers.get('x-hub-signature-256');
-      if (!appSecret) {
-        console.warn('[WEBHOOK POST] META_APP_SECRET not set — rejecting Meta payload');
-        return new NextResponse('Forbidden', { status: 403 });
-      }
-      if (!verifyMetaSignature(appSecret, sigHeader, rawJson)) {
-        console.warn('[WEBHOOK POST] Meta signature mismatch — rejecting');
-        return new NextResponse('Forbidden', { status: 403 });
-      }
-      console.log('[WEBHOOK POST] Meta signature OK');
-    } else {
-      console.log('[WEBHOOK POST] SKIP_META_SIGNATURE=1 — Meta verification bypassed');
-    }
-  } else if (!SKIP_SIG_VERIFY) {
-    const authToken = process.env.TWILIO_AUTH_TOKEN ?? '';
-    const sigHeader = request.headers.get('x-twilio-signature');
-
-    const candidates = buildSignatureUrlCandidates(request);
-    let ok = false;
-    let matchedUrl = '';
-    for (const candidate of candidates) {
-      if (verifyTwilioSignature(authToken, sigHeader, candidate, body as Record<string, string>)) {
-        ok = true;
-        matchedUrl = candidate;
-        break;
-      }
-    }
-
-    if (!ok) {
-      console.warn(
-        '[WEBHOOK POST] Signature mismatch — rejecting. Tried URLs:',
-        candidates,
-        '| hasAuthToken:',
-        Boolean(authToken),
-        '| hasSigHeader:',
-        Boolean(sigHeader)
-      );
+  // ── Meta signature verification (rejects spoofed posts) ──
+  // HMAC-SHA256 of raw body with META_APP_SECRET, header `x-hub-signature-256`.
+  if (!SKIP_META_SIG_VERIFY) {
+    const appSecret = process.env.META_APP_SECRET ?? '';
+    const sigHeader = request.headers.get('x-hub-signature-256');
+    if (!appSecret) {
+      console.warn('[WEBHOOK POST] META_APP_SECRET not set — rejecting');
       return new NextResponse('Forbidden', { status: 403 });
     }
-
-    console.log('[WEBHOOK POST] Twilio signature OK (matched URL:', matchedUrl, ')');
+    if (!verifyMetaSignature(appSecret, sigHeader, rawJson)) {
+      console.warn('[WEBHOOK POST] Meta signature mismatch — rejecting');
+      return new NextResponse('Forbidden', { status: 403 });
+    }
+    console.log('[WEBHOOK POST] Meta signature OK');
   } else {
-    console.log('[WEBHOOK POST] SKIP_TWILIO_SIGNATURE=1 — verification bypassed');
+    console.log('[WEBHOOK POST] SKIP_META_SIGNATURE=1 — verification bypassed');
   }
 
-  // ── Idempotency: short-circuit Twilio retries for the same MessageSid ──
-  // (Meta payloads have no MessageSid field — this is a no-op for them.)
-  const sid = typeof body.MessageSid === 'string' ? body.MessageSid : '';
-  if (sid && (await hasProcessedMessageSid(sid))) {
-    console.log(`[WEBHOOK POST] Duplicate MessageSid ${sid} — ack without reprocess`);
-    return twimlOk();
+  // ── Parse + idempotency on the Meta wamid ──
+  const parsed = parseIncomingMessage(body);
+  if (!parsed) {
+    // Status updates and other non-message events ack with 200.
+    return ok200();
+  }
+  if (parsed.messageId && (await hasProcessedMessageSid(parsed.messageId))) {
+    console.log(`[WEBHOOK POST] Duplicate wamid ${parsed.messageId} — ack without reprocess`);
+    return ok200();
   }
 
   waitUntil(
-    processWebhook(body).catch((err) => {
+    processWebhook(parsed).catch((err) => {
       console.error('[WEBHOOK POST] Processing error:', err);
     })
   );
 
-  return twimlOk();
+  return ok200();
 }
 
-function twimlOk() {
-  return new NextResponse('<Response></Response>', {
-    status: 200,
-    headers: { 'Content-Type': 'text/xml' },
-  });
-}
-
-function buildSignatureUrlCandidates(request: NextRequest): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  const add = (u: string | null | undefined) => {
-    if (!u) return;
-    if (seen.has(u)) return;
-    seen.add(u);
-    out.push(u);
-  };
-
-  add(request.url);
-
-  const xfProto = request.headers.get('x-forwarded-proto');
-  const xfHost = request.headers.get('x-forwarded-host') ?? request.headers.get('host');
-  if (xfHost) {
-    try {
-      const u = new URL(request.url);
-      const path = u.pathname + (u.search || '');
-      add(`https://${xfHost}${path}`);
-      add(`http://${xfHost}${path}`);
-      if (xfProto) add(`${xfProto}://${xfHost}${path}`);
-    } catch {
-      // ignore
-    }
-  }
-
-  const withSlashToggled = out.flatMap((u) => {
-    try {
-      const parsed = new URL(u);
-      const p = parsed.pathname;
-      if (p.endsWith('/')) {
-        return [u, u.replace(p, p.slice(0, -1))];
-      } else {
-        return [u, u.replace(p, p + '/')];
-      }
-    } catch {
-      return [u];
-    }
-  });
-
-  const final: string[] = [];
-  const seenFinal = new Set<string>();
-  for (const u of withSlashToggled) {
-    if (!seenFinal.has(u)) {
-      seenFinal.add(u);
-      final.push(u);
-    }
-  }
-  return final;
+function ok200() {
+  return new NextResponse('OK', { status: 200 });
 }
 
 // ============================================================
 // Core processing logic
 // ============================================================
-async function processWebhook(body: unknown) {
-  const parsed = parseIncomingMessage(body);
-
-  if (!parsed) {
-    console.log('[WEBHOOK] No parseable message in payload (status update?)');
-    return;
-  }
-
-  const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId, channel, provider, recipientPhone } = parsed;
+async function processWebhook(parsed: ParsedIncomingMessage) {
+  const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId, channel } = parsed;
   const senderPhone = rawSenderPhone.startsWith('+')
     ? '+' + rawSenderPhone.slice(1).replace(/[^\d]/g, '')
     : '+' + rawSenderPhone.replace(/[^\d]/g, '');
 
-  // Provider-aware reply routing. sendReplyForParsed picks Meta or Twilio
-  // based on `parsed.provider` and uses the matching sender (Meta phone
-  // number ID or Twilio `From` number).
-  const replyTarget =
-    provider === 'meta'
-      ? `meta:${parsed.metaRecipientPhoneNumberId}`
-      : recipientPhone ?? '(twilio default)';
-
-  console.log(`[WEBHOOK] Message from ${senderPhone} → ${replyTarget} | provider: ${provider} | channel: ${channel} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`);
+  console.log(
+    `[WEBHOOK] Message from ${senderPhone} → meta:${parsed.metaRecipientPhoneNumberId} | channel: ${channel} | type: ${messageType} | text: "${messageText.slice(0, 80)}"`,
+  );
 
   // ── Operator commands ───────────────────────────────────
   const normalizedOperatorPhone = OPERATOR_PHONE.replace(/\D/g, '');

@@ -54,14 +54,14 @@ export async function POST(
     );
   }
 
-  // Send via Twilio first — if the carrier rejects, surface the error
-  // immediately. Only persist the message after a successful send so the
-  // dashboard never shows a "sent" message that didn't actually leave.
+  // Send via Meta first — if it rejects, surface the error immediately.
+  // Only persist the message after a successful send so the dashboard
+  // never shows a "sent" message that didn't actually leave.
   try {
     await sendMessage(conv.phone_number, text, 'whatsapp');
   } catch (err) {
     console.error(
-      '[send] Twilio failed | conv=' + id + ':',
+      '[send] WhatsApp send failed | conv=' + id + ':',
       err instanceof Error ? err.message : err
     );
     return NextResponse.json(
