@@ -68,8 +68,16 @@ import { verifyMetaSignature } from '@/lib/whatsapp-meta';
 import type { CustomerProfile, Message } from '@/lib/types';
 
 // ── Rate limiting: per-phone debounce ──────────────────────
+// In-memory Set of phones currently being processed. We hold the lock for
+// the full lifetime of a single webhook invocation (try/finally below) so
+// that a second message from the same customer arriving WHILE we're still
+// calling Claude is debounced. The MAX_HOLD timer is only a safety net for
+// the case where a try/finally block somehow fails to release (it should
+// never trigger in practice — but a stuck lock would silently drop every
+// future message from that customer until cold-start, which is worse than
+// occasionally over-running).
 const processingPhones = new Set<string>();
-const RATE_LIMIT_MS = 3000; // 3 seconds
+const RATE_LIMIT_MAX_HOLD_MS = 30_000;
 
 // Rolling-hour hard cap per phone (abuse guard)
 const HOURLY_MESSAGE_CAP = Number(process.env.HOURLY_MESSAGE_CAP ?? 40);
@@ -81,14 +89,23 @@ const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
 // Secret is in Vercel, drop this flag.
 const SKIP_META_SIG_VERIFY = process.env.SKIP_META_SIGNATURE === '1';
 
-// Opt-out keywords (case-insensitive, whole message or substring match)
-const OPT_OUT_KEYWORDS_EXACT = new Set([
-  'stop', 'baja', 'cancelar', 'cancel', 'unsubscribe', 'desuscribir',
-  'salir', 'para', 'quit', 'optout',
+// Opt-out keywords (case-insensitive, whole message or substring match).
+// Tagged by language so we send the unsubscribe confirmation in the
+// customer's actual language rather than guessing from the keyword's
+// character set (Spanish "BAJA" / "CANCELAR" / "SALIR" are all-ASCII and
+// were misclassified as English by a regex that just checked for accents).
+const OPT_OUT_KEYWORDS_EXACT_ES = new Set([
+  'baja', 'cancelar', 'desuscribir', 'salir', 'para',
 ]);
-const OPT_OUT_KEYWORDS_CONTAINS = [
-  'opt out', 'opt-out', 'no mas mensajes', 'no más mensajes',
-  'no me escribas', 'no me escriban', 'no quiero recibir mensajes', 'darme de baja',
+const OPT_OUT_KEYWORDS_EXACT_EN = new Set([
+  'stop', 'cancel', 'unsubscribe', 'quit', 'optout',
+]);
+const OPT_OUT_KEYWORDS_CONTAINS_ES = [
+  'no mas mensajes', 'no más mensajes', 'no me escribas', 'no me escriban',
+  'no quiero recibir mensajes', 'darme de baja',
+];
+const OPT_OUT_KEYWORDS_CONTAINS_EN = [
+  'opt out', 'opt-out',
 ];
 
 // ============================================================
@@ -206,11 +223,12 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
       return;
     }
 
-    // Marketing campaign approval: operator replies SI or NO to a pending campaign
+    // Marketing campaign approval: operator replies SI or NO to a pending campaign.
+    // Accents are stripped before comparison so 'sí' / 'SÍ' all collapse to 'si'.
     const approvalWord = messageText.trim().toLowerCase().replace(/[áéíóú]/g, (c) =>
       ({ á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u' }[c] ?? c)
     );
-    if (approvalWord === 'si' || approvalWord === 'sí' || approvalWord === 'no') {
+    if (approvalWord === 'si' || approvalWord === 'no') {
       const handled = await handleMarketingApproval(approvalWord !== 'no');
       if (handled) return;
     }
@@ -232,8 +250,30 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
   }
 
   processingPhones.add(senderPhone);
-  setTimeout(() => processingPhones.delete(senderPhone), RATE_LIMIT_MS);
+  // Safety net: if try/finally below somehow fails to release the lock,
+  // a 30s timer eventually clears it so the customer isn't permanently
+  // shadow-banned. Real release happens in the finally block.
+  const maxHoldTimer = setTimeout(
+    () => processingPhones.delete(senderPhone),
+    RATE_LIMIT_MAX_HOLD_MS
+  );
 
+  try {
+    await processWebhookLocked(parsed, senderPhone, senderName, messageText, messageId, channel);
+  } finally {
+    clearTimeout(maxHoldTimer);
+    processingPhones.delete(senderPhone);
+  }
+}
+
+async function processWebhookLocked(
+  parsed: ParsedIncomingMessage,
+  senderPhone: string,
+  senderName: string | null,
+  messageText: string,
+  messageId: string,
+  channel: ParsedIncomingMessage['channel'],
+) {
   // ── Conversation setup ──────────────────────────────────
   const conversation = await getOrCreateConversation(senderPhone, senderName ?? undefined);
 
@@ -266,7 +306,6 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
       await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'rate_cap_exceeded', messageText);
       await escalateConversation(conversation.id, 'rate_cap_exceeded', messageText);
     }
-    processingPhones.delete(senderPhone);
     return;
   }
 
@@ -281,23 +320,35 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
 
   // ── Opt-out keywords (STOP, BAJA, CANCELAR, …) ───────────
   const trimmed = messageText.trim().toLowerCase();
-  const isOptOut =
-    OPT_OUT_KEYWORDS_EXACT.has(trimmed) ||
-    OPT_OUT_KEYWORDS_CONTAINS.some((kw) => trimmed.includes(kw));
+  const matchedEs =
+    OPT_OUT_KEYWORDS_EXACT_ES.has(trimmed) ||
+    OPT_OUT_KEYWORDS_CONTAINS_ES.some((kw) => trimmed.includes(kw));
+  const matchedEn =
+    OPT_OUT_KEYWORDS_EXACT_EN.has(trimmed) ||
+    OPT_OUT_KEYWORDS_CONTAINS_EN.some((kw) => trimmed.includes(kw));
+  const isOptOut = matchedEs || matchedEn;
 
   if (isOptOut) {
     console.log(`[WEBHOOK] Opt-out from ${senderPhone}`);
     await optOutConversation(conversation.id);
 
-    // Detect language from message content
-    const isEnglish = /^[a-z\s\-]+$/.test(trimmed) && !trimmed.match(/[áéíóúñ]/);
-    const optOutMsg = isEnglish
+    // Pick reply language by which keyword set actually matched. If both
+    // matched (e.g. "stop" — present only in EN set) it's English; if only
+    // ES matched it's Spanish; ambiguous goes to the customer's persisted
+    // language, defaulting to Spanish (Oiikon's customer base).
+    let replyLang: 'es' | 'en';
+    if (matchedEs && !matchedEn) replyLang = 'es';
+    else if (matchedEn && !matchedEs) replyLang = 'en';
+    else {
+      const persisted = (await loadCustomerProfile(senderPhone))?.language;
+      replyLang = persisted === 'en' ? 'en' : 'es';
+    }
+    const optOutMsg = replyLang === 'en'
       ? 'Done! You have been unsubscribed. You will not receive any more messages from Oiikon. If you ever want to reach us again, just send us a message and we will be happy to help. Have a great day! 😊'
       : 'Listo, le hemos dado de baja. No recibirá más mensajes de Oiikon. Si algún día desea volver a contactarnos, puede escribirnos aquí y con gusto le atendemos. ¡Que tenga un excelente día! 😊';
 
     await sendReplyForParsed(parsed, optOutMsg);
     await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'user_opt_out', messageText);
-    processingPhones.delete(senderPhone);
     return;
   }
 
@@ -553,10 +604,19 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
       await sendReplyForParsed(parsed, cleanMessage);
 
       // ── Dispatch product images (WhatsApp only, best-effort) ──
+      // Only record SKUs that ACTUALLY had at least one image sent. The old
+      // code recorded the full request list, so a SKU with no usable image,
+      // a Meta send failure, or a SKU dropped by the per-reply cap would
+      // still be marked as "FOTOS YA ENVIADAS" — Sol then refused to retry
+      // and the customer never got the photo.
       if (channel === 'whatsapp' && imageSkus.length > 0) {
         waitUntil(
           dispatchProductImages(parsed, senderPhone, imageSkus)
-            .then(() => recordDispatchedSkus(conversation.id, imageSkus))
+            .then((delivered) => {
+              if (delivered.length > 0) {
+                return recordDispatchedSkus(conversation.id, delivered);
+              }
+            })
             .catch((err) => console.warn('[WEBHOOK] image dispatch failed:', err))
         );
       }
@@ -573,8 +633,6 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
       )
     );
 
-    processingPhones.delete(senderPhone);
-
   } catch (err) {
     const isTimeout =
       err instanceof Error &&
@@ -585,7 +643,6 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
       `[WEBHOOK] AI error for ${senderPhone} (timeout=${isTimeout}):`,
       err
     );
-    processingPhones.delete(senderPhone);
     const fallback = isTimeout
       ? 'Estoy tardando más de lo normal en responder. ¿Podría repetir su mensaje? Si persiste, un especialista le contactará.'
       : 'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.';
@@ -826,11 +883,12 @@ async function dispatchProductImages(
   parsed: import('@/lib/whatsapp').ParsedIncomingMessage,
   phone: string,
   skus: string[],
-): Promise<void> {
+): Promise<string[]> {
   // Single SKU → up to 2 images (front + alt angle / use shot).
   // Multiple SKUs → 1 image each, capped at TOTAL_IMAGE_CAP_PER_REPLY.
   const perSku = skus.length === 1 ? IMAGES_PER_SKU_WHEN_SINGLE : 1;
   let sent = 0;
+  const delivered: string[] = [];
 
   for (const sku of skus) {
     if (sent >= TOTAL_IMAGE_CAP_PER_REPLY) break;
@@ -843,13 +901,20 @@ async function dispatchProductImages(
         console.log(`[WEBHOOK] No image URLs for SKU ${sku} — skipping`);
         continue;
       }
+      let skuSent = 0;
       for (const url of urls) {
         await sendImageForParsed(parsed, phone, url);
         sent++;
+        skuSent++;
       }
-      console.log(`[WEBHOOK] Sent ${urls.length} image(s) for ${sku}`);
+      if (skuSent > 0) delivered.push(sku);
+      console.log(`[WEBHOOK] Sent ${skuSent} image(s) for ${sku}`);
     } catch (err) {
+      // If this SKU partially sent before the throw we still count it as
+      // delivered — the customer received at least one image and re-sending
+      // would feel spammy.
       console.warn(`[WEBHOOK] Failed to send image(s) for ${sku}:`, err);
     }
   }
+  return delivered;
 }

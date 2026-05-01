@@ -33,7 +33,13 @@ const META_API = 'https://graph.facebook.com/v21.0';
 async function isAuthenticated(req: NextRequest): Promise<boolean> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !supabaseAnonKey) return process.env.VERCEL_ENV !== 'production';
+  // Fail CLOSED unless explicitly running in local development. Preview
+  // deployments (VERCEL_ENV='preview') used to slip through and expose this
+  // endpoint, which accepts a Meta access token in the body — high-risk leak
+  // surface. Restrict pass-through to true local dev only.
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return process.env.VERCEL_ENV === undefined && process.env.NODE_ENV !== 'production';
+  }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: { getAll: () => req.cookies.getAll(), setAll: () => {} },
