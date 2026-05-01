@@ -183,10 +183,10 @@ CTAs OBLIGATORIOS:
 • Incluye SIEMPRE dos llamadas a la acción al final del facebook_post,
   instagram_caption, y youtube_description:
   1. Link al producto: https://oiikon.com/product/${product.sku.toLowerCase()}
-  2. Chat por WhatsApp: https://wa.me/14848644191?text=Hola%2C%20tengo%20una%20pregunta%20sobre%20el%20${product.sku}
+  2. Chat por WhatsApp: https://wa.me/15616988477?text=Hola%2C%20tengo%20una%20pregunta%20sobre%20el%20${product.sku}
 • Formato sugerido:
   "👉 Más info: https://oiikon.com/product/${product.sku.toLowerCase()}
-   💬 O chatea con nosotros: https://wa.me/14848644191"
+   💬 O chatea con nosotros: https://wa.me/15616988477"
 • En el youtube_script, menciona verbalmente "También puedes escribirnos
   por WhatsApp para resolver tus dudas" cerca del final.
 
@@ -250,7 +250,7 @@ Genera el siguiente contenido de marketing en formato JSON válido. TODO en espa
   return content;
 }
 
-const WHATSAPP_LINK = 'https://wa.me/14848644191';
+const WHATSAPP_LINK = 'https://wa.me/15616988477';
 
 function stripLegalDisclaimer(text: string): string {
   if (!text) return text;
@@ -269,7 +269,7 @@ function stripLegalDisclaimer(text: string): string {
 function normalizeCaption(text: string, channel: 'facebook' | 'instagram' | 'youtube'): string {
   if (!text) return text;
   const stripped = stripLegalDisclaimer(text);
-  if (stripped.includes(WHATSAPP_LINK) || stripped.includes('wa.me/14848644191')) {
+  if (stripped.includes(WHATSAPP_LINK) || stripped.includes('wa.me/15616988477')) {
     return stripped;
   }
   // Inject WhatsApp CTA. For IG/YT keep short form ("💬 WhatsApp: ...").
