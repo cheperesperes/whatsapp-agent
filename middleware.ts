@@ -22,8 +22,16 @@ export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // If env vars are not configured (local dev without .env.local), pass through
+  // Fail CLOSED in production. If Supabase env vars are missing in prod
+  // (rotation, misconfig), redirect to /login rather than letting every
+  // dashboard route become public. Pass-through is only for local dev.
   if (!supabaseUrl || !supabaseAnonKey) {
+    if (process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production') {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('redirect', pathname);
+      loginUrl.searchParams.set('error', 'config');
+      return NextResponse.redirect(loginUrl);
+    }
     return NextResponse.next();
   }
 

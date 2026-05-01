@@ -60,11 +60,29 @@ export function createBrowserClient() {
 // ============================================================
 
 /**
+ * Synthetic identifier prefix used by the web-chat path to key per-session
+ * state in tables that share a `phone_number` column with WhatsApp rows.
+ * Anything starting with this prefix is NOT a phone number and must NOT be
+ * coerced through the digit-stripping E.164 normalizer.
+ */
+export const WEB_SESSION_PREFIX = 'web::';
+
+export function isWebSessionIdentifier(raw: string): boolean {
+  return typeof raw === 'string' && raw.startsWith(WEB_SESSION_PREFIX);
+}
+
+/**
  * Normalize a phone number to E.164 with leading '+'. Tolerant of
  * variants like "whatsapp:+15551234567" or bare digits "15551234567".
+ *
+ * `web::sessionId` synthetic identifiers pass through unchanged — feeding
+ * them through the digit-stripping path used to collapse every web visitor
+ * onto a single bogus row (e.g. `web::abc12345` -> `+12345`) which both
+ * collided across sessions AND could overwrite real customer phone rows.
  */
 export function normalizePhone(raw: string): string {
   if (!raw) return raw;
+  if (isWebSessionIdentifier(raw)) return raw;
   let p = raw.trim();
   if (p.startsWith('whatsapp:')) p = p.slice('whatsapp:'.length);
   p = p.replace(/\s+/g, '');
@@ -297,8 +315,15 @@ export async function hasProcessedMessageSid(sid: string): Promise<boolean> {
 }
 
 /**
- * Count how many user messages came from a given phone number in the past `minutes`.
- * Used for per-phone rolling-window rate limiting.
+ * Count how many user messages came from a given identifier in the past
+ * `minutes`. Used for the rolling-hour rate cap.
+ *
+ * Identifier routing:
+ *   • `web::sessionId` → look up by `web_session_id`. Web rows store
+ *     `phone_number = NULL`, so the previous `eq('phone_number', ...)`
+ *     never matched and the cap was effectively disabled for the website
+ *     widget — anonymous visitors could flood Claude API with no limit.
+ *   • Anything else → treat as a phone number.
  */
 export async function countRecentUserMessagesFromPhone(
   phoneNumber: string,
@@ -307,18 +332,29 @@ export async function countRecentUserMessagesFromPhone(
   const supabase = createServiceClient();
   const since = new Date(Date.now() - minutes * 60_000).toISOString();
 
-  // Join via conversations
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('phone_number', phoneNumber)
-    .maybeSingle();
-  if (!conv?.id) return 0;
+  let convId: string | null = null;
+  if (isWebSessionIdentifier(phoneNumber)) {
+    const sessionId = phoneNumber.slice(WEB_SESSION_PREFIX.length);
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('web_session_id', sessionId)
+      .maybeSingle();
+    convId = conv?.id ?? null;
+  } else {
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('phone_number', phoneNumber)
+      .maybeSingle();
+    convId = conv?.id ?? null;
+  }
+  if (!convId) return 0;
 
   const { count } = await supabase
     .from('messages')
     .select('*', { count: 'exact', head: true })
-    .eq('conversation_id', conv.id)
+    .eq('conversation_id', convId)
     .eq('role', 'user')
     .gte('created_at', since);
 
@@ -758,26 +794,6 @@ export async function addKnowledgeEntry(
   }
 
   return data;
-}
-
-/**
- * Increment the times_used counter for a knowledge entry.
- */
-export async function incrementKnowledgeUsage(entryId: string): Promise<void> {
-  const supabase = createServiceClient();
-
-  try {
-    const { error } = await supabase.rpc('increment_kb_usage', { entry_id: entryId });
-    if (error) {
-      // Fallback: manual increment if RPC doesn't exist
-      await supabase
-        .from('knowledge_base')
-        .update({ times_used: 1 })
-        .eq('id', entryId);
-    }
-  } catch {
-    // Silently ignore if increment fails
-  }
 }
 
 /**
