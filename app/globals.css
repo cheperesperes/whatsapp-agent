@@ -5,10 +5,25 @@
 @layer base {
   :root {
     color-scheme: light;
+
+    /* Mobile safe-area insets exposed as CSS vars so children can use them
+       inside Tailwind's arbitrary-value syntax (e.g. pb-[env(safe-area-inset-bottom)]).
+       Native iOS Safari only honors env() inside an html element with the
+       viewport-fit=cover meta — that's set in app/layout.tsx. */
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-top: env(safe-area-inset-top, 0px);
+
+    /* Bottom-tab-bar height on phones. The dashboard layout reserves this
+       much padding at the foot of every scroll container so a fixed tab bar
+       never covers content. */
+    --mobile-tab-bar-height: 56px;
   }
 
   * {
     box-sizing: border-box;
+    /* Remove iOS tap-highlight flash so buttons feel native. The focus
+       ring is still visible (kept on .btn-primary etc) for keyboard users. */
+    -webkit-tap-highlight-color: transparent;
   }
 
   html,
@@ -18,12 +33,34 @@
     padding: 0;
   }
 
+  html {
+    /* Skip the legacy 300ms double-tap-zoom delay on iOS. We set
+       maximumScale=1 in the viewport meta and use 16px+ inputs so the OS
+       has no reason to zoom anyway. */
+    touch-action: manipulation;
+  }
+
   /* Light WhatsApp Web theme — `bg-surface-900` is the cream doodle
      wallpaper, `text-gray-100` reads as near-black thanks to the inverted
      gray scale in tailwind.config.ts. */
   body {
     @apply bg-surface-900 text-gray-100 antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    /* Prevent the body from rubber-banding on iOS when nested scroll
+       containers reach their edges — keeps the dashboard chrome stable. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Force every form input to 16px+ on phones so iOS Safari never
+     auto-zooms when focused. Tailwind's `text-sm` (14px) is the most
+     common offender — we override only on the narrow viewport so the
+     desktop UI keeps the tighter density. */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
   }
 
   /* Custom scrollbar — light scheme */

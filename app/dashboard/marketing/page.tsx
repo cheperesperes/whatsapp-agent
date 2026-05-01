@@ -371,32 +371,34 @@ export default function MarketingPage() {
 
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-surface-900">
-      {/* Minimal header */}
-      <div className="px-6 py-3 border-b border-surface-600 bg-surface-800 flex items-center justify-between shrink-0">
-        <div>
-          <h2 className="text-base font-semibold text-gray-100">Marketing</h2>
-          <p className="text-[11px] text-gray-500">
+      {/* Minimal header — narrower padding on phone so the stats and refresh
+          icon don't push the title off-screen on a 375px-wide iPhone SE. */}
+      <div className="px-4 sm:px-6 py-3 border-b border-surface-600 bg-surface-800 flex items-center justify-between shrink-0 gap-2">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-gray-100 truncate">Marketing</h2>
+          <p className="text-[11px] text-gray-500 truncate">
             {formatDate(new Date().toISOString().split('T')[0])}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {adData?.configured && adData.spend && adData.spend.this_week > 0 && (
-            <span className="text-[11px] text-gray-500">
+            <span className="hidden sm:inline text-[11px] text-gray-500">
               Gasto semana: <span className="text-brand-400 font-semibold">${adData.spend.this_week.toFixed(2)}</span>
             </span>
           )}
           <button
             type="button"
             onClick={() => reload()}
-            className="text-xs text-gray-500 hover:text-gray-300"
+            className="text-base text-gray-500 hover:text-gray-300 min-h-[40px] min-w-[40px] flex items-center justify-center"
             title="Refrescar"
+            aria-label="Refrescar"
           >
             ↻
           </button>
         </div>
       </div>
 
-      <div className="p-6 space-y-5 max-w-3xl mx-auto w-full">
+      <div className="p-4 sm:p-6 space-y-5 max-w-3xl mx-auto w-full">
 
         {/* ─────────────────  HERO  ───────────────── */}
         {!today ? (
@@ -564,21 +566,24 @@ function CampaignHero({
       {/* Rendered FB-style preview (always visible, no toggle) */}
       {content && <FacebookPreview content={content} />}
 
-      {/* Primary CTA */}
+      {/* Primary CTA — stacks vertically on phones (full-width tap targets,
+          ≥48pt high) and inlines back into a row on tablet+. Each button keeps
+          a 12px vertical pad so phones always meet Apple HIG's 44pt touch
+          target even at the smallest text size. */}
       {readyToApprove && (
-        <div className="px-5 py-4 bg-surface-800/60 border-t border-surface-700 space-y-2">
-          <div className="flex gap-2">
+        <div className="px-4 sm:px-5 py-4 bg-surface-800/60 border-t border-surface-700 space-y-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <button
               onClick={() => onApprove(true)}
               disabled={approving}
-              className="flex-1 py-3 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold text-sm transition-colors disabled:opacity-50"
+              className="flex-1 min-h-[48px] py-3 px-4 rounded-lg bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-semibold text-sm transition-colors disabled:opacity-50"
             >
               {approving ? 'Publicando...' : '✅ Publicar con video'}
             </button>
             <button
               onClick={() => onApprove(true, { text_only: true })}
               disabled={approving}
-              className="px-4 py-3 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-200 text-sm transition-colors disabled:opacity-50"
+              className="min-h-[48px] py-3 px-4 rounded-lg bg-surface-700 hover:bg-surface-600 active:bg-surface-500 text-gray-200 text-sm transition-colors disabled:opacity-50"
               title="Publica solo el texto (FB) y la imagen del producto (IG). Omite YouTube."
             >
               📝 Solo texto
@@ -586,7 +591,7 @@ function CampaignHero({
             <button
               onClick={() => onApprove(false)}
               disabled={approving}
-              className="px-4 py-3 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-sm transition-colors disabled:opacity-50"
+              className="min-h-[48px] py-3 px-4 rounded-lg bg-surface-700 hover:bg-surface-600 active:bg-surface-500 text-gray-300 text-sm transition-colors disabled:opacity-50"
               title="Rechazar — no se publicará"
             >
               Rechazar
