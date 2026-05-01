@@ -27,10 +27,142 @@
     CFG.endpoint || 'https://whatsapp-agent-ebon-nine.vercel.app/api/chat';
   var GREETING =
     CFG.greeting ||
-    '¡Hola! Soy Sol de Oiikon ☀️ ¿Necesitas ayuda con energía solar para tu familia?';
+    '¡Hola! Soy Sol de Oiikon ☀️ ¿Quieres que te ayude a saber qué solar necesitas?';
   var SESSION_KEY = 'oiikon_sol_session';
   var HISTORY_KEY = 'oiikon_sol_history';
   var OPEN_KEY = 'oiikon_sol_open';
+  var TEASER_DISMISSED_KEY = 'oiikon_sol_teaser_dismissed';
+  var TEASER_LAST_SHOWN_KEY = 'oiikon_sol_teaser_shown_at';
+
+  // ── Proactive teaser bubble ──────────────────────────────
+  // Shows a one-line preview above the closed widget after a short delay
+  // to nudge the visitor into opening the chat. The copy is rotated by
+  // *audience signal* (URL / referrer / language) so RV buyers, hurricane
+  // preppers, off-gridders, AND Cuban-family senders all see something
+  // that names THEIR situation — not a generic "need help?" prompt.
+  //
+  // Why fuel savings is woven through every variant: gas/diesel for
+  // backup generators is the comparison-cost most visitors already have
+  // a number for in their head. A generator burns ~$15-30 of fuel a day
+  // during a real outage; a solar station pays itself off in days, not
+  // years, when fuel scarcity hits.
+  //
+  // Per-audience variants are defined for both Spanish and English. The
+  // language picker mirrors what Sol uses server-side: any persisted
+  // preference wins, otherwise navigator.language with Spanish as the
+  // Cuban/LATAM default.
+
+  var TEASER_DELAY_MS_GENERIC = 30000; // 30s on home / non-product pages
+  var TEASER_DELAY_MS_PRODUCT = 8000;  // 8s on product pages — higher intent
+  var TEASER_REPEAT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 1 day between teasers
+  var TEASER_AUTO_HIDE_MS = 12000;     // teaser disappears if not clicked
+  var TEASER_LANG_KEY = 'oiikon_sol_lang';
+
+  // Audience tags. The picker scans URL + referrer + simple page-text
+  // signals to choose one. Falls back to 'generic'.
+  var AUDIENCES = ['hurricane', 'rv', 'offgrid', 'cuba_family', 'generic'];
+
+  var TEASER_COPY = {
+    es: {
+      hurricane: [
+        '¿Listo para el próximo apagón? En 30 seg te digo qué necesitas (sin gastar en gasolina).',
+        '¿Cansado de pagar gasolina al generador? Te muestro la cuenta solar — paga solo.',
+        'Antes de la próxima tormenta, 3 preguntas y te digo si una Pecron te alcanza.',
+      ],
+      rv: [
+        '¿RV, casa rodante o cabaña? Te ajusto un Pecron a tu uso real (y dejas de cargar combustible).',
+        'Adiós al ruido del generador en el camping — calculemos qué solar te aguanta el viaje.',
+        '¿Cuántos días fuera de red? Te digo qué Pecron + paneles te dan autonomía sin gas.',
+      ],
+      offgrid: [
+        '¿Casa off-grid o cabaña? Te diseño el sistema en 3 preguntas — sin generador a gasolina.',
+        '¿Cansado de mover bidones de combustible? Te muestro cuánto ahorras yendo solar.',
+        'En 30 segundos te calculo qué LiFePO4 + paneles cubren tu carga real.',
+      ],
+      cuba_family: [
+        '¿Apagones largos en casa de tu familia? Calculo qué les sirve y cuánto ahorran en gasolina.',
+        '¿Cuántos $ se van en gasolina del generador cada mes allá? Te muestro cómo parar la sangría.',
+        'En 3 preguntas te digo qué Pecron mantiene la nevera y los celulares — sin gas.',
+      ],
+      generic: [
+        'En 3 preguntas te digo qué Pecron necesitas — sin presión.',
+        '¿Comparas precio de generador vs solar? Te hago la cuenta gratis.',
+        '¿Necesitas energía de respaldo? Te diseño la solución en 30 segundos.',
+      ],
+    },
+    en: {
+      hurricane: [
+        'Storm prep ready? 30 sec to size what you need — and stop paying for generator fuel.',
+        'Tired of $20/day in generator gas during outages? Let me show you the solar math.',
+        'Before the next hurricane: 3 questions, real answer on what Pecron fits your home.',
+      ],
+      rv: [
+        'RV or cabin? I\'ll match a Pecron to your real load — no more hauling fuel.',
+        'Quiet camping: drop the gas generator. Let\'s see what solar covers your trip.',
+        'How many days off-grid? I\'ll size the Pecron + panels for full autonomy.',
+      ],
+      offgrid: [
+        'Off-grid cabin? I\'ll design the system in 3 questions — no gas generator needed.',
+        'Tired of running fuel jugs? Here\'s how fast solar pays for itself.',
+        '30 sec to size the LiFePO4 + panels that cover your real load.',
+      ],
+      cuba_family: [
+        'Family dealing with long blackouts? I\'ll size what they need + show fuel savings.',
+        'How much do they spend on generator gas each month? Let me show you the swap.',
+        '3 questions and I\'ll tell you what keeps the fridge + phones running — no fuel needed.',
+      ],
+      generic: [
+        '3 questions and I\'ll tell you which Pecron fits — no pressure.',
+        'Comparing generator vs solar cost? I\'ll do the math, free.',
+        'Need backup power? I\'ll design the solution in 30 seconds.',
+      ],
+    },
+  };
+
+  function detectLanguage() {
+    try {
+      var stored = localStorage.getItem(TEASER_LANG_KEY);
+      if (stored === 'es' || stored === 'en') return stored;
+    } catch (e) {}
+    var nav = (navigator.language || 'es').toLowerCase();
+    // Cuban / LATAM customer base → Spanish default for any non-English locale.
+    return nav.indexOf('en') === 0 ? 'en' : 'es';
+  }
+
+  function detectAudience() {
+    var url = '';
+    var ref = '';
+    var bodyText = '';
+    try {
+      url = (location.pathname + ' ' + location.search).toLowerCase();
+      ref = (document.referrer || '').toLowerCase();
+      bodyText = (document.title + ' ' +
+        (document.querySelector('meta[name="description"]') || {}).content ||
+        '').toLowerCase();
+    } catch (e) {}
+
+    var hay = url + ' ' + ref + ' ' + bodyText;
+    if (/\b(hurricane|tormenta|apag(o|ó)n|huracan|storm|backup)\b/.test(hay)) return 'hurricane';
+    if (/\b(rv|motorhome|caravan|trailer|camping|van[- ]?life|nautico|boat|bote|barco)\b/.test(hay)) return 'rv';
+    if (/\b(off[- ]?grid|cabin|cabana|caba(n|ñ)a|finca|rancho|remoto)\b/.test(hay)) return 'offgrid';
+    if (/\b(cuba|familia|family|envi(o|ó)|shipping|isla)\b/.test(hay)) return 'cuba_family';
+    return 'generic';
+  }
+
+  function isProductPage() {
+    try {
+      return /\/product(s)?\//.test(location.pathname);
+    } catch (e) { return false; }
+  }
+
+  function pickTeaserCopy() {
+    var lang = detectLanguage();
+    var audience = detectAudience();
+    var bucket = (TEASER_COPY[lang] || TEASER_COPY.es)[audience]
+      || TEASER_COPY[lang].generic
+      || TEASER_COPY.es.generic;
+    return bucket[Math.floor(Math.random() * bucket.length)];
+  }
 
   function genSessionId() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -92,6 +224,31 @@
     '}',
     '#oiikon-sol-bubble:hover{transform:scale(1.05);}',
     '#oiikon-sol-bubble[data-open="true"]{display:none;}',
+    // ── Teaser tooltip (shown above the closed bubble) ──
+    '#oiikon-sol-teaser{',
+    '  position:fixed;right:90px;bottom:32px;max-width:260px;',
+    '  background:white;color:#1f2937;border-radius:14px;',
+    '  box-shadow:0 8px 24px rgba(0,0,0,.18);padding:12px 14px;',
+    '  font:14px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;',
+    '  cursor:pointer;z-index:2147483647;',
+    '  opacity:0;transform:translateY(8px);pointer-events:none;',
+    '  transition:opacity .3s ease,transform .3s ease;',
+    '  border:1px solid #f97316;',
+    '}',
+    '#oiikon-sol-teaser[data-visible="true"]{opacity:1;transform:translateY(0);pointer-events:auto;}',
+    '#oiikon-sol-teaser::after{',
+    '  content:"";position:absolute;right:-8px;bottom:18px;',
+    '  width:0;height:0;border:8px solid transparent;border-left-color:white;',
+    '}',
+    '#oiikon-sol-teaser-close{',
+    '  position:absolute;top:4px;right:6px;background:none;border:none;',
+    '  font-size:14px;color:#9ca3af;cursor:pointer;line-height:1;padding:2px 4px;',
+    '}',
+    '#oiikon-sol-teaser-close:hover{color:#1f2937;}',
+    '@media (max-width:480px){',
+    '  #oiikon-sol-teaser{right:14px;bottom:90px;max-width:calc(100vw - 28px);}',
+    '  #oiikon-sol-teaser::after{display:none;}',
+    '}',
     '#oiikon-sol-panel{',
     '  position:fixed;right:20px;bottom:20px;width:360px;max-width:calc(100vw - 40px);',
     '  height:540px;max-height:calc(100vh - 40px);background:white;',
@@ -159,8 +316,20 @@
     '</form>',
   ].join('');
 
+  // ── Proactive teaser DOM ─────────────────────────────────
+  var teaser = document.createElement('div');
+  teaser.id = 'oiikon-sol-teaser';
+  teaser.setAttribute('role', 'button');
+  teaser.setAttribute('tabindex', '0');
+  teaser.setAttribute('aria-label', 'Abrir chat con Sol');
+  teaser.innerHTML = [
+    '<button id="oiikon-sol-teaser-close" type="button" aria-label="Cerrar">×</button>',
+    '<div id="oiikon-sol-teaser-text"></div>',
+  ].join('');
+
   document.body.appendChild(bubble);
   document.body.appendChild(panel);
+  document.body.appendChild(teaser);
 
   var msgsEl = panel.querySelector('#oiikon-sol-messages');
   var formEl = panel.querySelector('#oiikon-sol-form');
@@ -280,4 +449,69 @@
   try {
     if (sessionStorage.getItem(OPEN_KEY) === '1') setOpen(true);
   } catch (e) {}
+
+  // ── Teaser show / dismiss logic ──────────────────────────
+  // Skip the teaser entirely when:
+  //   • the chat is already open (panel data-open=true)
+  //   • the user has dismissed it before AND less than the cooldown has passed
+  //   • the user has already exchanged a real message (history > 1 entries
+  //     means they got past the canned greeting — they know we exist)
+  function shouldShowTeaser() {
+    if (panel.getAttribute('data-open') === 'true') return false;
+    if (history.length > 1) return false;
+    try {
+      if (localStorage.getItem(TEASER_DISMISSED_KEY) === '1') return false;
+      var lastShown = parseInt(localStorage.getItem(TEASER_LAST_SHOWN_KEY) || '0', 10);
+      if (lastShown && Date.now() - lastShown < TEASER_REPEAT_COOLDOWN_MS) return false;
+    } catch (e) {}
+    return true;
+  }
+
+  var teaserHideTimer = null;
+
+  function showTeaser() {
+    if (!shouldShowTeaser()) return;
+    var copy = pickTeaserCopy();
+    var textEl = teaser.querySelector('#oiikon-sol-teaser-text');
+    if (textEl) textEl.textContent = copy;
+    teaser.setAttribute('data-visible', 'true');
+    try { localStorage.setItem(TEASER_LAST_SHOWN_KEY, String(Date.now())); } catch (e) {}
+    // Auto-hide if the visitor doesn't engage — but DON'T mark as dismissed
+    // (we'll try again on the next page after the cooldown).
+    if (teaserHideTimer) clearTimeout(teaserHideTimer);
+    teaserHideTimer = setTimeout(function () {
+      teaser.setAttribute('data-visible', 'false');
+    }, TEASER_AUTO_HIDE_MS);
+  }
+
+  function hideTeaser(dismissedByUser) {
+    teaser.setAttribute('data-visible', 'false');
+    if (teaserHideTimer) { clearTimeout(teaserHideTimer); teaserHideTimer = null; }
+    if (dismissedByUser) {
+      try { localStorage.setItem(TEASER_DISMISSED_KEY, '1'); } catch (e) {}
+    }
+  }
+
+  // Clicking the teaser body opens the chat (warm intent — most-likely path
+  // to conversion). Clicking the × dismisses it permanently for this device.
+  teaser.addEventListener('click', function (e) {
+    if (e.target && e.target.id === 'oiikon-sol-teaser-close') {
+      hideTeaser(true);
+      return;
+    }
+    hideTeaser(false);
+    setOpen(true);
+  });
+  teaser.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      hideTeaser(false);
+      setOpen(true);
+    }
+  });
+
+  // Schedule the teaser. Product pages get a faster appearance because
+  // visitors landing there have already shown intent.
+  var teaserDelay = isProductPage() ? TEASER_DELAY_MS_PRODUCT : TEASER_DELAY_MS_GENERIC;
+  setTimeout(showTeaser, teaserDelay);
 })();
