@@ -343,6 +343,9 @@ function Composer({
   }
 
   return (
+    // Outer dashboard layout reserves the tab-bar + safe-area space at the
+    // foot of <main>, so this composer just needs comfy padding and tappable
+    // target heights — no extra safe-area math here.
     <div className="border-t border-surface-600 bg-surface-800 p-3 shrink-0">
       <div className="flex items-end gap-2">
         <textarea
@@ -356,20 +359,21 @@ function Composer({
           }}
           rows={2}
           disabled={disabled || sending}
-          placeholder="Escribir como operador… (Cmd/Ctrl+Enter para enviar)"
-          className="input flex-1 resize-none text-sm"
+          placeholder="Escribir como operador…"
+          className="input flex-1 resize-none text-sm min-h-[44px]"
         />
         <button
           type="button"
           onClick={submit}
           disabled={disabled || sending || !text.trim()}
-          className="btn-primary text-xs px-4 py-2 shrink-0"
+          className="btn-primary px-4 py-2 shrink-0 min-h-[44px] min-w-[64px]"
+          aria-label="Enviar mensaje"
         >
           {sending ? '…' : 'Enviar'}
         </button>
       </div>
-      <p className="text-[10px] text-gray-500 mt-1.5">
-        Al enviar, Sol queda en pausa hasta que pulses &quot;Devolver a Sol&quot;.
+      <p className="hidden sm:block text-[10px] text-gray-500 mt-1.5">
+        Cmd/Ctrl+Enter para enviar. Al enviar, Sol queda en pausa hasta que pulses &quot;Devolver a Sol&quot;.
       </p>
     </div>
   );

@@ -78,7 +78,7 @@ export default function AnalyticsPage() {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-surface-600 bg-surface-800 shrink-0">
+      <div className="px-4 sm:px-6 py-4 border-b border-surface-600 bg-surface-800 shrink-0">
         <h2 className="text-base font-semibold text-gray-100">Analíticas</h2>
         <p className="text-xs text-gray-500 mt-0.5">Rendimiento del agente Sol</p>
       </div>
@@ -88,7 +88,7 @@ export default function AnalyticsPage() {
           Cargando datos...
         </div>
       ) : stats ? (
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {/* Stat cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <StatCard label="Total Conversaciones" value={stats.total} color="brand" />

@@ -176,14 +176,14 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-surface-600 bg-surface-800 shrink-0 flex-wrap">
+      {/* Filters — search is full-width on phone, fixed-width on tablet+ */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 px-4 sm:px-6 py-3 border-b border-surface-600 bg-surface-800 shrink-0">
         <input
           type="text"
           placeholder="Buscar por nombre, SKU o marca..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="input text-xs w-64"
+          className="input w-full sm:w-64"
         />
         <div className="flex gap-1 flex-wrap">
           {categories.map((cat) => (
@@ -201,14 +201,140 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table (desktop) + card stack (mobile). Two renderings of the same
+          `filtered` list so the iPhone gets fully-tappable per-product cards
+          while the desktop keeps the dense table view. */}
       <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center h-32 text-gray-500 text-sm">
             Cargando catálogo...
           </div>
         ) : (
-          <table className="w-full text-sm min-w-[900px]">
+          <>
+            {/* Mobile card stack — one card per product, full-width tap targets,
+                inline edit form expands inside the card. */}
+            <div className="md:hidden p-4 space-y-3">
+              {filtered.map((product) => {
+                const isEditing = editingId === product.id;
+                const isSaved = savedId === product.id;
+                const displayPrice =
+                  region === 'cuba'
+                    ? (product.cuba_total_price ?? product.sell_price ?? 0)
+                    : (product.sell_price ?? 0);
+                return (
+                  <div
+                    key={product.id}
+                    className={`card p-4 ${isEditing ? 'ring-2 ring-whatsapp-500' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-200 truncate">{product.name}</p>
+                        <p className="text-xs text-gray-500 font-mono truncate">{product.sku}</p>
+                        {product.brand && (
+                          <p className="text-xs text-gray-500 truncate">{product.brand}</p>
+                        )}
+                      </div>
+                      <CategoryBadge category={product.category} />
+                    </div>
+                    <div className="text-xs text-gray-400 mb-3">{formatCapacity(product)}</div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
+                          Precio {region === 'cuba' ? 'Cuba' : 'USA'}
+                        </p>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={editValues?.sell_price ?? ''}
+                            onChange={(e) =>
+                              setEditValues((prev) => prev ? { ...prev, sell_price: e.target.value } : prev)
+                            }
+                            className="input w-full"
+                            inputMode="decimal"
+                          />
+                        ) : (
+                          <p className="font-medium text-gray-200">${Number(displayPrice).toFixed(2)}</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Stock</p>
+                        {isEditing ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditValues((prev) => prev ? { ...prev, in_stock: !prev.in_stock } : prev)
+                            }
+                            className={`min-h-[40px] w-full rounded text-xs font-medium transition-colors
+                              ${editValues?.in_stock
+                                ? 'bg-green-900/50 text-green-300 border border-green-800'
+                                : 'bg-red-900/50 text-red-300 border border-red-800'}`}
+                          >
+                            {editValues?.in_stock ? 'En stock' : 'Sin stock'}
+                          </button>
+                        ) : (
+                          <p className={product.in_stock ? 'text-green-400' : 'text-red-400'}>
+                            {product.in_stock ? '● En stock' : '○ Sin stock'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Ideal para</p>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editValues?.ideal_for ?? ''}
+                          onChange={(e) =>
+                            setEditValues((prev) => prev ? { ...prev, ideal_for: e.target.value } : prev)
+                          }
+                          className="input w-full"
+                          placeholder="Ideal para..."
+                        />
+                      ) : (
+                        <p className="text-xs text-gray-400">{product.ideal_for ?? '—'}</p>
+                      )}
+                    </div>
+
+                    {isSaved && !isEditing && (
+                      <p className="text-xs text-green-400 mb-2">✓ Guardado</p>
+                    )}
+
+                    {isEditing ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={cancelEdit}
+                          disabled={saving}
+                          className="flex-1 btn-secondary min-h-[44px]"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => saveEdit(product.id)}
+                          disabled={saving}
+                          className="flex-1 btn-primary min-h-[44px]"
+                        >
+                          {saving ? 'Guardando...' : 'Guardar'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => startEdit(product)}
+                        className="w-full btn-secondary min-h-[44px]"
+                      >
+                        Editar
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop table — unchanged */}
+            <table className="hidden md:table w-full text-sm min-w-[900px]">
             <thead>
               <tr className="border-b border-surface-600 bg-surface-800 sticky top-0">
                 <th className="text-left text-xs font-medium text-gray-400 px-4 py-3">Producto</th>
@@ -355,6 +481,7 @@ export default function ProductsPage() {
               })}
             </tbody>
           </table>
+          </>
         )}
       </div>
     </div>
