@@ -130,6 +130,7 @@ export async function getOrCreateConversation(
       customer_segment: 'unknown',
       status: 'active',
       escalated: false,
+      channel: 'whatsapp',
     })
     .select()
     .single();
@@ -139,6 +140,68 @@ export async function getOrCreateConversation(
   }
 
   console.log(`[getOrCreateConversation] created new | phone=${canonical} | id=${created.id}`);
+  return created;
+}
+
+/**
+ * Get or create a conversation for a website chat session. Web rows are
+ * keyed by `web_session_id` (a browser-generated UUID stored in localStorage)
+ * — the conversations.phone_number column is left null until the customer
+ * shares a phone number, at which point the operator can merge.
+ *
+ * Requires the `add-web-channel.sql` migration to be applied first
+ * (adds `channel` and `web_session_id` columns).
+ */
+export async function getOrCreateWebConversation(
+  sessionId: string,
+  displayName?: string
+): Promise<Conversation> {
+  const supabase = createServiceClient();
+
+  const { data: matches, error: matchErr } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('web_session_id', sessionId)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  if (matchErr) {
+    console.warn('[getOrCreateWebConversation] lookup error:', matchErr.message);
+  }
+
+  const existing = matches?.[0];
+  if (existing) {
+    if (displayName && !existing.customer_name) {
+      const { data: updated } = await supabase
+        .from('conversations')
+        .update({ customer_name: displayName, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      return updated ?? existing;
+    }
+    return existing;
+  }
+
+  const { data: created, error } = await supabase
+    .from('conversations')
+    .insert({
+      phone_number: null,
+      web_session_id: sessionId,
+      channel: 'web',
+      customer_name: displayName ?? null,
+      customer_segment: 'unknown',
+      status: 'active',
+      escalated: false,
+    })
+    .select()
+    .single();
+
+  if (error || !created) {
+    throw new Error(`Failed to create web conversation: ${error?.message}`);
+  }
+
+  console.log(`[getOrCreateWebConversation] created new | session=${sessionId} | id=${created.id}`);
   return created;
 }
 
