@@ -716,10 +716,14 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
 
       await deescalateConversation(conv.id);
       await sendWhatsAppMessage(operatorPhone, `✅ ${args} devuelto a Sol (modo AI).`);
-      await sendWhatsAppMessage(
-        conv.phone_number,
-        'Hola, vuelve a estar con Sol 🌟 ¿En qué más le puedo ayudar?'
-      );
+      // Web-channel rows have phone_number=null and aren't reachable via
+      // WhatsApp. Only ping back via WhatsApp when there's a phone.
+      if (conv.phone_number) {
+        await sendWhatsAppMessage(
+          conv.phone_number,
+          'Hola, vuelve a estar con Sol 🌟 ¿En qué más le puedo ayudar?'
+        );
+      }
       break;
     }
 

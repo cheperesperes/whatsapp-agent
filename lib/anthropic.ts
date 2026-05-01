@@ -65,7 +65,8 @@ export async function generateSolResponse(
   competitorComparisons = '',
   languageLock = '',
   firstContactDirective = '',
-  dynamicDirectives = ''
+  dynamicDirectives = '',
+  channelHint: 'whatsapp' | 'web' = 'whatsapp'
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
@@ -83,6 +84,17 @@ export async function generateSolResponse(
   // rules computed per-turn (soft-close mandate when customer is ready to
   // buy, pivot-before-backing-off when they just said "no me interesa").
   // Placing them last ensures they override earlier, more general guidance.
+  // Channel block — tells Sol where the customer is reaching her so she
+  // doesn't suggest the wrong call-to-action (e.g. don't tell a website
+  // visitor to "message us on WhatsApp" — they're already chatting).
+  const channelBlock =
+    channelHint === 'web'
+      ? `\nCANAL ACTUAL: chat embebido en oiikon.com (NO WhatsApp).\n` +
+        `• NO digas "escríbeme por WhatsApp" ni "mándame un mensaje" — el cliente ya está chateando contigo.\n` +
+        `• Cuando ofrezcas comprar, di "puedes pedirlo en oiikon.com" o comparte el link directo del producto.\n` +
+        `• Si el cliente quiere una llamada o seguimiento fuera del navegador, pídele su teléfono o WhatsApp.\n`
+      : '';
+
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
@@ -91,7 +103,7 @@ ${customerProfilePrompt}
 ${competitorComparisons}
 ${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}`;
+${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}${channelBlock}`;
 
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',

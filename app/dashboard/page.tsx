@@ -60,7 +60,11 @@ interface ConvItemProps {
 }
 
 function ConvItem({ conv, isSelected, onClick }: ConvItemProps) {
-  const displayName = conv.customer_name ?? conv.phone_number;
+  const isWeb = conv.channel === 'web';
+  const displayName =
+    conv.customer_name ??
+    conv.phone_number ??
+    (isWeb ? `Visitante web ${(conv.web_session_id ?? '').slice(0, 6)}` : 'Sin nombre');
   const preview = conv.last_message?.content ?? 'Sin mensajes';
   const time = conv.last_message?.created_at ?? conv.created_at;
 
@@ -73,8 +77,8 @@ function ConvItem({ conv, isSelected, onClick }: ConvItemProps) {
     >
       {/* Avatar */}
       <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 mt-0.5
-        ${conv.escalated ? 'bg-red-900 text-red-300' : 'bg-brand-900 text-brand-300'}`}>
-        {displayName[0].toUpperCase()}
+        ${conv.escalated ? 'bg-red-900 text-red-300' : isWeb ? 'bg-blue-900 text-blue-300' : 'bg-brand-900 text-brand-300'}`}>
+        {isWeb ? '🌐' : (displayName[0] ?? '?').toUpperCase()}
       </div>
 
       <div className="flex-1 min-w-0">
@@ -750,7 +754,7 @@ export default function DashboardPage() {
 
     const matchesSearch =
       !search ||
-      c.phone_number.includes(search) ||
+      (c.phone_number?.includes(search) ?? false) ||
       (c.customer_name?.toLowerCase().includes(search.toLowerCase()) ?? false);
 
     return matchesFilter && matchesSearch;

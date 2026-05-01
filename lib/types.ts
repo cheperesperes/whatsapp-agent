@@ -22,9 +22,12 @@ export interface DispatchedImage {
 
 export type LeadQuality = 'hot' | 'warm' | 'cold' | 'dead';
 
+export type ConversationChannel = 'whatsapp' | 'web';
+
 export interface Conversation {
   id: string;
-  phone_number: string;
+  /** WhatsApp E.164 phone for whatsapp rows; null for web rows that haven't shared a phone yet. */
+  phone_number: string | null;
   customer_name: string | null;
   customer_segment: CustomerSegment;
   status: ConversationStatus;
@@ -41,6 +44,10 @@ export interface Conversation {
   /** When the operator confirmed this conversation led to a sale.
    *  NULL = not converted. Set via /won <phone> or dashboard button. */
   converted_at: string | null;
+  /** 'whatsapp' (default for legacy rows) or 'web' for browser sessions. */
+  channel: ConversationChannel;
+  /** Browser session UUID for web rows; null otherwise. */
+  web_session_id: string | null;
   created_at: string;
   updated_at: string;
 }

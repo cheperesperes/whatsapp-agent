@@ -6,6 +6,9 @@ const PUBLIC_PATHS = [
   '/api/webhook',
   '/api/marketing/heygen-webhook', // HeyGen calls this directly — no user session
   '/api/cron/',                     // Vercel cron calls with CRON_SECRET, not cookies
+  '/api/chat',                      // Website chat endpoint — anonymous browser sessions
+  '/widget.js',                     // Embeddable widget script for oiikon.com
+  '/widget-test',                   // Public preview page for the embed
 ];
 
 export async function middleware(request: NextRequest) {
