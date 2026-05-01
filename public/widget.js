@@ -25,12 +25,40 @@
   var CFG = window.OIIKON_SOL || {};
   var ENDPOINT =
     CFG.endpoint || 'https://whatsapp-agent-ebon-nine.vercel.app/api/chat';
-  var GREETING =
-    CFG.greeting ||
-    '¡Hola! Soy Sol de Oiikon ☀️ ¿Necesitas ayuda con energía solar para tu familia?';
+
+  // Detect page language from <html lang>. Sites that toggle EN/ES via
+  // a header switch typically update document.documentElement.lang to
+  // match. Default to Spanish if the page hasn't set it.
+  function detectPageLang() {
+    if (CFG.language === 'en' || CFG.language === 'es') return CFG.language;
+    var raw = (document.documentElement.lang || '').trim().toLowerCase();
+    return raw.indexOf('en') === 0 ? 'en' : 'es';
+  }
+
+  var GREETINGS = {
+    es:
+      '¡Hola! Soy Sol de Oiikon ☀️\n\n' +
+      'Estoy aquí para ayudarte — pregúntame cualquier cosa: cuál equipo te conviene, cuánta capacidad necesitas, cómo se instala, o detalles técnicos. También puedo enviarte fotos.\n\n' +
+      '¿En qué te ayudo hoy? Puedes cerrar esta ventana cuando quieras.',
+    en:
+      "Hi! I'm Sol from Oiikon ☀️\n\n" +
+      "I'm here to help — ask me anything: which unit fits you, how much capacity you need, how to install it, or any technical detail. I can send photos too.\n\n" +
+      'How can I help today? You can close this window anytime.',
+  };
+  var PLACEHOLDERS = {
+    es: 'Escribe tu mensaje...',
+    en: 'Type your message...',
+  };
+  var SUBTITLES = {
+    es: 'Energía solar para tu hogar y familia',
+    en: 'Solar energy for your home and family',
+  };
+
   var SESSION_KEY = 'oiikon_sol_session';
   var HISTORY_KEY = 'oiikon_sol_history';
   var OPEN_KEY = 'oiikon_sol_open';
+  var LANG = detectPageLang();
+  var GREETING = CFG.greeting || GREETINGS[LANG];
 
   function genSessionId() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -129,9 +157,14 @@
     '.oiikon-sol-input:focus{border-color:#f97316;}',
     '.oiikon-sol-send{background:#f97316;color:white;border:none;border-radius:50%;width:36px;height:36px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;}',
     '.oiikon-sol-send:disabled{opacity:.5;cursor:not-allowed;}',
-    '@media (max-width:480px){',
-    '  #oiikon-sol-panel{right:10px;bottom:10px;left:10px;width:auto;height:80vh;}',
-    '  #oiikon-sol-bubble{right:14px;bottom:14px;}',
+    '@media (max-width:640px){',
+    // Full-screen panel on mobile so the conversation has all the room it
+    // needs — no tiny floating popover. The bubble shifts up from the
+    // bottom edge so it doesn\'t collide with iOS home indicators.
+    '  #oiikon-sol-panel{top:0;right:0;bottom:0;left:0;width:100vw;height:100vh;max-width:none;max-height:none;border-radius:0;}',
+    '  #oiikon-sol-bubble{right:16px;bottom:24px;width:56px;height:56px;font-size:26px;}',
+    '  .oiikon-sol-header{padding:env(safe-area-inset-top,0) 16px 14px;padding-top:max(env(safe-area-inset-top,0),18px);}',
+    '  .oiikon-sol-input-row{padding-bottom:max(env(safe-area-inset-bottom,0),12px);}',
     '}',
   ].join('');
   var style = document.createElement('style');
@@ -146,16 +179,18 @@
 
   var panel = document.createElement('div');
   panel.id = 'oiikon-sol-panel';
+  var closeLabel = LANG === 'en' ? 'Close' : 'Cerrar';
+  var sendLabel = LANG === 'en' ? 'Send' : 'Enviar';
   panel.innerHTML = [
     '<div class="oiikon-sol-header">',
     '  <div class="oiikon-sol-avatar">☀️</div>',
-    '  <div class="oiikon-sol-title">Sol — Oiikon<div class="oiikon-sol-subtitle">Energía solar para tu familia</div></div>',
-    '  <button class="oiikon-sol-close" aria-label="Cerrar">×</button>',
+    '  <div class="oiikon-sol-title">Sol — Oiikon<div class="oiikon-sol-subtitle">' + escapeHtml(SUBTITLES[LANG]) + '</div></div>',
+    '  <button class="oiikon-sol-close" aria-label="' + escapeHtml(closeLabel) + '">×</button>',
     '</div>',
     '<div class="oiikon-sol-messages" id="oiikon-sol-messages"></div>',
     '<form class="oiikon-sol-input-row" id="oiikon-sol-form">',
-    '  <input class="oiikon-sol-input" id="oiikon-sol-input" type="text" placeholder="Escribe tu mensaje..." autocomplete="off" maxlength="2000">',
-    '  <button class="oiikon-sol-send" id="oiikon-sol-send" type="submit" aria-label="Enviar">➤</button>',
+    '  <input class="oiikon-sol-input" id="oiikon-sol-input" type="text" placeholder="' + escapeHtml(PLACEHOLDERS[LANG]) + '" autocomplete="off" maxlength="2000">',
+    '  <button class="oiikon-sol-send" id="oiikon-sol-send" type="submit" aria-label="' + escapeHtml(sendLabel) + '">➤</button>',
     '</form>',
   ].join('');
 
@@ -248,7 +283,11 @@
     fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: sessionId, message: text }),
+      body: JSON.stringify({
+        sessionId: sessionId,
+        message: text,
+        language: LANG,
+      }),
     })
       .then(function (res) {
         if (!res.ok) throw new Error('http_' + res.status);
@@ -257,7 +296,11 @@
       .then(function (data) {
         hideTyping();
         sendBtn.disabled = false;
-        var reply = (data && data.reply) || 'Disculpa, hubo un problema. Intenta de nuevo.';
+        var fallback =
+          LANG === 'en'
+            ? 'Sorry, something went wrong. Please try again.'
+            : 'Disculpa, hubo un problema. Intenta de nuevo.';
+        var reply = (data && data.reply) || fallback;
         var images = (data && data.images) || [];
         history.push({ role: 'assistant', text: reply, images: images });
         saveHistory(history);
@@ -267,7 +310,10 @@
       .catch(function (err) {
         hideTyping();
         sendBtn.disabled = false;
-        var fallback = 'No pude enviar tu mensaje. Revisa tu conexión y vuelve a intentarlo.';
+        var fallback =
+          LANG === 'en'
+            ? 'I could not send your message. Check your connection and try again.'
+            : 'No pude enviar tu mensaje. Revisa tu conexión y vuelve a intentarlo.';
         history.push({ role: 'assistant', text: fallback, images: [] });
         saveHistory(history);
         msgsEl.appendChild(renderMessage({ role: 'assistant', text: fallback }));

@@ -64,6 +64,8 @@ interface ChatRequest {
   sessionId: string;
   message: string;
   displayName?: string | null;
+  /** Page language detected from <html lang>. 'es' or 'en' — anything else is ignored. */
+  language?: string | null;
 }
 
 interface ChatImage {
@@ -161,7 +163,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...historyWithoutLast.filter((m) => m.role === 'user').slice(-4).map((m) => m.content),
       message,
     ];
-    const detectedLang = detectLanguageFromHistory(recentUserMsgs, customerProfile?.language);
+    // Page-language hint from widget (<html lang>) is the seed for the
+    // FIRST turn so Sol's first reply matches the page even before the
+    // user's text gives a strong signal. Once user messages accumulate,
+    // detectLanguageFromHistory takes over and overrides the hint.
+    const pageLanguageHint =
+      body.language === 'en' || body.language === 'es' ? body.language : undefined;
+    const detectedLang = detectLanguageFromHistory(
+      recentUserMsgs,
+      customerProfile?.language ?? pageLanguageHint
+    );
     const languageLock = formatLanguageLockForPrompt(detectedLang);
 
     if (customerProfile?.language !== detectedLang) {
