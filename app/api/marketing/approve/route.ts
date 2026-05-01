@@ -144,7 +144,15 @@ export async function POST(req: NextRequest) {
   // ── Facebook ───────────────────────────────────────────────────────────────
   try {
     const fb = await publishToFacebook(content.facebook_post ?? '', publishVideoUrl);
-    results.facebook = fb.post_id;
+    if (fb?.post_id) {
+      results.facebook = fb.post_id;
+    } else {
+      // Defensive: publishToFacebook contract is "throw or return post_id".
+      // If the contract is broken (e.g. Graph API returns 200 with empty
+      // body), record it as an error so status doesn't lie.
+      errors.push('Facebook: empty post_id returned (publisher contract broken)');
+      console.error('[marketing/approve] Facebook returned no post_id without throwing — investigate');
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     errors.push(`Facebook: ${msg}`);
@@ -152,9 +160,23 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Instagram ─────────────────────────────────────────────────────────────
+  // publishToInstagram returns null in several silent-failure paths
+  // (missing IG account, container creation 4xx, processing timeout). Treat
+  // those as errors here so the campaign status reflects reality and the
+  // operator dashboard surfaces what went wrong instead of just showing
+  // "Publicado" with no IG id.
+  const igConfigured = Boolean(process.env.META_IG_ACCOUNT_ID);
   try {
     const ig = await publishToInstagram(content.instagram_caption ?? '', publishVideoUrl, igFallbackImage);
-    results.instagram = ig?.post_id ?? null;
+    if (ig?.post_id) {
+      results.instagram = ig.post_id;
+    } else if (igConfigured) {
+      // Only treat as an error when IG is supposed to be configured —
+      // an unset META_IG_ACCOUNT_ID is "Instagram is optional", not a
+      // failure to publish.
+      errors.push('Instagram: publish returned null (see server logs for the underlying Graph API error)');
+      console.error('[marketing/approve] Instagram publish returned null with no exception — likely token/scope/policy issue');
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     errors.push(`Instagram: ${msg}`);
@@ -210,15 +232,19 @@ export async function POST(req: NextRequest) {
   }
 
   // Status now reflects the truth. Three buckets:
-  //   • all platforms published cleanly → 'published'
+  //   • all attempted platforms published cleanly → 'published'
   //   • at least one published, others errored → 'partial'
   //   • zero platforms published → 'failed'
+  // 'published' REQUIRES at least one real post_id even when errors[] is
+  // empty — otherwise a run where every publisher silently returns null
+  // (no exception, no error string) would be mislabeled as success and
+  // hide the failure exactly the way today's 16:30 UTC re-publish did.
   // The error_message column captures every non-empty error string so the
   // dashboard can surface it without requiring a Vercel log dive.
   let finalStatus: 'published' | 'partial' | 'failed';
-  if (errors.length === 0) finalStatus = 'published';
-  else if (anyPlatformSucceeded) finalStatus = 'partial';
-  else finalStatus = 'failed';
+  if (!anyPlatformSucceeded) finalStatus = 'failed';
+  else if (errors.length === 0) finalStatus = 'published';
+  else finalStatus = 'partial';
 
   await updateCampaign(campaign.id, {
     status: finalStatus,
