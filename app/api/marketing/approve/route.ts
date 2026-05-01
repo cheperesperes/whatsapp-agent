@@ -181,21 +181,53 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Save publish results ───────────────────────────────────────────────────
-  await updateContent(campaign.id, {
+  // `published_at` is set ONLY when at least one platform succeeded —
+  // previously it was stamped unconditionally, which made the dashboard
+  // show silent failures as successful publishes (today's 2026-05-01 run
+  // was the canonical example: every platform errored but status='published'
+  // and published_at was set, so nobody noticed for hours).
+  const anyPlatformSucceeded =
+    Boolean(results.facebook) ||
+    Boolean(results.instagram) ||
+    Boolean(results.youtube);
+
+  const contentPatch: Parameters<typeof updateContent>[1] = {
     facebook_post_id: results.facebook ?? undefined,
     instagram_post_id: results.instagram ?? undefined,
     youtube_video_id: results.youtube ?? undefined,
-    published_at: new Date().toISOString(),
+  };
+  if (anyPlatformSucceeded) {
+    contentPatch.published_at = new Date().toISOString();
+  }
+  await updateContent(campaign.id, contentPatch);
+
+  // Mark top groups as posted (so rotation works next time) — only when
+  // at least one platform actually published. Otherwise we'd advance the
+  // rotation cursor on a no-op run and skip those groups next time too.
+  if (anyPlatformSucceeded) {
+    const groups = await getActiveGroups();
+    await Promise.all(groups.slice(0, 5).map((g) => markGroupPosted(g.id)));
+  }
+
+  // Status now reflects the truth. Three buckets:
+  //   • all platforms published cleanly → 'published'
+  //   • at least one published, others errored → 'partial'
+  //   • zero platforms published → 'failed'
+  // The error_message column captures every non-empty error string so the
+  // dashboard can surface it without requiring a Vercel log dive.
+  let finalStatus: 'published' | 'partial' | 'failed';
+  if (errors.length === 0) finalStatus = 'published';
+  else if (anyPlatformSucceeded) finalStatus = 'partial';
+  else finalStatus = 'failed';
+
+  await updateCampaign(campaign.id, {
+    status: finalStatus,
+    error_message: errors.length > 0 ? errors.join(' | ').slice(0, 2000) : null,
   });
 
-  // Mark top groups as posted (so rotation works next time)
-  const groups = await getActiveGroups();
-  await Promise.all(groups.slice(0, 5).map((g) => markGroupPosted(g.id)));
-
-  const finalStatus = errors.length === 0 ? 'published' : 'published';
-  await updateCampaign(campaign.id, { status: finalStatus });
-
-  // Confirm to Eduardo via WhatsApp
+  // Confirm to Eduardo via WhatsApp. The header now reflects outcome —
+  // 'publicada' for full success, 'parcial' when some platforms succeeded,
+  // 'falló' when nothing went out.
   const successLines = [
     results.facebook && `✅ Facebook: publicado`,
     results.instagram && `✅ Instagram: publicado`,
@@ -205,16 +237,25 @@ export async function POST(req: NextRequest) {
     .filter(Boolean)
     .join('\n');
 
+  const headerEmoji =
+    finalStatus === 'published' ? '🚀'
+    : finalStatus === 'partial' ? '⚠️'
+    : '❌';
+  const headerLabel =
+    finalStatus === 'published' ? 'publicada'
+    : finalStatus === 'partial' ? 'publicada parcialmente'
+    : 'falló al publicar';
+
   await sendWhatsAppSafe(
     OPERATOR_PHONE,
-    `🚀 *Campaña ${campaign.date} publicada*\n\n${successLines}\n\nTema: _${campaign.daily_theme}_`
+    `${headerEmoji} *Campaña ${campaign.date} ${headerLabel}*\n\n${successLines}\n\nTema: _${campaign.daily_theme}_`
   );
 
   return NextResponse.json({
-    ok: true,
+    ok: anyPlatformSucceeded,
     campaign_id: campaign.id,
     status: finalStatus,
     published: results,
     errors: errors.length > 0 ? errors : undefined,
-  });
+  }, { status: anyPlatformSucceeded ? 200 : 502 });
 }
