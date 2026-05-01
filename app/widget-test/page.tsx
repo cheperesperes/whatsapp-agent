@@ -55,6 +55,14 @@ export default function WidgetTestPage() {
         <strong>Heads up:</strong> the database migration <code>scripts/add-web-channel.sql</code> must be applied in Supabase before this works. Without it, <code>POST /api/chat</code> will 500 on insert.
       </p>
 
+      {/* Pin the widget at this preview's own origin so we can QA before
+          merging to production. The production embed on oiikon.com uses
+          the absolute production URL baked into widget.js. */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `window.OIIKON_SOL = { endpoint: '/api/chat' };`,
+        }}
+      />
       <script src="/widget.js" defer></script>
     </div>
   );
