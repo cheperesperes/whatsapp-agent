@@ -44,6 +44,8 @@ export type MarketingCategory =
   | 'familia'
   | 'producto';
 
+export type ContentLanguage = 'es' | 'en' | 'bilingual';
+
 export const CATEGORIES: Array<{ value: MarketingCategory; label: string; angle: string }> = [
   { value: 'producto', label: '🔌 Producto', angle: 'Destaca un producto específico (specs, precio, beneficio concreto).' },
   { value: 'educacion', label: '📚 Educación', angle: 'Educa sobre energía solar básica — qué es Wh, cómo funciona, por qué LiFePO4. Informativo, no vendedor.' },
@@ -58,8 +60,9 @@ export async function generateMarketingContent(
   researchBrief: string,
   products: Product[],
   category?: MarketingCategory | null,
-  options?: { productSku?: string | null; guidance?: string | null }
+  options?: { productSku?: string | null; guidance?: string | null; language?: ContentLanguage }
 ): Promise<GeneratedContent> {
+  const language: ContentLanguage = options?.language ?? 'es';
   const requestedSku = options?.productSku?.toUpperCase() ?? null;
   const matched = requestedSku
     ? products.find((p) => p.sku.toUpperCase() === requestedSku)
@@ -106,8 +109,14 @@ ${pricesBlock}
 INVESTIGACIÓN DE HOY:
 ${researchBrief}
 ${categoryBrief}${guidanceBrief}
-AUDIENCIA PRINCIPAL:
-Hispanos en EE.UU. (Miami, Tampa, Houston, NY, NJ, LA) con familia en países afectados por apagones. Motivación: amor familiar, solidaridad, solución práctica.
+AUDIENCIA — Oiikon sirve cuatro pilares de uso (per oiikon.com):
+1. **Hurricane backup** — homeowners en FL, TX, LA, NC, PR, costa CA. Estacional: ramp May, peak jun-nov.
+2. **Home emergency power** — compradores blackout/grid-down en USA. Año redondo, surge tras outages regionales.
+3. **RV / overlanding** — boondockers, full-time RVers, vanlifers, weekend campers.
+4. **Off-grid / energy savings** — cabañas, tiny houses, homesteaders, ahorradores de factura.
+
+Overlay bilingüe: diáspora cubana/venezolana/mexicana/dominicana/puertorriqueña en USA + MIPYMES cubanas (apagones 8-20h).
+Escoge el pilar(s) que el brief de hoy enfatice — NO defaultees a Cuba salvo que el brief lo pida.
 
 ═══════════════════════════════════════════════════════════════════════════════
 CÓDIGO DE CONDUCTA DE IA — OIIKON LLC (Marketing — Luz)
@@ -191,8 +200,28 @@ CTAs OBLIGATORIOS:
   por WhatsApp para resolver tus dudas" cerca del final.
 
 ═══════════════════════════════════════════════════════════════════════════════
-
-Genera el siguiente contenido de marketing en formato JSON válido. TODO en español. Sin explicaciones, solo el JSON:
+${language === 'en' ? `
+🌐 LANGUAGE OVERRIDE — ENGLISH (overrides the Spanish defaults below):
+• Translate every generated field to natural US-English. Keep all §3.x conduct
+  rules. Drop "🤖 Contenido creado con IA, revisado por humanos." → write
+  "🤖 AI-generated content, reviewed by humans." instead.
+• Hashtags must be English: #PortablePower #SolarGenerator #HurricanePrep
+  #BlackoutReady #RVLife #OffGrid #EmergencyPower #PECRON #OiikonSolar etc.
+• Lean toward the US use-case the brief picks (hurricane / RV / off-grid /
+  blackout). Cuba framing only if the brief explicitly leads there.
+• YouTube CTA: "visit oiikon dot com" so HeyGen pronounces the URL right.
+` : ''}${language === 'bilingual' ? `
+🌐 LANGUAGE OVERRIDE — BILINGUAL (overrides single-language defaults):
+• facebook_post, instagram_caption, youtube_description: deliver TWO blocks —
+  Spanish first, then a line "— — —", then the same message adapted to
+  English. Keep §3.x rules in both blocks.
+• Google Ads (headlines + descriptions): English only — broader US audience.
+• YouTube script: pick the primary language that fits today's brief; one-take
+  in that language.
+• Hashtags: mix ES + EN (#FamiliaAntesTodo #HurricanePrep #PECRON #RVLife
+  #ApagonCuba #OiikonSolar etc).
+` : ''}
+Genera el siguiente contenido de marketing en formato JSON válido. ${language === 'en' ? 'ALL fields in ENGLISH per the override above.' : language === 'bilingual' ? 'BILINGÜE per the override above.' : 'TODO en español.'} Sin explicaciones, solo el JSON:
 
 {
   "daily_theme": "frase corta que capture el tema emocional de hoy (ej: Luz para tu familia en Cuba)",
