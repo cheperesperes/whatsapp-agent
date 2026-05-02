@@ -11,28 +11,54 @@ interface SerperResponse {
   answerBox?: { answer?: string; snippet?: string };
 }
 
+// Trend search queries — split across the four customer use-cases Oiikon
+// serves so Luz's daily brief reflects the full audience, not just Cuba.
+//   1. Cuba / Hispanic diaspora — original core (apagones in Cuba/Venezuela)
+//   2. RV & overlanding — US weekend / road-trip / boondocking buyers
+//   3. US blackout & grid resilience — hurricane / wildfire / heatwave
+//      preparedness in storm-prone states (FL, TX, LA, NC, CA, PR)
+//   4. Energy-saving / off-grid living — homeowners cutting bills, cabins,
+//      tiny-house, solar-curious. Grows year-round, not seasonal.
 const TREND_QUERIES = [
-  'estacion solar portatil cuba venezuela apagon 2025',
+  // Cuba / Hispanic diaspora
+  'estacion solar portatil cuba venezuela apagon 2026',
   'PECRON solar power station review español hispanos',
-  'energia solar crisis electrica familias latinoamerica',
-  'portable power station hispanos latinos USA regalo familia',
-  'apagon cuba venezuela haiti energia solar solucion',
+  'apagon cuba venezuela haiti energia solar solucion familia',
+  // RV & overlanding (English-speaking US buyers)
+  'best portable power station for RV camping 2026',
+  'boondocking solar generator overlanding lithium battery',
+  // US blackout & hurricane prep
+  'hurricane season 2026 power outage backup battery florida texas',
+  'home backup power station blackout grid down preparedness',
+  // Energy saving / off-grid
+  'solar generator off grid cabin tiny house energy savings',
+  'reduce electricity bill portable power station home backup',
 ];
 
 const GROUP_QUERIES = [
+  // Cuba / Hispanic diaspora — diaspora to Cuba/VE, Habana MIPYMES
   'site:facebook.com/groups cubanos exterior energia solar ayuda',
   'site:facebook.com/groups cuba apagon familia ayuda',
-  'site:facebook.com/groups hispanos latinos USA comunidad florida',
   'site:facebook.com/groups venezolanos exterior ayuda familia',
-  'site:facebook.com/groups mexicanos americanos comunidad',
-  'site:facebook.com/groups puertorriquenos diaspora comunidad',
-  'site:facebook.com/groups dominicanos USA exterior',
-  'site:facebook.com/groups latinos miami solar energia',
+  'site:facebook.com/groups dominicanos puertorriquenos USA',
+  'site:facebook.com/groups latinos miami florida hialeah',
+  // RV / overlanding — broad US English-language audience
+  'site:facebook.com/groups RV living full time boondockers',
+  'site:facebook.com/groups overlanding camping solar power',
+  'site:facebook.com/groups van life off grid power',
+  // US blackout & hurricane prep — storm-prone state communities
+  'site:facebook.com/groups hurricane preparedness florida texas louisiana',
+  'site:facebook.com/groups power outage backup home generator',
+  'site:facebook.com/groups storm prep coastal florida',
+  // Energy saving / off-grid living
+  'site:facebook.com/groups off grid living homestead solar',
+  'site:facebook.com/groups tiny house solar power affordable',
+  'site:facebook.com/groups energy independence reduce electric bill',
 ];
 
 async function searchSerper(query: string, num = 5): Promise<SearchResult[]> {
   const apiKey = process.env.SERPER_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) throw new Error('SERPER_API_KEY not set');
 
   const res = await fetch('https://google.serper.dev/search', {
     method: 'POST',
@@ -84,48 +110,36 @@ export async function conductDailyResearch(): Promise<ResearchResult> {
 
   // Claude synthesizes the research brief
   const anthropic = new Anthropic();
-  let brief = 'Tendencias no disponibles hoy.';
+  let brief = snippets[0] ?? 'Tendencias no disponibles hoy.';
 
-  const rulesBlock = `REGLAS OBLIGATORIAS DE TONO Y CONTENIDO:
-- CERO política: no menciones gobiernos, regímenes, partidos, "el sistema", ni causas políticas del apagón. Habla del apagón como hecho.
-- CERO culpar al lector: prohibido hacer sentir mal a la diáspora por estar en EE.UU. Nada de "tú estás aquí mientras ellos sufren".
-- Tono educado, cálido, respetuoso, optimista. Somos educación + venta, no drama.
-- Enfatiza que la estación solar es una INVERSIÓN FAMILIAR accesible al mejor precio posible.
-- Aplica sentido común: sin urgencia falsa, sin promesas milagrosas, sin amarillismo.`;
+  if (snippets.length > 0) {
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 350,
+      messages: [
+        {
+          role: 'user',
+          content: `Eres el estratega de marketing de Oiikon, tienda de estaciones solares portátiles PECRON. La audiencia tiene CUATRO segmentos:
 
-  const prompt = snippets.length > 0
-    ? `Eres el estratega de marketing de Oiikon, tienda de estaciones solares portátiles PECRON para hispanos en EE.UU. que envían equipos a familiares afectados por apagones.
-
-${rulesBlock}
+1. Diáspora cubana/hispana en USA que envían equipos a familia en Cuba/Venezuela (apagones diarios de 8–20 h).
+2. Compradores de RV / camping / overlanding en USA (boondocking, viajes, vida en furgoneta).
+3. Hogares en estados con apagones por huracán, incendios o grid débil (FL, TX, LA, NC, CA, PR) — preparación ante tormentas y blackouts.
+4. Familias buscando ahorrar en luz / vivir off-grid / cabaña / tiny house — independencia energética y reducción de factura.
 
 Resultados de búsqueda de hoy:
 ${snippets.join('\n\n')}
 
-En 3-4 oraciones en ESPAÑOL resume:
-1. Tema positivo y solidario relevante hoy para nuestra audiencia
-2. Conexión práctica con la necesidad de energía confiable en el país de la familia
-3. Ángulo emocional constructivo (amor familiar, solidaridad, solución)
+En 4-6 oraciones en ESPAÑOL resume:
+1. Tema/tendencia más relevante hoy y a CUÁL de los 4 segmentos golpea más fuerte.
+2. Si aplica a Cuba/Venezuela: ángulo de apagones y familia. Si aplica a USA: ángulo de huracán/RV/ahorro/blackout.
+3. Ángulo emocional o urgencia para la campaña de hoy. Si la oportunidad es bilingüe (Cuba + USA), sugiere cómo dividir el mensaje.
 
-Solo el resumen, sin introducción, sin menciones políticas.`
-    : `Eres el estratega de marketing de Oiikon, tienda de estaciones solares portátiles PECRON para hispanos en EE.UU. que envían equipos a familiares afectados por apagones.
-
-${rulesBlock}
-
-Sin datos de búsqueda externa hoy. Genera un brief basado en el valor del producto y la necesidad constante de energía confiable.
-
-En 3-4 oraciones en ESPAÑOL:
-1. Tema positivo y solidario para hoy
-2. Conexión con la necesidad concreta de energía confiable
-3. Ángulo constructivo (ej: "ayudar desde la distancia", "regalar tranquilidad")
-
-Solo el resumen, sin introducción, sin menciones políticas.`;
-
-  const msg = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 350,
-    messages: [{ role: 'user', content: prompt }],
-  });
-  if (msg.content[0].type === 'text') brief = msg.content[0].text;
+Solo el resumen, sin introducción.`,
+        },
+      ],
+    });
+    if (msg.content[0].type === 'text') brief = msg.content[0].text;
+  }
 
   return { brief, facebookGroups };
 }
