@@ -340,9 +340,10 @@ export default function MarketingPage() {
       category?: string | null;
       productSku?: string | null;
       guidance?: string | null;
+      language?: 'es' | 'en' | 'bilingual';
     } = {}
   ) {
-    const { force = false, category, productSku, guidance } = options;
+    const { force = false, category, productSku, guidance, language } = options;
     if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
     try {
@@ -351,6 +352,9 @@ export default function MarketingPage() {
       if (category) qs.set('category', category);
       if (productSku) qs.set('product_sku', productSku);
       if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
+      // Only emit ?lang= when it's not the default — keeps URLs readable and
+      // preserves the existing cron behavior when the dropdown isn't touched.
+      if (language && language !== 'es') qs.set('lang', language);
       const suffix = qs.toString() ? `?${qs.toString()}` : '';
       await fetch(`/api/cron/marketing-daily${suffix}`, { cache: 'no-store' });
     } finally {
@@ -670,11 +674,26 @@ function CategoryLauncher({
   busy,
 }: {
   products: Product[];
-  onPick: (cat: string, opts: { productSku?: string | null; guidance?: string | null }) => void;
+  onPick: (
+    cat: string,
+    opts: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'bilingual' },
+  ) => void;
   busy: boolean;
 }) {
   const [productSku, setProductSku] = useState<string>('');
   const [guidance, setGuidance] = useState<string>('');
+  // Language for the next generation. Persisted across reloads so a mid-day
+  // toggle isn't lost if the dashboard refreshes.
+  const [language, setLanguage] = useState<'es' | 'en' | 'bilingual'>(() => {
+    if (typeof window === 'undefined') return 'es';
+    const saved = window.localStorage.getItem('luz_content_language');
+    return saved === 'en' || saved === 'bilingual' ? saved : 'es';
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('luz_content_language', language);
+    }
+  }, [language]);
 
   return (
     <div className="card p-6">
@@ -682,6 +701,26 @@ function CategoryLauncher({
         <p className="text-3xl mb-2">📭</p>
         <p className="text-sm text-gray-300">Aún no hay campaña para hoy</p>
         <p className="text-[11px] text-gray-500 mt-1">Elige un ángulo para generar el contenido:</p>
+      </div>
+
+      {/* Language selector — picks the primary language for today's post.
+          Sits above the angle buttons so Eduardo / Luz set it once and every
+          angle they tap inherits the choice. */}
+      <div className="mb-4 flex items-center justify-center gap-2">
+        <label htmlFor="lang-select" className="text-[11px] text-gray-500 uppercase tracking-wider">
+          Idioma
+        </label>
+        <select
+          id="lang-select"
+          value={language}
+          onChange={(e) => setLanguage(e.target.value as 'es' | 'en' | 'bilingual')}
+          disabled={busy}
+          className="px-3 py-1.5 rounded-lg bg-surface-700 border border-surface-600 text-gray-100 text-sm focus:outline-none focus:border-brand-500 disabled:opacity-50"
+        >
+          <option value="es">🇪🇸 Español</option>
+          <option value="en">🇺🇸 English</option>
+          <option value="bilingual">🌐 Bilingüe (ES + EN)</option>
+        </select>
       </div>
 
       <div className="mb-4">
@@ -699,7 +738,13 @@ function CategoryLauncher({
           <button
             key={c.value}
             type="button"
-            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null })}
+            onClick={() =>
+              onPick(c.value, {
+                productSku: productSku || null,
+                guidance: guidance || null,
+                language,
+              })
+            }
             disabled={busy}
             className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
           >

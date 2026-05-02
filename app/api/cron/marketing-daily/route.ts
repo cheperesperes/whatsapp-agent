@@ -62,6 +62,12 @@ export async function GET(req: NextRequest) {
   const productSku = productSkuParam ? productSkuParam.toUpperCase() : null;
   const guidanceParam = req.nextUrl.searchParams.get('guidance')?.trim() ?? '';
   const guidance = guidanceParam ? guidanceParam.slice(0, 2000) : null;
+  // Language for the generated content. Defaults to 'es' so the existing
+  // cron schedule keeps producing Spanish content without code changes.
+  // 'en' = English-only US framing; 'bilingual' = ES paragraph + EN paragraph.
+  const langParam = req.nextUrl.searchParams.get('lang');
+  const language: 'es' | 'en' | 'bilingual' =
+    langParam === 'en' || langParam === 'bilingual' ? langParam : 'es';
 
   // Skip if already ran today (unless force=true)
   let existing = await getCampaignByDate(today);
@@ -136,10 +142,11 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Step 5: Generate content + compliance check ────────────────────────
-    console.log(`[marketing-daily] ${runId} — generating content`);
+    console.log(`[marketing-daily] ${runId} — generating content (lang=${language})`);
     const content = await generateMarketingContent(fullBrief, products, category, {
       productSku,
       guidance,
+      language,
     });
 
     const warnings = validateContent(content);
