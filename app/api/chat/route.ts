@@ -253,13 +253,17 @@ function jsonWithCors(
 
 function corsHeaders(request: NextRequest): Record<string, string> {
   const origin = request.headers.get('origin') ?? '';
-  const allowed = new Set([
-    'https://oiikon.com',
-    'https://www.oiikon.com',
+  const exactAllowed = new Set([
     'https://whatsapp-agent-ebon-nine.vercel.app',
   ]);
+  // Allow oiikon.com and any subdomain (m.oiikon.com, staging.oiikon.com,
+  // Hostinger preview hosts, etc.) over HTTPS. Customers reaching the
+  // chat widget from a non-canonical host were getting CORS-blocked and
+  // seeing "No pude enviar tu mensaje" without any request hitting us.
+  const isOiikonHost = /^https:\/\/([a-z0-9-]+\.)*oiikon\.com$/i.test(origin);
+  const isAllowed = exactAllowed.has(origin) || isOiikonHost;
   return {
-    'Access-Control-Allow-Origin': allowed.has(origin) ? origin : 'https://oiikon.com',
+    'Access-Control-Allow-Origin': isAllowed ? origin : 'https://oiikon.com',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
