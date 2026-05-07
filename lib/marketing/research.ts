@@ -12,18 +12,19 @@ interface SerperResponse {
 }
 
 // Trend search queries — split across the four customer use-cases Oiikon
-// serves so Luz's daily brief reflects the full audience, not just Cuba.
-//   1. Cuba / Hispanic diaspora — original core (apagones in Cuba/Venezuela)
-//   2. RV & overlanding — US weekend / road-trip / boondocking buyers
+// serves. ALL queries target USA-based audiences (Oiikon ships USA-only).
+//   1. Hispanic-American (USA-resident) — Spanish-speaking buyers in FL/TX/NJ/NY/GA
+//      preparing their own homes for hurricanes & blackouts.
+//   2. RV & overlanding — US weekend / road-trip / boondocking buyers.
 //   3. US blackout & grid resilience — hurricane / wildfire / heatwave
-//      preparedness in storm-prone states (FL, TX, LA, NC, CA, PR)
+//      preparedness in storm-prone states (FL, TX, LA, NC, CA).
 //   4. Energy-saving / off-grid living — homeowners cutting bills, cabins,
 //      tiny-house, solar-curious. Grows year-round, not seasonal.
 const TREND_QUERIES = [
-  // Cuba / Hispanic diaspora
-  'estacion solar portatil cuba venezuela apagon 2026',
-  'PECRON solar power station review español hispanos',
-  'apagon cuba venezuela haiti energia solar solucion familia',
+  // Hispanic-American (USA-resident) hurricane & blackout prep
+  'estacion solar portatil hispanos USA huracan 2026',
+  'PECRON solar power station review español USA',
+  'preparacion huracan apagon Florida Texas familia hispana',
   // RV & overlanding (English-speaking US buyers)
   'best portable power station for RV camping 2026',
   'boondocking solar generator overlanding lithium battery',
@@ -36,11 +37,11 @@ const TREND_QUERIES = [
 ];
 
 const GROUP_QUERIES = [
-  // Cuba / Hispanic diaspora — diaspora to Cuba/VE, Habana MIPYMES
-  'site:facebook.com/groups cubanos exterior energia solar ayuda',
-  'site:facebook.com/groups cuba apagon familia ayuda',
-  'site:facebook.com/groups venezolanos exterior ayuda familia',
-  'site:facebook.com/groups dominicanos puertorriquenos USA',
+  // Hispanic-American Facebook groups (USA-resident)
+  'site:facebook.com/groups hispanos miami florida solar',
+  'site:facebook.com/groups latinos houston texas energia',
+  'site:facebook.com/groups latinos USA preparacion huracan',
+  'site:facebook.com/groups hispanos new jersey new york comunidad',
   'site:facebook.com/groups latinos miami florida hialeah',
   // RV / overlanding — broad US English-language audience
   'site:facebook.com/groups RV living full time boondockers',
@@ -119,20 +120,20 @@ export async function conductDailyResearch(): Promise<ResearchResult> {
       messages: [
         {
           role: 'user',
-          content: `Eres el estratega de marketing de Oiikon, tienda de estaciones solares portátiles PECRON. La audiencia tiene CUATRO segmentos:
+          content: `Eres el estratega de marketing de Oiikon, tienda estadounidense de estaciones solares portátiles PECRON que envía únicamente a los 48 estados continentales. La audiencia tiene CUATRO segmentos, todos dentro de EE.UU.:
 
-1. Diáspora cubana/hispana en USA que envían equipos a familia en Cuba/Venezuela (apagones diarios de 8–20 h).
+1. Hispanic-American (USA-resident) hispanohablantes en FL, TX, NJ, NY, GA, CA — preparación de su propio hogar para huracanes y apagones.
 2. Compradores de RV / camping / overlanding en USA (boondocking, viajes, vida en furgoneta).
-3. Hogares en estados con apagones por huracán, incendios o grid débil (FL, TX, LA, NC, CA, PR) — preparación ante tormentas y blackouts.
+3. Hogares en estados con apagones por huracán, incendios o grid débil (FL, TX, LA, NC, CA) — preparación ante tormentas y blackouts.
 4. Familias buscando ahorrar en luz / vivir off-grid / cabaña / tiny house — independencia energética y reducción de factura.
 
 Resultados de búsqueda de hoy:
 ${snippets.join('\n\n')}
 
 En 4-6 oraciones en ESPAÑOL resume:
-1. Tema/tendencia más relevante hoy y a CUÁL de los 4 segmentos golpea más fuerte.
-2. Si aplica a Cuba/Venezuela: ángulo de apagones y familia. Si aplica a USA: ángulo de huracán/RV/ahorro/blackout.
-3. Ángulo emocional o urgencia para la campaña de hoy. Si la oportunidad es bilingüe (Cuba + USA), sugiere cómo dividir el mensaje.
+1. Tema/tendencia más relevante hoy y a CUÁL de los 4 segmentos USA golpea más fuerte.
+2. Ángulo del problema dentro de EE.UU.: huracán, ice storm, wildfire, grid failure, RV, ahorro de factura.
+3. Ángulo emocional o urgencia para la campaña de hoy. Si la oportunidad es bilingüe (ES + EN para audiencias dentro de USA), sugiere cómo dividir el mensaje. NUNCA sugieras envío internacional ni campañas dirigidas a personas fuera de EE.UU.
 
 Solo el resumen, sin introducción.`,
         },
