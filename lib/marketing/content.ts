@@ -23,7 +23,6 @@ interface Product {
   sell_price?: number | null;
   original_price?: number | null;
   discount_percentage?: number | null;
-  cuba_total_price?: number | null;
   ideal_for?: string | null;
 }
 
@@ -51,9 +50,9 @@ export const CATEGORIES: Array<{ value: MarketingCategory; label: string; angle:
   { value: 'educacion', label: '📚 Educación', angle: 'Educa sobre energía solar básica — qué es Wh, cómo funciona, por qué LiFePO4. Informativo, no vendedor.' },
   { value: 'tips', label: '💡 Tips', angle: 'Consejos prácticos: cómo ahorrar energía, qué cargar primero en apagón, mantenimiento del equipo.' },
   { value: 'instalacion', label: '🔧 Instalación', angle: 'Cómo conectar paneles, cómo recargar con solar, montaje en hogar. Práctico pero sin riesgo eléctrico.' },
-  { value: 'baterias', label: '🔋 Baterías', angle: 'Foco en la batería LiFePO4: ciclos de vida, seguridad vs baterías de plomo, expansión con EP3800.' },
-  { value: 'apagones', label: '⚡ Apagones', angle: 'Contexto emocional del apagón en Cuba: cómo preparar a la familia, qué mantener funcionando.' },
-  { value: 'familia', label: '👨‍👩‍👧 Familia', angle: 'Historia humana — cómo la energía impacta la vida diaria de la familia en Cuba: nevera, estudios de niños, comunicación.' },
+  { value: 'baterias', label: '🔋 Baterías', angle: 'Foco en la batería LiFePO4: ciclos de vida, seguridad vs baterías de plomo, expansión con baterías externas.' },
+  { value: 'apagones', label: '⚡ Apagones', angle: 'Apagones en EE.UU. — huracanes en FL/TX, ice storms, wildfires CA, grid failures: cómo preparar el hogar y mantener lo esencial funcionando.' },
+  { value: 'familia', label: '👨‍👩‍👧 Familia', angle: 'Historia humana en EE.UU. — cómo la energía de respaldo protege a la familia durante un huracán o apagón largo: nevera, médicos esenciales, comunicación.' },
 ];
 
 export async function generateMarketingContent(
@@ -79,7 +78,6 @@ export async function generateMarketingContent(
   const sellPrice = Number(product.sell_price ?? 0);
   const originalPrice = Number(product.original_price ?? 0);
   const discount = Number(product.discount_percentage ?? 0);
-  const cubaTotal = Number(product.cuba_total_price ?? 0);
 
   const specs: string[] = [];
   if (product.battery_capacity_wh) specs.push(`${product.battery_capacity_wh} Wh`);
@@ -87,16 +85,15 @@ export async function generateMarketingContent(
   if (product.output_watts) specs.push(`${product.output_watts} W salida`);
 
   const priceLines: string[] = [];
-  if (sellPrice > 0) priceLines.push(`  • Precio USA: $${sellPrice.toFixed(2)}`);
+  if (sellPrice > 0) priceLines.push(`  • Precio USA: $${sellPrice.toFixed(2)} (envío gratis a los 48 estados)`);
   if (originalPrice > 0 && discount > 0) {
     priceLines.push(`  • Antes: $${originalPrice.toFixed(2)} (${discount}% descuento activo)`);
   }
-  if (cubaTotal > 0) priceLines.push(`  • Precio total entregado en Cuba: $${cubaTotal.toFixed(2)} (incluye envío + aduana)`);
   const pricesBlock = priceLines.length > 0 ? priceLines.join('\n') : '  • Precio: consultar en tienda';
 
   const anthropic = new Anthropic();
 
-  const prompt = `Eres el director de marketing de Oiikon (oiikon.com), tienda especializada en estaciones solares portátiles para hispanos en EE.UU. que envían equipos a familiares en países con apagones prolongados.
+  const prompt = `Eres el director de marketing de Oiikon (oiikon.com), tienda estadounidense especializada en estaciones solares portátiles, baterías LiFePO4, paneles e inversores. Oiikon envía gratis a los 48 estados continentales y sirve a hogares en EE.UU. preparados para huracanes y apagones, comunidades hispanohablantes en EE.UU., RVeros, sistemas off-grid y pequeños negocios.
 
 PRODUCTO DEL DÍA (ÚNICOS DATOS PERMITIDOS — no inventes otros):
 - Nombre: ${product.name}
@@ -109,14 +106,15 @@ ${pricesBlock}
 INVESTIGACIÓN DE HOY:
 ${researchBrief}
 ${categoryBrief}${guidanceBrief}
-AUDIENCIA — Oiikon sirve cuatro pilares de uso (per oiikon.com):
-1. **Hurricane backup** — homeowners en FL, TX, LA, NC, PR, costa CA. Estacional: ramp May, peak jun-nov.
-2. **Home emergency power** — compradores blackout/grid-down en USA. Año redondo, surge tras outages regionales.
+AUDIENCIA — Oiikon sirve cuatro pilares de uso, todos dentro de EE.UU.:
+1. **Hurricane backup** — homeowners en FL, TX, LA, NC, GA, costa CA. Estacional: ramp May, peak jun-nov.
+2. **Home emergency power** — compradores blackout/grid-down en USA. Año redondo, surge tras outages regionales (ice storms, wildfires, heat waves).
 3. **RV / overlanding** — boondockers, full-time RVers, vanlifers, weekend campers.
 4. **Off-grid / energy savings** — cabañas, tiny houses, homesteaders, ahorradores de factura.
 
-Overlay bilingüe: diáspora cubana/venezolana/mexicana/dominicana/puertorriqueña en USA + MIPYMES cubanas (apagones 8-20h).
-Escoge el pilar(s) que el brief de hoy enfatice — NO defaultees a Cuba salvo que el brief lo pida.
+Overlay cultural: comunidades hispanoamericanas dentro de EE.UU. (cubano-americano, venezolano-americano, mexicano-americano, dominicano-americano, puertorriqueño en estados continentales). Esta audiencia recibe contenido en español, pero el contexto SIEMPRE es respaldo dentro de EE.UU. — nunca envío internacional.
+
+Escoge el pilar(s) que el brief de hoy enfatice. Oiikon sirve únicamente clientes en los 48 estados continentales: no prometas envío a otros países.
 
 ═══════════════════════════════════════════════════════════════════════════════
 CÓDIGO DE CONDUCTA DE IA — OIIKON LLC (Marketing — Luz)
@@ -124,19 +122,17 @@ Las reglas abajo son OBLIGATORIAS y no admiten excepción. Si una regla y el
 brief de investigación entran en conflicto, GANA LA REGLA.
 ═══════════════════════════════════════════════════════════════════════════════
 
-§3.1 CUMPLIMIENTO LEGAL (MÁXIMA PRIORIDAD)
-• Nunca prometas elegibilidad de envío a Cuba sin revisión humana.
-• Nunca sugieras, impliques ni insinúes formas de evadir controles de
-  exportación, sanciones, aduana o sistemas de pago.
-• Nunca menciones usuarios finales prohibidos (gobierno cubano, militares,
-  personas en listas restrictivas) — ni como audiencia ni como destinatarios.
-• Neutralidad política: NUNCA menciones el embargo, el gobierno cubano o
-  venezolano, políticas de EE.UU.-Cuba, regímenes, partidos, ni causas
-  políticas de los apagones. Habla del apagón como un HECHO.
+§3.1 ÁMBITO DE SERVICIO + CUMPLIMIENTO (MÁXIMA PRIORIDAD)
+• Oiikon envía únicamente dentro de los 48 estados continentales de EE.UU.
+  PROHIBIDO sugerir, prometer o insinuar envío a otros países o territorios.
+• PROHIBIDO mencionar países distintos a EE.UU. como destino del producto.
+• Neutralidad política total: NUNCA menciones gobiernos extranjeros,
+  embargos, sanciones, regímenes, partidos políticos, ni causas políticas
+  de apagones internacionales. Si el brief habla de apagones, enmárcalos
+  en el contexto USA (huracán, ice storm, wildfire, grid failure).
 • PROHIBIDO terminar con cualquier disclaimer legal, referencia regulatoria,
   número de CFR, license exception, BIS, OFAC, aduana, o texto tipo pie de
   página legal. El último contenido del post debe ser el CTA + hashtags.
-  NUNCA escribas frases como "Envíos a Cuba operan bajo..." o similares.
 
 §3.2 INTEGRIDAD DE CLAIMS (FTC — TRUTH IN ADVERTISING)
 • SUBSTANCIACIÓN: solo usa especificaciones que aparezcan LITERALMENTE en la
@@ -155,20 +151,19 @@ brief de investigación entran en conflicto, GANA LA REGLA.
 • Nunca des consejo médico, legal, fiscal, financiero o de ingeniería
   eléctrica. En caption y script no expliques instalación, cableado,
   configuración de inversores, o cualquier procedimiento eléctrico.
-• Nunca garantices resultados fuera del control de Oiikon (tiempos de aduana
-  cubana, clima, ahorros en factura).
+• Nunca garantices resultados fuera del control de Oiikon (clima,
+  ahorros exactos en factura, tiempos del transportista).
 
 §3.5 SENSIBILIDAD CULTURAL (NO EXPLOTAR DOLOR)
-• CERO culpa al lector. Prohibido: "tú estás aquí", "tú desde aquí",
-  "mientras ellos sufren", "sintiéndote impotente", "tú cómodo", "ellos no
-  pueden". No contrastes tu situación con la de ellos.
+• CERO culpa al lector. No contrastes su situación con la de otros para
+  presionar una compra.
 • CERO explotación de sufrimiento. No hagas dramatización extendida del
-  apagón, hambre, separación familiar, o huracanes para presionar la venta.
+  huracán, apagón largo, ice storm, wildfire, ni amenazas de pérdida.
   Mención breve del contexto está OK; dwelling o amarillismo NO.
 • Tono: educado, cálido, respetuoso, optimista. Somos EDUCACIÓN + VENTA.
 • Sin humor ni sarcasmo que pueda malinterpretarse entre culturas.
-• Lenguaje inclusivo: "familia", "seres queridos", "comunidad hispana".
-  Evita estereotipos por país.
+• Lenguaje inclusivo: "familia", "seres queridos", "comunidad hispana en USA".
+  Evita estereotipos por país de origen.
 
 §3.6 DISCLOSURE DE IA + PROPIEDAD INTELECTUAL
 • Al final del facebook_post y instagram_caption (antes de los hashtags)
@@ -208,7 +203,7 @@ ${language === 'en' ? `
 • Hashtags must be English: #PortablePower #SolarGenerator #HurricanePrep
   #BlackoutReady #RVLife #OffGrid #EmergencyPower #PECRON #OiikonSolar etc.
 • Lean toward the US use-case the brief picks (hurricane / RV / off-grid /
-  blackout). Cuba framing only if the brief explicitly leads there.
+  blackout / home emergency).
 • YouTube CTA: "visit oiikon dot com" so HeyGen pronounces the URL right.
 ` : ''}${language === 'bilingual' ? `
 🌐 LANGUAGE OVERRIDE — BILINGUAL (overrides single-language defaults):
@@ -219,15 +214,15 @@ ${language === 'en' ? `
 • YouTube script: pick the primary language that fits today's brief; one-take
   in that language.
 • Hashtags: mix ES + EN (#FamiliaAntesTodo #HurricanePrep #PECRON #RVLife
-  #ApagonCuba #OiikonSolar etc).
+  #HispanosUSA #OiikonSolar etc).
 ` : ''}
 Genera el siguiente contenido de marketing en formato JSON válido. ${language === 'en' ? 'ALL fields in ENGLISH per the override above.' : language === 'bilingual' ? 'BILINGÜE per the override above.' : 'TODO en español.'} Sin explicaciones, solo el JSON:
 
 {
-  "daily_theme": "frase corta que capture el tema emocional de hoy (ej: Luz para tu familia en Cuba)",
+  "daily_theme": "frase corta que capture el tema emocional de hoy (ej: 'Listo antes del próximo huracán', 'Tu casa siempre con luz', 'Energía limpia para tu RV')",
   "product_sku": "${product.sku}",
-  "facebook_post": "publicación de Facebook de 150-200 palabras, emocional, con emojis, menciona el problema del apagón, la solución, el precio y el link https://oiikon.com/product/${product.sku.toLowerCase()} — termina con llamada a la acción clara",
-  "instagram_caption": "caption de Instagram de 80-120 palabras, emocional pero conciso, con 15-20 hashtags relevantes al final (#FamiliaAntesTodo #EnergíaSolar #PECRON #HispanosUSA #LatinosUSA #SolarPortatil #EstacionSolar #AyudaFamilia #Energia #LuzParaFamilia #ApagonCuba #ApagonVenezuela #LatinosCommunity #CubanDiaspora #OiikonSolar #EnergíaLimpia #SolarPower #HispanosBusiness)",
+  "facebook_post": "publicación de Facebook de 150-200 palabras, emocional, con emojis, menciona el problema (apagón / huracán / RV / off-grid según brief), la solución, el precio y el link https://oiikon.com/product/${product.sku.toLowerCase()} — termina con llamada a la acción clara",
+  "instagram_caption": "caption de Instagram de 80-120 palabras, emocional pero conciso, con 15-20 hashtags relevantes al final (#HurricanePrep #SolarGenerator #PortablePower #BlackoutReady #PECRON #HispanosUSA #LatinosUSA #SolarPortatil #EstacionSolar #RespaldoDeEnergia #EnergyBackup #RVLife #OffGrid #EmergencyPower #OiikonSolar #EnergiaLimpia #SolarPower #FloridaPrep)",
   "google_ad_headlines": [
     "headline 1 — máx 30 caracteres",
     "headline 2 — máx 30 caracteres",
@@ -237,10 +232,10 @@ Genera el siguiente contenido de marketing en formato JSON válido. ${language =
     "descripción 1 — máx 90 caracteres, beneficio principal",
     "descripción 2 — máx 90 caracteres, oferta o urgencia"
   ],
-  "youtube_title": "título de YouTube atractivo, 60-70 caracteres, incluye PECRON y Cuba",
-  "youtube_script": "script HABLADO de 60-75 segundos (150-180 palabras) que un avatar de IA va a leer en voz alta. REGLAS DURAS:\\n  • Suena como una amiga conversando con la cámara, NO como una vendedora ni como un anuncio formal.\\n  • Usa 'tú' (no 'usted'), contracciones naturales ('pa'lante', 'ya tú sabes' SOLO si encajan), oraciones cortas (10-14 palabras máx).\\n  • PROHIBIDO leer nombres técnicos: nada de 'LiFePO4' (di 'litio' o 'batería de litio'), nada de 'tipo Rack 3U', nada de letras + números pegados ('5kW', 'AH', 'Wh'). Si necesitas mencionar capacidad, di 'mucha energía', 'suficiente para varias horas', 'una batería potente' — describe el beneficio, no el spec.\\n  • PROHIBIDO leer números con unidades pegadas. Cifras OK pero conversacionales: di 'seiscientos noventa y nueve dólares' o 'cerca de setecientos dólares', NO '$699.00'. Para el precio entregado en Cuba, di 'aproximadamente mil sesenta y siete dólares' o 'alrededor de mil dólares'.\\n  • PROHIBIDO acrónimos, siglas, marcas técnicas, jerga de ingeniería, watts/voltios/amperios. Habla de luz, refrigerador, ventilador, celulares — cosas concretas que la familia usa.\\n  • Empieza con un gancho humano de 1 frase ('Oye, déjame contarte algo...', 'Si tu familia en Cuba está sin luz, escucha...'). Termina con una invitación cálida a oiikon.com y a escribirles por WhatsApp.\\n  • Voz amigable, optimista, pausada. Comas y puntos donde un humano respiraría.",
-  "youtube_description": "descripción de YouTube de 150 palabras con el link https://oiikon.com y keywords de SEO en español",
-  "youtube_tags": ["PECRON", "estacion solar portatil", "cuba apagon", "energia solar cuba", "cubano americano", "ayuda familia cuba", "solar power station", "oiikon", "${product.sku}", "luz cuba"]
+  "youtube_title": "título de YouTube atractivo, 60-70 caracteres, incluye PECRON y el caso de uso (huracán / RV / off-grid / blackout)",
+  "youtube_script": "script HABLADO de 60-75 segundos (150-180 palabras) que un avatar de IA va a leer en voz alta. REGLAS DURAS:\\n  • Suena como una amiga conversando con la cámara, NO como una vendedora ni como un anuncio formal.\\n  • Usa 'tú' (no 'usted'), contracciones naturales, oraciones cortas (10-14 palabras máx).\\n  • PROHIBIDO leer nombres técnicos: nada de 'LiFePO4' (di 'litio' o 'batería de litio'), nada de 'tipo Rack 3U', nada de letras + números pegados ('5kW', 'AH', 'Wh'). Si necesitas mencionar capacidad, di 'mucha energía', 'suficiente para varias horas', 'una batería potente' — describe el beneficio, no el spec.\\n  • PROHIBIDO leer números con unidades pegadas. Cifras OK pero conversacionales: di 'seiscientos noventa y nueve dólares' o 'cerca de setecientos dólares', NO '$699.00'.\\n  • PROHIBIDO acrónimos, siglas, marcas técnicas, jerga de ingeniería, watts/voltios/amperios. Habla de luz, refrigerador, ventilador, celulares — cosas concretas que la familia usa en casa.\\n  • Empieza con un gancho humano de 1 frase ('Oye, déjame contarte algo...', 'Si vives en zona de huracanes, escucha...'). Termina con una invitación cálida a oiikon.com y a escribirles por WhatsApp.\\n  • Voz amigable, optimista, pausada. Comas y puntos donde un humano respiraría.\\n  • Habla siempre desde una perspectiva USA: tu casa, tu RV, tu cabaña, tu negocio.",
+  "youtube_description": "descripción de YouTube de 150 palabras con el link https://oiikon.com y keywords de SEO en español/inglés relevantes a respaldo de huracán y energía portátil",
+  "youtube_tags": ["PECRON", "estacion solar portatil", "solar generator", "hurricane prep", "blackout backup", "portable power station", "RV solar", "off-grid solar", "emergency power", "LiFePO4", "oiikon", "${product.sku}"]
 }`;
 
   const response = await anthropic.messages.create({

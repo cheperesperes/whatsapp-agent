@@ -2,11 +2,13 @@
 // Timezone helpers — map a raw phone number to an IANA timezone, and enforce
 // quiet hours on outbound automation so we don't nudge customers at 2am.
 //
-// Policy: the MINIMUM set of country-code mappings that actually covers
-// Oiikon's customer base (Cuba + US + the Cuban diaspora — Spain, Mexico,
-// Venezuela, Argentina, Colombia). Adding more is cheap when we see traffic.
+// Policy: as of 2026-05-07 Oiikon serves USA-only. The non-+1 prefixes below
+// are LEGACY — kept so any returning historical customer or accidental
+// international inbound still gets correct quiet-hour handling, but no new
+// outbound automation should target those numbers; the webhook flow
+// short-circuits to the polite-decline plantilla instead.
 // Anything we don't know falls back to America/New_York, which is correct
-// for Miami ops and close enough for Cuba (both UTC-5 standard / UTC-4 DST).
+// for FL ops and a reasonable default for any +1 outside our explicit rules.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface CountryTzRule {
@@ -25,9 +27,11 @@ const COUNTRY_TZ_RULES: CountryTzRule[] = [
   { prefix: '1829', tz: 'America/Santo_Domingo' },
   { prefix: '1849', tz: 'America/Santo_Domingo' },
 
-  // Cuban diaspora markets
-  { prefix: '53', tz: 'America/Havana' },    // Cuba
-  { prefix: '34', tz: 'Europe/Madrid' },     // Spain
+  // Legacy non-USA prefixes (USA-only as of 2026-05-07). Kept so historical
+  // customer phones still get correct quiet-hour math; no new outbound flows
+  // should target these.
+  { prefix: '53', tz: 'America/Havana' },    // legacy
+  { prefix: '34', tz: 'Europe/Madrid' },     // legacy
   { prefix: '52', tz: 'America/Mexico_City' }, // Mexico
   { prefix: '58', tz: 'America/Caracas' },   // Venezuela
   { prefix: '54', tz: 'America/Argentina/Buenos_Aires' },
