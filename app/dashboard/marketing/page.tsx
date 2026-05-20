@@ -432,6 +432,9 @@ export default function MarketingPage() {
         {/* ───────  AD SPEND (collapsed when zero) ─────── */}
         {adData && <AdSpendStrip data={adData} />}
 
+        {/* ───────  SEND OFFER TO LEADS ─────── */}
+        <SendOfferPanel />
+
         {/* ───────  FB GROUPS ─────── */}
         {data && data.groups.length > 0 && (
           <details className="card">
@@ -1073,6 +1076,229 @@ function EnvStatusRow({ content }: { content?: ContentRow }) {
             </span>
           </div>
         ))}
+      </div>
+    </details>
+  );
+}
+
+// ─────────────────  SEND OFFER TO LEADS  ─────────────────
+// Sends a Meta-approved WhatsApp template offer to leads in customer_profiles.
+// Reads coupon from shared Oiikon discount_codes (single source of truth).
+// STRICT per-recipient language. See: /api/marketing/send-offer
+
+interface CouponRow {
+  code: string;
+  description: string | null;
+  discount_type: 'percentage' | 'fixed_amount';
+  discount_value: number;
+  min_order_total: number | null;
+  eligible_brand: string | null;
+  valid_until: string | null;
+}
+
+interface SendOfferPlan {
+  recipientCount: number;
+  breakdownByLanguage: { es: number; en: number };
+  coupon: { code: string; discount: number; type: string } | null;
+  templateName: string;
+  sampleRecipients: Array<{ phone: string; language: string; name: string | null }>;
+}
+
+interface SendOfferResult {
+  ok: boolean;
+  sentCount: number;
+  totalCount: number;
+  coupon: { code: string; discount: number; type: string } | null;
+  results: Array<{ phone: string; language?: string; success: boolean; error?: unknown; wa_message_id?: string }>;
+}
+
+function SendOfferPanel() {
+  const [coupons, setCoupons] = useState<CouponRow[]>([]);
+  const [templateName, setTemplateName] = useState('oiikon_offer_v1');
+  const [couponCode, setCouponCode] = useState('');
+  const [audience, setAudience] = useState<'all' | 'es' | 'en'>('all');
+  const [plan, setPlan] = useState<SendOfferPlan | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<SendOfferResult | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/marketing/coupons', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setCoupons(d.coupons ?? []))
+      .catch(() => setCoupons([]));
+  }, []);
+
+  async function runDryRun() {
+    setPlanError(null);
+    setSendResult(null);
+    setSendError(null);
+    setPlan(null);
+    if (!templateName.trim()) {
+      setPlanError('templateName requerido (debe ser una plantilla Meta aprobada)');
+      return;
+    }
+    const res = await fetch('/api/marketing/send-offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        templateName: templateName.trim(),
+        couponCode: couponCode || undefined,
+        audience,
+        dryRun: true,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setPlanError(data?.error ? String(data.error) : `HTTP ${res.status}`);
+      return;
+    }
+    setPlan(data as SendOfferPlan);
+  }
+
+  async function runSend() {
+    if (!plan) return;
+    if (!confirm(`¿Enviar oferta WhatsApp a ${plan.recipientCount} leads? No se puede deshacer.`)) return;
+    setSending(true);
+    setSendResult(null);
+    setSendError(null);
+    const res = await fetch('/api/marketing/send-offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        templateName: templateName.trim(),
+        couponCode: couponCode || undefined,
+        audience,
+      }),
+    });
+    const data = await res.json();
+    setSending(false);
+    if (!res.ok || data?.error) {
+      setSendError(data?.error ? String(data.error) : `HTTP ${res.status}`);
+      return;
+    }
+    setSendResult(data as SendOfferResult);
+    setPlan(null);
+  }
+
+  return (
+    <details className="card" open>
+      <summary className="px-4 py-2.5 cursor-pointer text-sm font-medium text-gray-200 hover:bg-surface-800/50 flex items-center justify-between">
+        <span>💬 Enviar oferta a leads de WhatsApp</span>
+        <span className="text-xs text-gray-500">{coupons.length} cupones activos</span>
+      </summary>
+      <div className="px-4 py-3 space-y-3 border-t border-surface-700">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+              Plantilla Meta (aprobada)
+            </label>
+            <input
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              className="w-full text-sm bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-200 font-mono"
+              placeholder="oiikon_offer_v1"
+            />
+            <p className="text-[10px] text-gray-600 mt-1">Debe existir en Meta Business Manager con status APPROVED.</p>
+          </div>
+          <div>
+            <label className="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+              Cupón (desde discount_codes)
+            </label>
+            <select
+              value={couponCode}
+              onChange={(e) => setCouponCode(e.target.value)}
+              className="w-full text-sm bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-200"
+            >
+              <option value="">Sin cupón</option>
+              {coupons.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code} · {c.discount_type === 'percentage' ? `${c.discount_value}%` : `$${c.discount_value}`}
+                  {c.eligible_brand ? ` · ${c.eligible_brand}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">Audiencia</label>
+          <div className="flex flex-wrap gap-2">
+            {(['all', 'es', 'en'] as const).map((a) => (
+              <label key={a} className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="audience"
+                  value={a}
+                  checked={audience === a}
+                  onChange={() => setAudience(a)}
+                />
+                {a === 'all' ? 'Todos' : a === 'es' ? '🇪🇸 Solo español' : '🇺🇸 Solo English'}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {plan && (
+          <div className="bg-surface-800 border border-surface-600 rounded p-3 text-xs space-y-1">
+            <p className="text-gray-300">
+              <strong>Plan:</strong> {plan.recipientCount} destinatarios · ES: {plan.breakdownByLanguage.es}, EN:{' '}
+              {plan.breakdownByLanguage.en}
+            </p>
+            {plan.coupon && (
+              <p className="text-gray-400">
+                <strong>Cupón:</strong> {plan.coupon.code} ·{' '}
+                {plan.coupon.type === 'percentage' ? `${plan.coupon.discount}%` : `$${plan.coupon.discount}`}
+              </p>
+            )}
+            <p className="text-gray-500 font-mono text-[10px]">Plantilla: {plan.templateName}</p>
+          </div>
+        )}
+
+        {planError && (
+          <div className="text-xs text-red-400 bg-red-900/30 border border-red-800/50 rounded px-2 py-1.5">
+            ⚠ {planError}
+          </div>
+        )}
+
+        {sendError && (
+          <div className="text-xs text-red-400 bg-red-900/30 border border-red-800/50 rounded px-2 py-1.5">
+            ⚠ {sendError}
+          </div>
+        )}
+
+        {sendResult && (
+          <div className="text-xs text-green-300 bg-green-900/20 border border-green-800/50 rounded px-2 py-1.5">
+            ✓ Enviados: {sendResult.sentCount}/{sendResult.totalCount}
+            {sendResult.coupon && ` · cupón ${sendResult.coupon.code}`}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={runDryRun}
+            className="text-xs px-3 py-1.5 bg-surface-700 hover:bg-surface-600 text-gray-200 rounded"
+          >
+            Vista previa
+          </button>
+          <button
+            type="button"
+            onClick={runSend}
+            disabled={!plan || sending}
+            className="text-xs px-3 py-1.5 bg-brand-500 hover:bg-brand-600 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded"
+          >
+            {sending ? 'Enviando...' : 'Enviar oferta'}
+          </button>
+        </div>
+
+        <p className="text-[10px] text-gray-600 leading-relaxed">
+          Lee desde <code>customer_profiles</code> (este agente) + <code>discount_codes</code> (Oiikon, fuente única).
+          Idioma estricto: nunca envía contenido en idioma no preferido. Cada envío queda registrado en{' '}
+          <code>messages</code> con role=system.
+        </p>
       </div>
     </details>
   );
