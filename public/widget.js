@@ -25,14 +25,62 @@
   var CFG = window.OIIKON_SOL || {};
   var ENDPOINT =
     CFG.endpoint || 'https://whatsapp-agent-ebon-nine.vercel.app/api/chat';
-  var GREETING =
-    CFG.greeting ||
-    '¡Hola! Soy Sol de Oiikon ☀️ ¿Quieres que te ayude a saber qué solar necesitas?';
   var SESSION_KEY = 'oiikon_sol_session';
   var HISTORY_KEY = 'oiikon_sol_history';
   var OPEN_KEY = 'oiikon_sol_open';
   var TEASER_DISMISSED_KEY = 'oiikon_sol_teaser_dismissed';
   var TEASER_LAST_SHOWN_KEY = 'oiikon_sol_teaser_shown_at';
+  var TEASER_LANG_KEY = 'oiikon_sol_lang';
+
+  // ── Language detection ───────────────────────────────────
+  // Priority: persisted preference > host-page <html lang> > navigator.language
+  // > Spanish default (Cuban/LATAM customer base). The host-page check makes
+  // oiikon.com's language toggle override the browser locale, so an EN-speaking
+  // visitor browsing the EN version of the site gets EN greetings — not the
+  // browser-locale ES that ignored their explicit choice.
+  function detectLanguage() {
+    try {
+      var stored = localStorage.getItem(TEASER_LANG_KEY);
+      if (stored === 'es' || stored === 'en') return stored;
+    } catch (e) {}
+    try {
+      var pageLang = (document.documentElement.lang || '').toLowerCase();
+      if (pageLang.indexOf('en') === 0) return 'en';
+      if (pageLang.indexOf('es') === 0) return 'es';
+    } catch (e) {}
+    var nav = (navigator.language || 'es').toLowerCase();
+    return nav.indexOf('en') === 0 ? 'en' : 'es';
+  }
+
+  // Bilingual UI strings. Anything customer-facing in the widget UI lives here.
+  // STRICT language rule (Ed 2026-05-20): NEVER show Spanish to an English
+  // visitor. If detectLanguage() returns 'en', every label uses STRINGS.en.
+  var STRINGS = {
+    es: {
+      greeting: '¡Hola! Soy Sol de Oiikon ☀️ ¿Quieres que te ayude a saber qué solar necesitas?',
+      header_subtitle: 'Energía solar para tu familia',
+      open_aria: 'Abrir chat con Sol',
+      close_aria: 'Cerrar',
+      send_aria: 'Enviar',
+      input_placeholder: 'Escribe tu mensaje...',
+      fallback_error: 'Disculpa, hubo un problema. Intenta de nuevo.',
+      fallback_network: 'No pude enviar tu mensaje. Revisa tu conexión y vuelve a intentarlo.',
+    },
+    en: {
+      greeting: "Hi! I'm Sol from Oiikon ☀️ Want me to help you figure out what solar you need?",
+      header_subtitle: 'Solar energy for your home',
+      open_aria: 'Open chat with Sol',
+      close_aria: 'Close',
+      send_aria: 'Send',
+      input_placeholder: 'Type your message...',
+      fallback_error: 'Sorry, something went wrong. Try again.',
+      fallback_network: "Couldn't send your message. Check your connection and try again.",
+    },
+  };
+  var LANG = detectLanguage();
+  var T = STRINGS[LANG] || STRINGS.es;
+  // Allow caller to override greeting via window.OIIKON_SOL.greeting
+  var GREETING = CFG.greeting || T.greeting;
 
   // ── Proactive teaser bubble ──────────────────────────────
   // Shows a one-line preview above the closed widget after a short delay
@@ -56,7 +104,6 @@
   var TEASER_DELAY_MS_PRODUCT = 8000;  // 8s on product pages — higher intent
   var TEASER_REPEAT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 1 day between teasers
   var TEASER_AUTO_HIDE_MS = 12000;     // teaser disappears if not clicked
-  var TEASER_LANG_KEY = 'oiikon_sol_lang';
 
   // Audience tags. The picker scans URL + referrer + simple page-text
   // signals to choose one. Falls back to 'generic'.
@@ -118,16 +165,6 @@
       ],
     },
   };
-
-  function detectLanguage() {
-    try {
-      var stored = localStorage.getItem(TEASER_LANG_KEY);
-      if (stored === 'es' || stored === 'en') return stored;
-    } catch (e) {}
-    var nav = (navigator.language || 'es').toLowerCase();
-    // Cuban / LATAM customer base → Spanish default for any non-English locale.
-    return nav.indexOf('en') === 0 ? 'en' : 'es';
-  }
 
   function detectAudience() {
     var url = '';
@@ -298,7 +335,7 @@
   // ── Build DOM ────────────────────────────────────────────
   var bubble = document.createElement('button');
   bubble.id = 'oiikon-sol-bubble';
-  bubble.setAttribute('aria-label', 'Abrir chat con Sol');
+  bubble.setAttribute('aria-label', T.open_aria);
   bubble.innerHTML = '💬';
 
   var panel = document.createElement('div');
@@ -306,13 +343,13 @@
   panel.innerHTML = [
     '<div class="oiikon-sol-header">',
     '  <div class="oiikon-sol-avatar">☀️</div>',
-    '  <div class="oiikon-sol-title">Sol — Oiikon<div class="oiikon-sol-subtitle">Energía solar para tu familia</div></div>',
-    '  <button class="oiikon-sol-close" aria-label="Cerrar">×</button>',
+    '  <div class="oiikon-sol-title">Sol — Oiikon<div class="oiikon-sol-subtitle">' + escapeHtml(T.header_subtitle) + '</div></div>',
+    '  <button class="oiikon-sol-close" aria-label="' + escapeHtml(T.close_aria) + '">×</button>',
     '</div>',
     '<div class="oiikon-sol-messages" id="oiikon-sol-messages"></div>',
     '<form class="oiikon-sol-input-row" id="oiikon-sol-form">',
-    '  <input class="oiikon-sol-input" id="oiikon-sol-input" type="text" placeholder="Escribe tu mensaje..." autocomplete="off" maxlength="2000">',
-    '  <button class="oiikon-sol-send" id="oiikon-sol-send" type="submit" aria-label="Enviar">➤</button>',
+    '  <input class="oiikon-sol-input" id="oiikon-sol-input" type="text" placeholder="' + escapeHtml(T.input_placeholder) + '" autocomplete="off" maxlength="2000">',
+    '  <button class="oiikon-sol-send" id="oiikon-sol-send" type="submit" aria-label="' + escapeHtml(T.send_aria) + '">➤</button>',
     '</form>',
   ].join('');
 
@@ -321,7 +358,7 @@
   teaser.id = 'oiikon-sol-teaser';
   teaser.setAttribute('role', 'button');
   teaser.setAttribute('tabindex', '0');
-  teaser.setAttribute('aria-label', 'Abrir chat con Sol');
+  teaser.setAttribute('aria-label', T.open_aria);
   teaser.innerHTML = [
     '<button id="oiikon-sol-teaser-close" type="button" aria-label="Cerrar">×</button>',
     '<div id="oiikon-sol-teaser-text"></div>',
@@ -426,7 +463,7 @@
       .then(function (data) {
         hideTyping();
         sendBtn.disabled = false;
-        var reply = (data && data.reply) || 'Disculpa, hubo un problema. Intenta de nuevo.';
+        var reply = (data && data.reply) || T.fallback_error;
         var images = (data && data.images) || [];
         history.push({ role: 'assistant', text: reply, images: images });
         saveHistory(history);
@@ -436,7 +473,7 @@
       .catch(function (err) {
         hideTyping();
         sendBtn.disabled = false;
-        var fallback = 'No pude enviar tu mensaje. Revisa tu conexión y vuelve a intentarlo.';
+        var fallback = T.fallback_network;
         history.push({ role: 'assistant', text: fallback, images: [] });
         saveHistory(history);
         msgsEl.appendChild(renderMessage({ role: 'assistant', text: fallback }));
