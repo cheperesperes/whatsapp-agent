@@ -15,6 +15,14 @@ import { waitUntil } from '@vercel/functions';
 
 export const dynamic = 'force-dynamic';
 
+// Give the function 30s so a cold-start + slow LLM round-trip can still
+// complete before Vercel kills it. Without this, the platform's default
+// (~15s on Pro) was aborting the first request after the function had
+// been idle and customers saw the widget's "Couldn't send your message"
+// fallback. Combined with the client-side retry in public/widget.js,
+// the cold-start failure becomes invisible to users.
+export const maxDuration = 30;
+
 import {
   getOrCreateWebConversation,
   loadRecentMessages,
