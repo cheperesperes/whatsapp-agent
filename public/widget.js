@@ -451,15 +451,35 @@
     sendBtn.disabled = true;
     showTyping();
 
-    fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: sessionId, message: text }),
-    })
-      .then(function (res) {
-        if (!res.ok) throw new Error('http_' + res.status);
-        return res.json();
+    // One-shot retry on transient failure. Covers the two most common
+    // Sol error modes seen in the wild:
+    //   • Vercel cold-start: the serverless fn slept and the first request
+    //     times out before the LLM responds (no body returned).
+    //   • Network blip on the client side (wifi drop, VPN reconnect).
+    // Retry only ONCE after a 2s backoff — anything that fails twice in a
+    // row is a real server-side failure (LLM outage, rate limit, etc.) and
+    // we should show the fallback so the customer isn't left hanging.
+    function attemptSend(attempt) {
+      return fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId, message: text }),
       })
+        .then(function (res) {
+          if (!res.ok) throw new Error('http_' + res.status);
+          return res.json();
+        })
+        .catch(function (err) {
+          if (attempt === 0) {
+            console.warn('[oiikon-sol] retry after', err && err.message);
+            return new Promise(function (resolve) { setTimeout(resolve, 2000); })
+              .then(function () { return attemptSend(1); });
+          }
+          throw err;
+        });
+    }
+
+    attemptSend(0)
       .then(function (data) {
         hideTyping();
         sendBtn.disabled = false;
