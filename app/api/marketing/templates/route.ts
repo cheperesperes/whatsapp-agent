@@ -36,12 +36,16 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  // Memory project_oiikon_wa_secrets_locations_2026_05_20.md confirms
-  // WABA "Oiikon Help" = 1505365390974343. Allow env override so a
-  // future WABA migration doesn't require a code change.
+  // Read either env name (Vercel has both prefixes in this project).
+  const token =
+    process.env.WHATSAPP_ACCESS_TOKEN ??
+    process.env.META_WHATSAPP_ACCESS_TOKEN;
+  // Vercel env has META_WHATSAPP_BUSINESS_ACCOUNT_ID. Memory references
+  // 1505365390974343 ("Oiikon Help") but if env is set we honor it.
   const wabaId =
-    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? '1505365390974343';
+    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ??
+    process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ??
+    '1505365390974343';
 
   if (!token) {
     return NextResponse.json(
