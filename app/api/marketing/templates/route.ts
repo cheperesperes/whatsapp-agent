@@ -160,9 +160,32 @@ export async function GET(req: NextRequest) {
       byStatus[t.status] = (byStatus[t.status] ?? 0) + 1;
     }
 
+    // Surface which phone number is connected to this WABA so we can
+    // catch stale env values. display_phone_number is publishable info.
+    let wabaPhoneNumbers: Array<{
+      id: string;
+      display_phone_number: string;
+      verified_name?: string;
+    }> = [];
+    try {
+      const phonesRes = await fetch(
+        `https://graph.facebook.com/${META_GRAPH_VERSION}/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+      );
+      const phonesData = await phonesRes.json();
+      if (phonesRes.ok && Array.isArray(phonesData.data)) {
+        wabaPhoneNumbers = phonesData.data;
+      }
+    } catch {
+      /* non-fatal */
+    }
+
     return NextResponse.json({
       ok: true,
       waba_id: wabaId,
+      waba_phone_numbers: wabaPhoneNumbers,
+      env_phone_number_id: phoneNumberId,
+      env_phone_matches_waba: wabaPhoneNumbers.some((p) => p.id === phoneNumberId),
       total: templates.length,
       by_status: byStatus,
       templates: templates.map((t) => ({
