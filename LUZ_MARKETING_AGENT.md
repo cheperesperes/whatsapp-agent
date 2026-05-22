@@ -1,17 +1,17 @@
 # Luz — Oiikon Marketing Agent
 
-Autonomous daily marketing agent built into the Sol WhatsApp project.
+Autonomous daily marketing agent built into the Sol WhatsApp project. **Oiikon ships USA-only as of 2026-05-07** (free to the 48 contiguous states). Luz must not produce campaigns that promise international shipping or target audiences outside the USA.
 
 **Audience — four use-case segments** (mirrors oiikon.com's own positioning: *"Hurricane backup, home emergency power, RV and off-grid solutions"* + bilingual EN/ES support):
 
-1. **Hurricane backup** — homeowners in FL, TX, LA, NC, PR, coastal CA prepping before storm season. Reactivates every June–November; surges before named storms.
+1. **Hurricane backup** — homeowners in FL, TX, LA, NC, GA, coastal CA prepping before storm season. Reactivates every June–November; surges before named storms.
 2. **Home emergency power** — US blackout / grid-down buyers (heatwaves, wildfire PSPS shutoffs, ageing-grid states). Year-round, spikes after every regional outage.
 3. **RV / overlanding** — boondockers, full-time RVers, vanlifers, weekend campers. Year-round, peaks spring–summer.
 4. **Off-grid / energy savings** — cabins, tiny houses, homesteaders, solar-curious homeowners cutting bills. Slow-burn, year-round.
 
-**Bilingual overlay across all four:** Cuban / Venezuelan / Mexican / Dominican / Puerto Rican diaspora in the US, plus Cuban MIPYMES on the Habana side who buy the same SKUs but for a different reason (apagones 8–20 h diarios). Spanish is a cultural channel, not a separate audience — the same RV / hurricane / off-grid framing translates, weighted toward "energía para tu familia en Cuba" or "lista para temporada de huracanes" depending on the buyer.
+**Bilingual overlay across all four:** Hispanic-American USA-resident communities (Cuban-American, Venezuelan-American, Mexican-American, Dominican-American, Puerto Rican-on-mainland) buying for their own US homes. Spanish is a cultural channel, not a separate audience — the same RV / hurricane / off-grid framing translates, weighted toward "lista para temporada de huracanes" / "respaldo para tu casa en Florida" depending on the buyer's location and use case. **Do NOT target audiences outside the USA, and do NOT frame messages around shipping equipment to other countries.**
 
-Last updated: 2026-05-02.
+Last updated: 2026-05-07.
 
 ## What Luz does every day
 
@@ -41,21 +41,29 @@ Last updated: 2026-05-02.
 
 The Vercel cron handles the daily generate-and-publish path. The two skills below
 let Eduardo (or Luz running in Cowork mode) reach beyond the Oiikon Page itself,
-into the Facebook **groups** ecosystem where the four use-case audiences (Cuba
-diaspora, RV community, hurricane-prone homeowners, off-grid / energy-saving
-buyers) actually buy and sell. Both live under `skills/`.
+into the Facebook **groups** ecosystem where the four USA-resident use-case
+audiences (Hispanic-American hispanohablantes in FL/TX/NJ, hurricane-prone
+homeowners, RV community, off-grid / energy-saving buyers) actually buy and sell.
+Both live under `skills/`.
+
+> **2026-05-07 USA-only transition note:** historical Cuba-export FB group
+> memberships (envíos-a-cuba, paquetería, plantas-eléctricas-Cuba, MIPYMES,
+> Combos-USA→Cuba) are LEGACY and must not be re-broadcast to. The
+> `share-latest-to-all-groups` skill now skips groups whose name matches
+> Cuba-export keywords (Eduardo maintains the skip-list). New `discover-fb-groups`
+> runs target only USA-resident keywords (hurricane-prep-FL, RV-USA,
+> hispanos-Miami, latinos-Houston, off-grid-USA, etc.).
 
 | Skill | Purpose | When to run |
 |---|---|---|
-| `share-latest-to-all-groups` | Broadcast the newest Oiikon Page post to every group the Oiikon Sol personal account belongs to. Walks the FB Share → Group flow, stops on rate-limit. | Mon/Wed/Fri after the daily campaign auto-publishes. ≥6-8 h between runs. |
-| `discover-fb-groups` | Search FB for keywords (envíos a cuba, paqueteria, plantas eléctricas, cubanos en miami…), score each result, output `Oiikon_Groups_To_Join.xlsx` ranked S/A/B/C/D. | Tue/Thu mornings. Eduardo joins Tier S+A from the xlsx; the next broadcast picks them up automatically. |
+| `share-latest-to-all-groups` | Broadcast the newest Oiikon Page post to every USA-targeted group the Oiikon Sol personal account belongs to. Walks the FB Share → Group flow, stops on rate-limit. Skips legacy Cuba-export groups. | Mon/Wed/Fri after the daily campaign auto-publishes. ≥6-8 h between runs. |
+| `discover-fb-groups` | Search FB for USA-resident keywords (hurricane-prep Florida, hispanos Miami, latinos Houston, RV USA, off-grid USA, blackout backup), score each result, output `Oiikon_Groups_To_Join.xlsx` ranked S/A/B/C/D. | Tue/Thu mornings. Eduardo joins Tier S+A from the xlsx; the next broadcast picks them up automatically. |
 
-Current footprint as of 2026-04-26: **~100 + groups joined** (57 from the original
-Oiikon Sol membership + ~48 added via discover-fb-groups). Tier-S coverage:
-PLANTAS ELÉCTRICAS CUBA, Planta eléctrica CUBA, Plantas Eléctricas en Cuba,
-VENTAS MAYORISTAS CUBA, Ventas mayoristas para MIPYMES y TCP, MIPYMES Y TCP
-COMPRAVENTAS, VENTAS MAYORISTAS A EMPRENDEDORES, Combos USA→Cuba x4, plus the
-Hialeah / Miami / Florida diaspora cluster.
+Current footprint as of 2026-05-07: ~100 groups joined historically, of which the
+Cuba-export cluster is now PARKED (no new broadcasts). Active USA-targeted clusters:
+Hispanic-American Miami / Hialeah / Florida diaspora-living-in-USA, Hispanic-American
+Houston / Texas, hurricane-preparedness FL/TX/NC, RV / boondocking / vanlife USA,
+off-grid / homestead USA, energy-savings / tiny-house USA.
 
 ### Weekly cadence
 
@@ -289,5 +297,7 @@ Visible in dashboard under the Memory tab.
 
 ## Changelog
 
-- **2026-04-26** — Added Cowork-side skills `share-latest-to-all-groups` and `discover-fb-groups`. Joined ~48 net-new groups across envíos / paquetería / cubanos-en-miami / plantas-eléctricas searches. Total Oiikon Sol group footprint now ~105. Updated daily flow and weekly cadence sections. Added `BROADCAST` and `DESCUBRIR` WhatsApp triggers (planned).
+- **2026-05-07** — USA-only transition. Cuba-export FB group cluster parked (no new broadcasts). `discover-fb-groups` retargeted to USA-resident keywords (hurricane-prep, hispanos Miami/Houston, RV/off-grid, blackout backup). Audience overlay reframed to Hispanic-American USA-resident communities. `lib/marketing/content.ts` + `lib/marketing/research.ts` updated to match. `cuba_total_price` field dropped from generated content prompt.
+- **2026-05-02** — Audience expanded from Cuba-only to four use-case pillars (hurricane backup, home emergency power, RV/overlanding, off-grid/energy savings) with bilingual EN/ES overlay.
+- **2026-04-26** — Added Cowork-side skills `share-latest-to-all-groups` and `discover-fb-groups`. Joined ~48 net-new groups. Total Oiikon Sol group footprint ~105. Updated daily flow and weekly cadence sections. Added `BROADCAST` and `DESCUBRIR` WhatsApp triggers (planned).
 - **2026-04-23** — Initial Luz autonomous loop deployed to Vercel. Daily cron + HeyGen + dashboard online.
