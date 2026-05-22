@@ -173,7 +173,41 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // 4. Real send loop — sequential w/ 200ms gap (Meta rate limit ~5/sec safe)
+  // 4. Discover the template's actual body-param count + language so the
+  // payload matches what Meta expects. The oiikon_offer_* templates
+  // currently only accept ONE param ({{1}} = recipient name); coupon code
+  // and discount are hardcoded in the template body. Sending more params
+  // than the template defines returns Meta error 132000.
+  let bodyParamCount = 1;
+  let templateLanguageCode: string | null = null;
+  try {
+    const wabaResolveRes = await fetch(
+      `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}?fields=whatsapp_business_account`,
+      { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+    );
+    const wabaResolveData = await wabaResolveRes.json();
+    const wabaId = wabaResolveData?.whatsapp_business_account?.id;
+    if (wabaId) {
+      const tRes = await fetch(
+        `https://graph.facebook.com/${META_GRAPH_VERSION}/${wabaId}/message_templates?fields=name,language,components&name=${encodeURIComponent(templateName)}&limit=10`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+      );
+      const tData = await tRes.json();
+      const tpl = (tData.data || []).find((x: any) => x.name === templateName);
+      if (tpl) {
+        templateLanguageCode = tpl.language || null;
+        const bodyComp = (tpl.components || []).find(
+          (c: any) => (c.type || '').toUpperCase() === 'BODY',
+        );
+        const m = (bodyComp?.text || '').match(/\{\{\s*\d+\s*\}\}/g);
+        bodyParamCount = m ? m.length : 0;
+      }
+    }
+  } catch {
+    /* fall through with default bodyParamCount=1 */
+  }
+
+  // 5. Real send loop — sequential w/ 200ms gap (Meta rate limit ~5/sec safe)
   const META_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/messages`;
   const results: any[] = [];
   for (const r of recipList) {
@@ -182,23 +216,29 @@ export async function POST(req: NextRequest) {
       const param1 = r.name || (lang === 'en' ? 'friend' : 'amigo/a');
       const param2 = coupon?.code || '';
       const param3 = discountText(coupon, lang);
+      const allParams = [
+        String(param1),
+        ...(param2 ? [String(param2)] : []),
+        ...(param3 ? [String(param3)] : []),
+      ];
+      const params = allParams.slice(0, bodyParamCount);
+      const langCode = templateLanguageCode || (lang === 'en' ? 'en_US' : 'es');
       const payload = {
         messaging_product: 'whatsapp',
         to: normalizePhone(r.phone),
         type: 'template',
         template: {
           name: templateName,
-          language: { code: lang === 'en' ? 'en_US' : 'es' },
-          components: [
-            {
-              type: 'body',
-              parameters: [
-                { type: 'text', text: String(param1) },
-                ...(param2 ? [{ type: 'text', text: String(param2) }] : []),
-                ...(param3 ? [{ type: 'text', text: String(param3) }] : []),
-              ],
-            },
-          ],
+          language: { code: langCode },
+          components:
+            params.length > 0
+              ? [
+                  {
+                    type: 'body',
+                    parameters: params.map((text) => ({ type: 'text', text })),
+                  },
+                ]
+              : [],
         },
       };
       const res = await fetch(META_URL, {
