@@ -36,10 +36,14 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  // Read either env name (Vercel has both prefixes in this project).
+  // Prefer META_-prefixed env names — that's where the never-expires
+  // System User token lives (see lib/whatsapp.ts). Legacy unprefixed
+  // names still work as fallback so dev envs aren't broken. We hit
+  // Meta error 190 (expired token) until this precedence was fixed —
+  // the unprefixed env still holds the OLD token that died 2026-04-12.
   const token =
-    process.env.WHATSAPP_ACCESS_TOKEN ??
-    process.env.META_WHATSAPP_ACCESS_TOKEN;
+    process.env.META_WHATSAPP_ACCESS_TOKEN ??
+    process.env.WHATSAPP_ACCESS_TOKEN;
   if (!token) {
     return NextResponse.json(
       { error: 'WHATSAPP_ACCESS_TOKEN not set in Vercel env.' },
@@ -54,11 +58,11 @@ export async function GET(req: NextRequest) {
   // /{phone_number_id}?fields=whatsapp_business_account returns the WABA
   // the token DOES have access to.
   const phoneNumberId =
-    process.env.WHATSAPP_PHONE_NUMBER_ID ??
-    process.env.META_WHATSAPP_PHONE_NUMBER_ID;
+    process.env.META_WHATSAPP_PHONE_NUMBER_ID ??
+    process.env.WHATSAPP_PHONE_NUMBER_ID;
   let wabaId: string | null =
-    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ??
     process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ??
+    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ??
     null;
   let wabaSource = wabaId ? 'env' : 'unset';
   let phoneLookupError: unknown = null;
@@ -114,11 +118,12 @@ export async function GET(req: NextRequest) {
           // the old one.
           debug: {
             waba_id_tried: wabaId,
-            waba_id_source: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID
-              ? 'WHATSAPP_BUSINESS_ACCOUNT_ID'
-              : process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID
-              ? 'META_WHATSAPP_BUSINESS_ACCOUNT_ID'
-              : 'hardcoded',
+            waba_id_source: wabaSource,
+            token_source: process.env.META_WHATSAPP_ACCESS_TOKEN
+              ? 'META_WHATSAPP_ACCESS_TOKEN'
+              : process.env.WHATSAPP_ACCESS_TOKEN
+              ? 'WHATSAPP_ACCESS_TOKEN'
+              : 'none',
             token_last4: token.slice(-4),
             graph_version: META_GRAPH_VERSION,
           },

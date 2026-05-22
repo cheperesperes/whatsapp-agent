@@ -58,11 +58,16 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  // Prefer META_-prefixed env (where the never-expires System User token
+  // lives — see lib/whatsapp.ts). Fall back to legacy unprefixed names so
+  // dev envs that only set one still work.
+  const token =
+    process.env.META_WHATSAPP_ACCESS_TOKEN ?? process.env.WHATSAPP_ACCESS_TOKEN;
+  const phoneId =
+    process.env.META_WHATSAPP_PHONE_NUMBER_ID ?? process.env.WHATSAPP_PHONE_NUMBER_ID;
   if (!token || !phoneId) {
     return NextResponse.json(
-      { error: 'WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID not set in Vercel env.' },
+      { error: 'META_WHATSAPP_ACCESS_TOKEN or META_WHATSAPP_PHONE_NUMBER_ID not set in Vercel env.' },
       { status: 500 },
     );
   }
