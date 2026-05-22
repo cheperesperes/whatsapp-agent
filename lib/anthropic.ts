@@ -141,13 +141,31 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
   // Strip ALL internal tags (HANDOFF, METRIC, OPTOUT) from the
   // customer-facing message. SEND_IMAGE is handled downstream by
   // extractImageTags in the webhook route.
-  const customerMessage = rawText
+  let customerMessage = rawText
     .replace(/\[HANDOFF:\s*[^\]]+\]/gi, '')
     .replace(/\[METRIC:\s*[^\]]+\]/gi, '')
     .replace(/\[OPTOUT:\s*[^\]]+\]/gi, '')
     .replace(/[ \t]+\n/g, '\n') // tidy trailing whitespace from stripped tags
     .replace(/\n{3,}/g, '\n\n') // collapse triple+ blank lines created by stripping
     .trim();
+
+  // Defense-in-depth USA-only filter. Even with the AGENT_PROMPT.md
+  // forbidden-words rule, Claude occasionally regresses and names Cuba
+  // when the customer asks about Cuba directly. Ed's standing 2026-05-21
+  // rule is ZERO Cuba mentions — even in a polite declination. If we
+  // detect "Cuba" / "cubano" / "la isla" in the customer-facing reply,
+  // replace the entire response with a deterministic USA-only template
+  // in the detected language. Logs the regression so we can monitor it
+  // and tighten the prompt further if it keeps happening.
+  const CUBA_LEAK_RE = /\b(cuba|cubano|cubana|la isla)\b/i;
+  if (CUBA_LEAK_RE.test(customerMessage)) {
+    console.warn('[sol] cuba leak detected in reply, replacing with USA-only template. Original (truncated):', customerMessage.slice(0, 200));
+    const looksEnglish = /\b(I|the|you|your|we|ship|address|states|please)\b/i.test(customerMessage);
+    customerMessage = looksEnglish
+      ? "Thanks for reaching out! We only ship within the USA — free to all 48 contiguous states. If you have a US address, I'm happy to help you find the right power station."
+      : "¡Gracias por escribir! Solo enviamos dentro de EE.UU. — gratis a los 48 estados continentales. Si tiene una dirección aquí en EE.UU., con gusto le ayudo a encontrar el equipo correcto.";
+    metrics.push('cuba_leak_filtered');
+  }
 
   return { message: customerMessage, handoffReason, metrics };
 }
