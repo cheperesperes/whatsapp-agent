@@ -117,16 +117,35 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Discover WABA from phone_number_id
-  const wabaRes = await fetch(
-    `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}?fields=whatsapp_business_account`,
-    { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
-  );
-  const wabaData = await wabaRes.json();
-  const wabaId = wabaData?.whatsapp_business_account?.id;
+  // Resolve WABA — prefer phone_number_id lookup, fall back to env.
+  let wabaId: string | null =
+    process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ??
+    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ??
+    null;
+  let wabaSource = wabaId ? 'env' : 'unset';
+  let phoneLookupError: unknown = null;
+  try {
+    const wabaRes = await fetch(
+      `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}?fields=whatsapp_business_account`,
+      { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+    );
+    const wabaData = await wabaRes.json();
+    if (wabaRes.ok && wabaData?.whatsapp_business_account?.id) {
+      wabaId = wabaData.whatsapp_business_account.id;
+      wabaSource = 'phone_lookup';
+    } else {
+      phoneLookupError = wabaData;
+    }
+  } catch (e) {
+    phoneLookupError = (e as Error).message;
+  }
   if (!wabaId) {
     return NextResponse.json(
-      { error: 'WABA lookup failed', meta: wabaData },
+      {
+        error: 'Could not resolve WABA ID',
+        phone_lookup_error: phoneLookupError,
+        phone_number_id_present: !!phoneNumberId,
+      },
       { status: 502 },
     );
   }
@@ -216,6 +235,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: errored === 0,
     waba_id: wabaId,
+    waba_source: wabaSource,
+    phone_lookup_error: phoneLookupError,
     from,
     to,
     namePrefix: namePrefix ?? null,
