@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   '/api/chat',                      // Website chat endpoint — anonymous browser sessions
   '/widget.js',                     // Embeddable widget script for oiikon.com
   '/widget-test',                   // Public preview page for the embed
+  '/api/marketing/templates/public-status', // Aggregate counts only, used by cloud schedulers
 ];
 
 export async function middleware(request: NextRequest) {
