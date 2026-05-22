@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
 
   const url =
     `https://graph.facebook.com/${META_GRAPH_VERSION}/${wabaId}/message_templates` +
-    `?fields=name,language,status,category,quality_score&limit=100`;
+    `?fields=name,language,status,category,quality_score,components&limit=100`;
 
   try {
     const res = await fetch(url, {
@@ -134,13 +134,26 @@ export async function GET(req: NextRequest) {
 
     // Light reshape so the panel can show counts by status without
     // re-parsing the payload.
+    type TplComponent = {
+      type?: string;
+      text?: string;
+      example?: { body_text?: string[][] };
+    };
     const templates = (data.data ?? []) as Array<{
       name: string;
       language: string;
       status: string;
       category?: string;
       quality_score?: { score?: string };
+      components?: TplComponent[];
     }>;
+
+    const countBodyParams = (comps: TplComponent[] | undefined): number => {
+      const body = (comps || []).find((c) => (c.type || '').toUpperCase() === 'BODY');
+      if (!body || !body.text) return 0;
+      const m = body.text.match(/\{\{\s*\d+\s*\}\}/g);
+      return m ? m.length : 0;
+    };
 
     const byStatus: Record<string, number> = {};
     for (const t of templates) {
@@ -158,6 +171,8 @@ export async function GET(req: NextRequest) {
         category: t.category,
         status: t.status,
         quality: t.quality_score?.score ?? null,
+        body_param_count: countBodyParams(t.components),
+        components: t.components,
       })),
     });
   } catch (err) {
