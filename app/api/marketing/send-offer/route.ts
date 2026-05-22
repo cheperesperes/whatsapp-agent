@@ -13,6 +13,7 @@
  *     audience?: 'all' | 'es' | 'en';
  *     dryRun?: boolean;
  *     testPhone?: string;            // single-phone delivery test (bypasses audience)
+ *     testPhones?: string[];         // multi-phone delivery test for staged blasts
  *     testLanguage?: 'es' | 'en';
  *     testName?: string;
  *   }
@@ -86,10 +87,14 @@ export async function POST(req: NextRequest) {
     couponCode,
     audience = 'all',
     dryRun = false,
-    // testPhone bypasses audience resolution entirely. Use it to send a
-    // single template message to one phone (e.g. for verifying delivery
-    // before blasting real leads). Pair with testLanguage/testName.
+    // testPhone bypasses audience resolution and sends to one phone.
+    // testPhones (array) bypasses audience and sends to N phones — used
+    // for staged rollouts (5 leads first → verify delivery → blast rest).
+    // For test* recipients, we still look them up in customer_profiles
+    // to pick up display_name / language; testLanguage / testName are
+    // fallbacks for phones not yet in the table.
     testPhone,
+    testPhones,
     testLanguage,
     testName,
   } = body || {};
@@ -103,7 +108,26 @@ export async function POST(req: NextRequest) {
   const sb = createServiceClient();
 
   let recipList: Array<{ phone: string; language: 'es' | 'en'; name: string | null }>;
-  if (testPhone) {
+  if (Array.isArray(testPhones) && testPhones.length > 0) {
+    const phones = testPhones.map(String);
+    const { data: known } = await sb
+      .from('customer_profiles')
+      .select('phone_number, display_name, language')
+      .in('phone_number', phones);
+    const byPhone = new Map(
+      (known || []).map((l: any) => [l.phone_number, l]),
+    );
+    recipList = phones.map((p) => {
+      const k = byPhone.get(p);
+      return {
+        phone: p,
+        language: ((k?.language || testLanguage || 'es') === 'en' ? 'en' : 'es') as
+          | 'es'
+          | 'en',
+        name: k?.display_name || testName || null,
+      };
+    });
+  } else if (testPhone) {
     recipList = [
       {
         phone: String(testPhone),
