@@ -591,9 +591,12 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
 
 /**
  * Format agent products into a concise catalog string for Sol's system prompt.
- * Shows customer-facing prices: cuba_total_price for Cuba customers, sell_price for USA.
+ * USA-only since 2026-05-21 — only sell_price (with discount applied if any)
+ * is exposed to the agent. Cuba delivered totals are intentionally OMITTED so
+ * Sol can't surface them when the customer asks, even if AGENT_PROMPT.md is
+ * regressed. The cuba_shipping_fee / cuba_handling_fee columns stay in the DB
+ * for historical orders + EAR §762 5-year retention, but never reach the LLM.
  * @param products Array of AgentProduct from agent_product_catalog
- * @param region 'cuba' or 'usa' - determines which price to show
  */
 export function formatProductCatalogForPrompt(products: AgentProduct[]): string {
   const categoryNames: Record<string, string> = {
@@ -613,7 +616,7 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
 
   const lines: string[] = [
     '=== CATÁLOGO ACTUAL DE OIIKON ===',
-    'Cada producto muestra precio USA (sell_price con descuento aplicado si hay), precio total entregado en Cuba (USA + envío+aduana combinados), y el descuento activo si aplica.',
+    'Cada producto muestra el precio en EE.UU. (sell_price con descuento aplicado si hay) y el descuento activo si aplica. Oiikon envía únicamente dentro de los 48 estados continentales — no muestres precios ni envíos internacionales.',
   ];
 
   for (const [cat, prods] of Object.entries(grouped)) {
@@ -646,14 +649,15 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
         );
       }
       const effectiveUsa = discount > 0 ? p.sell_price * (1 - discount / 100) : p.sell_price;
-      const cubaDelivery = p.cuba_shipping_fee + p.cuba_handling_fee;
-      const effectiveCubaTotal = effectiveUsa + cubaDelivery;
 
-      const priceParts: string[] = [`SKU ${p.sku}`, `USA $${effectiveUsa.toFixed(2)}`];
+      // USA-only catalog: never expose Cuba delivered totals to the agent.
+      // p.cuba_shipping_fee / p.cuba_handling_fee remain in the DB for
+      // historical-order math + EAR §762 retention, but Sol's prompt only
+      // ever sees the US sell_price.
+      const priceParts: string[] = [`SKU ${p.sku}`, `Precio $${effectiveUsa.toFixed(2)} (envío gratis en EE.UU.)`];
       if (discount > 0 && p.original_price) {
         priceParts.push(`(antes $${p.original_price.toFixed(2)}, ${discount}% descuento)`);
       }
-      priceParts.push(`Cuba $${effectiveCubaTotal.toFixed(2)} entregado (envío+aduana $${cubaDelivery.toFixed(2)})`);
 
       lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}`);
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
@@ -758,9 +762,14 @@ export async function getDashboardStats() {
 export async function loadKnowledgeBase(): Promise<KnowledgeEntry[]> {
   const supabase = createServiceClient();
 
+  // Filter by is_active so soft-disabled entries (e.g. Cuba-specific QA
+  // pairs marked inactive on 2026-05-21 when Oiikon went USA-only) never
+  // reach Sol's runtime context. The rows remain in the table for audit
+  // history; flip is_active back to true to re-enable.
   const { data, error } = await supabase
     .from('knowledge_base')
     .select('*')
+    .eq('is_active', true)
     .order('times_used', { ascending: false })
     .limit(50);
 

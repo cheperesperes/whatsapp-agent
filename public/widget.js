@@ -86,8 +86,8 @@
   // Shows a one-line preview above the closed widget after a short delay
   // to nudge the visitor into opening the chat. The copy is rotated by
   // *audience signal* (URL / referrer / language) so RV buyers, hurricane
-  // preppers, off-gridders, AND Cuban-family senders all see something
-  // that names THEIR situation — not a generic "need help?" prompt.
+  // preppers, and off-gridders all see something that names THEIR
+  // situation — not a generic "need help?" prompt.
   //
   // Why fuel savings is woven through every variant: gas/diesel for
   // backup generators is the comparison-cost most visitors already have
@@ -97,8 +97,8 @@
   //
   // Per-audience variants are defined for both Spanish and English. The
   // language picker mirrors what Sol uses server-side: any persisted
-  // preference wins, otherwise navigator.language with Spanish as the
-  // Cuban/LATAM default.
+  // preference wins, otherwise navigator.language with Spanish kept as
+  // a default for the Hispanic-American visitor segment.
 
   var TEASER_DELAY_MS_GENERIC = 30000; // 30s on home / non-product pages
   var TEASER_DELAY_MS_PRODUCT = 8000;  // 8s on product pages — higher intent
@@ -107,7 +107,7 @@
 
   // Audience tags. The picker scans URL + referrer + simple page-text
   // signals to choose one. Falls back to 'generic'.
-  var AUDIENCES = ['hurricane', 'rv', 'offgrid', 'cuba_family', 'generic'];
+  var AUDIENCES = ['hurricane', 'rv', 'offgrid', 'generic'];
 
   var TEASER_COPY = {
     es: {
@@ -125,11 +125,6 @@
         '¿Casa off-grid o cabaña? Te diseño el sistema en 3 preguntas — sin generador a gasolina.',
         '¿Cansado de mover bidones de combustible? Te muestro cuánto ahorras yendo solar.',
         'En 30 segundos te calculo qué LiFePO4 + paneles cubren tu carga real.',
-      ],
-      cuba_family: [
-        '¿Apagones largos en casa de tu familia? Calculo qué les sirve y cuánto ahorran en gasolina.',
-        '¿Cuántos $ se van en gasolina del generador cada mes allá? Te muestro cómo parar la sangría.',
-        'En 3 preguntas te digo qué Pecron mantiene la nevera y los celulares — sin gas.',
       ],
       generic: [
         'En 3 preguntas te digo qué Pecron necesitas — sin presión.',
@@ -152,11 +147,6 @@
         'Off-grid cabin? I\'ll design the system in 3 questions — no gas generator needed.',
         'Tired of running fuel jugs? Here\'s how fast solar pays for itself.',
         '30 sec to size the LiFePO4 + panels that cover your real load.',
-      ],
-      cuba_family: [
-        'Family dealing with long blackouts? I\'ll size what they need + show fuel savings.',
-        'How much do they spend on generator gas each month? Let me show you the swap.',
-        '3 questions and I\'ll tell you what keeps the fridge + phones running — no fuel needed.',
       ],
       generic: [
         '3 questions and I\'ll tell you which Pecron fits — no pressure.',
@@ -182,7 +172,6 @@
     if (/\b(hurricane|tormenta|apag(o|ó)n|huracan|storm|backup)\b/.test(hay)) return 'hurricane';
     if (/\b(rv|motorhome|caravan|trailer|camping|van[- ]?life|nautico|boat|bote|barco)\b/.test(hay)) return 'rv';
     if (/\b(off[- ]?grid|cabin|cabana|caba(n|ñ)a|finca|rancho|remoto)\b/.test(hay)) return 'offgrid';
-    if (/\b(cuba|familia|family|envi(o|ó)|shipping|isla)\b/.test(hay)) return 'cuba_family';
     return 'generic';
   }
 
