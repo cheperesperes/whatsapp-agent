@@ -40,16 +40,54 @@ export async function GET(req: NextRequest) {
   const token =
     process.env.WHATSAPP_ACCESS_TOKEN ??
     process.env.META_WHATSAPP_ACCESS_TOKEN;
-  // Vercel env has META_WHATSAPP_BUSINESS_ACCOUNT_ID. Memory references
-  // 1505365390974343 ("Oiikon Help") but if env is set we honor it.
-  const wabaId =
-    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ??
-    process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ??
-    '1505365390974343';
-
   if (!token) {
     return NextResponse.json(
       { error: 'WHATSAPP_ACCESS_TOKEN not set in Vercel env.' },
+      { status: 500 },
+    );
+  }
+
+  // Discover WABA dynamically from the phone-number-id — env-stored WABA
+  // ("1505365390974343") was rejected by Meta as not_found after we rotated
+  // to a new System User token on 2026-05-22, suggesting the env value is
+  // either stale or pointing at a WABA the new token can't see. Querying
+  // /{phone_number_id}?fields=whatsapp_business_account returns the WABA
+  // the token DOES have access to.
+  const phoneNumberId =
+    process.env.WHATSAPP_PHONE_NUMBER_ID ??
+    process.env.META_WHATSAPP_PHONE_NUMBER_ID;
+  let wabaId: string | null =
+    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ??
+    process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ??
+    null;
+  let wabaSource = wabaId ? 'env' : 'unset';
+  let phoneLookupError: unknown = null;
+
+  if (phoneNumberId) {
+    try {
+      const pnRes = await fetch(
+        `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}?fields=whatsapp_business_account`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+      );
+      const pnData = await pnRes.json();
+      if (pnRes.ok && pnData?.whatsapp_business_account?.id) {
+        wabaId = pnData.whatsapp_business_account.id;
+        wabaSource = 'phone_lookup';
+      } else {
+        phoneLookupError = pnData;
+      }
+    } catch (e) {
+      phoneLookupError = (e as Error).message;
+    }
+  }
+
+  if (!wabaId) {
+    return NextResponse.json(
+      {
+        error: 'Could not resolve WABA ID',
+        phone_lookup_error: phoneLookupError,
+        phone_number_id_present: !!phoneNumberId,
+      },
       { status: 500 },
     );
   }
