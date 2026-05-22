@@ -66,7 +66,25 @@ export async function GET(req: NextRequest) {
     const data = await res.json();
     if (!res.ok) {
       return NextResponse.json(
-        { error: 'Meta API error', meta: data, status: res.status },
+        {
+          error: 'Meta API error',
+          meta: data,
+          status: res.status,
+          // Surface non-sensitive bits of what was tried so we can diagnose
+          // wrong WABA IDs without revealing the token. Last-4 of the token
+          // helps confirm Vercel picked up the updated env value vs. cached
+          // the old one.
+          debug: {
+            waba_id_tried: wabaId,
+            waba_id_source: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID
+              ? 'WHATSAPP_BUSINESS_ACCOUNT_ID'
+              : process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID
+              ? 'META_WHATSAPP_BUSINESS_ACCOUNT_ID'
+              : 'hardcoded',
+            token_last4: token.slice(-4),
+            graph_version: META_GRAPH_VERSION,
+          },
+        },
         { status: 502 },
       );
     }
