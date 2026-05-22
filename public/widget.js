@@ -57,9 +57,9 @@
   // visitor. If detectLanguage() returns 'en', every label uses STRINGS.en.
   var STRINGS = {
     es: {
-      greeting: '¡Hola! Soy Sol de Oiikon ☀️ ¿Quieres que te ayude a saber qué solar necesitas?',
-      header_subtitle: 'Energía solar para tu familia',
-      open_aria: 'Abrir chat con Sol',
+      greeting: 'Hola, soy Oiikon. ¿Cómo te ayudamos?',
+      header_subtitle: 'Energía solar para tu hogar',
+      open_aria: 'Abrir chat con Oiikon',
       close_aria: 'Cerrar',
       send_aria: 'Enviar',
       input_placeholder: 'Escribe tu mensaje...',
@@ -67,9 +67,9 @@
       fallback_network: 'No pude enviar tu mensaje. Revisa tu conexión y vuelve a intentarlo.',
     },
     en: {
-      greeting: "Hi! I'm Sol from Oiikon ☀️ Want me to help you figure out what solar you need?",
+      greeting: "Hi, I'm Oiikon. How can we help?",
       header_subtitle: 'Solar energy for your home',
-      open_aria: 'Open chat with Sol',
+      open_aria: 'Open chat with Oiikon',
       close_aria: 'Close',
       send_aria: 'Send',
       input_placeholder: 'Type your message...',
@@ -332,7 +332,7 @@
   panel.innerHTML = [
     '<div class="oiikon-sol-header">',
     '  <div class="oiikon-sol-avatar">☀️</div>',
-    '  <div class="oiikon-sol-title">Sol — Oiikon<div class="oiikon-sol-subtitle">' + escapeHtml(T.header_subtitle) + '</div></div>',
+    '  <div class="oiikon-sol-title">Oiikon<div class="oiikon-sol-subtitle">' + escapeHtml(T.header_subtitle) + '</div></div>',
     '  <button class="oiikon-sol-close" aria-label="' + escapeHtml(T.close_aria) + '">×</button>',
     '</div>',
     '<div class="oiikon-sol-messages" id="oiikon-sol-messages"></div>',
