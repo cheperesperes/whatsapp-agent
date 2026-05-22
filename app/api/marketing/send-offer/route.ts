@@ -12,6 +12,9 @@
  *     couponCode: string;            // looked up in discount_codes
  *     audience?: 'all' | 'es' | 'en';
  *     dryRun?: boolean;
+ *     testPhone?: string;            // single-phone delivery test (bypasses audience)
+ *     testLanguage?: 'es' | 'en';
+ *     testName?: string;
  *   }
  *
  * Returns:
@@ -78,7 +81,18 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { templateName, couponCode, audience = 'all', dryRun = false } = body || {};
+  const {
+    templateName,
+    couponCode,
+    audience = 'all',
+    dryRun = false,
+    // testPhone bypasses audience resolution entirely. Use it to send a
+    // single template message to one phone (e.g. for verifying delivery
+    // before blasting real leads). Pair with testLanguage/testName.
+    testPhone,
+    testLanguage,
+    testName,
+  } = body || {};
   if (!templateName) {
     return NextResponse.json(
       { error: 'templateName is required (must be a Meta-approved template name)' },
@@ -88,21 +102,32 @@ export async function POST(req: NextRequest) {
 
   const sb = createServiceClient();
 
-  // 1. Resolve audience from customer_profiles
-  let q = sb.from('customer_profiles').select('phone_number, display_name, language');
-  if (audience === 'es') q = q.eq('language', 'es');
-  else if (audience === 'en') q = q.eq('language', 'en');
-  const { data: leads, error: leadsErr } = await q;
-  if (leadsErr) {
-    return NextResponse.json({ error: `Lead fetch error: ${leadsErr.message}` }, { status: 500 });
-  }
-  const recipList = (leads || []).map((l: any) => ({
-    phone: l.phone_number,
-    language: (l.language || 'es') as 'es' | 'en',
-    name: l.display_name,
-  }));
-  if (recipList.length === 0) {
-    return NextResponse.json({ error: 'No recipients matched audience filter.' }, { status: 400 });
+  let recipList: Array<{ phone: string; language: 'es' | 'en'; name: string | null }>;
+  if (testPhone) {
+    recipList = [
+      {
+        phone: String(testPhone),
+        language: (testLanguage === 'en' ? 'en' : 'es') as 'es' | 'en',
+        name: testName || null,
+      },
+    ];
+  } else {
+    // 1. Resolve audience from customer_profiles
+    let q = sb.from('customer_profiles').select('phone_number, display_name, language');
+    if (audience === 'es') q = q.eq('language', 'es');
+    else if (audience === 'en') q = q.eq('language', 'en');
+    const { data: leads, error: leadsErr } = await q;
+    if (leadsErr) {
+      return NextResponse.json({ error: `Lead fetch error: ${leadsErr.message}` }, { status: 500 });
+    }
+    recipList = (leads || []).map((l: any) => ({
+      phone: l.phone_number,
+      language: (l.language || 'es') as 'es' | 'en',
+      name: l.display_name,
+    }));
+    if (recipList.length === 0) {
+      return NextResponse.json({ error: 'No recipients matched audience filter.' }, { status: 400 });
+    }
   }
 
   // 2. Resolve coupon from shared Oiikon discount_codes table
