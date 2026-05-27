@@ -1096,12 +1096,21 @@ interface CouponRow {
   valid_until: string | null;
 }
 
+interface TemplatePreview {
+  language: string;
+  header?: { type: string; link?: string | null; text?: string | null };
+  body?: { text: string; rendered: string };
+  footer?: { text: string };
+  buttons?: Array<{ type: string; text: string; url?: string | null }>;
+}
+
 interface SendOfferPlan {
   recipientCount: number;
   breakdownByLanguage: { es: number; en: number };
   coupon: { code: string; discount: number; type: string } | null;
   templateName: string;
   sampleRecipients: Array<{ phone: string; language: string; name: string | null }>;
+  templatePreviews?: TemplatePreview[];
 }
 
 interface SendOfferResult {
@@ -1110,6 +1119,74 @@ interface SendOfferResult {
   totalCount: number;
   coupon: { code: string; discount: number; type: string } | null;
   results: Array<{ phone: string; language?: string; success: boolean; error?: unknown; wa_message_id?: string }>;
+}
+
+function WhatsAppMessagePreview({ preview }: { preview: TemplatePreview }) {
+  const flag = preview.language.startsWith('en') ? '🇺🇸' : '🇪🇸';
+  const langLabel = preview.language.startsWith('en') ? 'English' : 'Español';
+  const isImageHeader = preview.header?.type?.toUpperCase() === 'IMAGE';
+  const isTextHeader = preview.header?.type?.toUpperCase() === 'TEXT';
+  const bodyLines = (preview.body?.rendered ?? '').split('\n');
+
+  return (
+    <div className="rounded-lg overflow-hidden border border-surface-600 bg-[#0b141a]">
+      <div className="px-3 py-1.5 bg-surface-800 border-b border-surface-600 flex items-center justify-between">
+        <span className="text-[11px] text-gray-400">
+          {flag} {langLabel} ({preview.language})
+        </span>
+        <span className="text-[10px] text-gray-600 font-mono">WhatsApp</span>
+      </div>
+      <div className="p-3" style={{ background: '#0b141a', backgroundImage: 'radial-gradient(ellipse at top, #0e1b22, #0b141a)' }}>
+        <div className="bg-[#005c4b] rounded-lg max-w-[280px] shadow-md overflow-hidden">
+          {isImageHeader && preview.header?.link && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={preview.header.link}
+              alt="header"
+              className="w-full max-h-48 object-cover"
+            />
+          )}
+          {isTextHeader && preview.header?.text && (
+            <div className="px-3 pt-2 text-sm font-semibold text-white">
+              {preview.header.text}
+            </div>
+          )}
+          <div className="px-3 pt-2 pb-1 text-[13px] leading-snug text-white whitespace-pre-wrap">
+            {bodyLines.map((l, i) => (
+              <p key={i} className="min-h-[1em]">{l}</p>
+            ))}
+          </div>
+          {preview.footer?.text && (
+            <div className="px-3 pb-1 text-[11px] text-white/60 italic">
+              {preview.footer.text}
+            </div>
+          )}
+          <div className="px-3 pb-2 text-[10px] text-white/50 text-right">
+            {new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} ✓✓
+          </div>
+          {preview.buttons && preview.buttons.length > 0 && (
+            <div className="border-t border-white/10 divide-y divide-white/10">
+              {preview.buttons.map((b, i) => (
+                <div
+                  key={i}
+                  className="px-3 py-2 text-center text-[13px] text-[#53bdeb] font-medium"
+                  title={b.url || undefined}
+                >
+                  {b.type === 'URL' ? '🔗 ' : ''}
+                  {b.text}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {preview.buttons?.some((b) => b.url) && (
+          <p className="mt-2 text-[10px] text-gray-600 break-all">
+            URL: {preview.buttons.find((b) => b.url)?.url}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function SendOfferPanel() {
@@ -1242,18 +1319,51 @@ function SendOfferPanel() {
         </div>
 
         {plan && (
-          <div className="bg-surface-800 border border-surface-600 rounded p-3 text-xs space-y-1">
-            <p className="text-gray-300">
-              <strong>Plan:</strong> {plan.recipientCount} destinatarios · ES: {plan.breakdownByLanguage.es}, EN:{' '}
-              {plan.breakdownByLanguage.en}
-            </p>
-            {plan.coupon && (
-              <p className="text-gray-400">
-                <strong>Cupón:</strong> {plan.coupon.code} ·{' '}
-                {plan.coupon.type === 'percentage' ? `${plan.coupon.discount}%` : `$${plan.coupon.discount}`}
+          <div className="space-y-3">
+            <div className="bg-surface-800 border border-surface-600 rounded p-3 text-xs space-y-1">
+              <p className="text-gray-300">
+                <strong>Plan:</strong> {plan.recipientCount} destinatarios · ES: {plan.breakdownByLanguage.es}, EN:{' '}
+                {plan.breakdownByLanguage.en}
               </p>
+              {plan.coupon && (
+                <p className="text-gray-400">
+                  <strong>Cupón:</strong> {plan.coupon.code} ·{' '}
+                  {plan.coupon.type === 'percentage' ? `${plan.coupon.discount}%` : `$${plan.coupon.discount}`}
+                </p>
+              )}
+              <p className="text-gray-500 font-mono text-[10px]">Plantilla: {plan.templateName}</p>
+            </div>
+
+            {plan.templatePreviews && plan.templatePreviews.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                  Vista previa del mensaje (lo que recibe cada lead)
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {plan.templatePreviews.map((tp) => (
+                    <WhatsAppMessagePreview key={tp.language} preview={tp} />
+                  ))}
+                </div>
+              </div>
             )}
-            <p className="text-gray-500 font-mono text-[10px]">Plantilla: {plan.templateName}</p>
+
+            {plan.sampleRecipients && plan.sampleRecipients.length > 0 && (
+              <details className="bg-surface-800/50 border border-surface-600 rounded">
+                <summary className="px-3 py-2 cursor-pointer text-[11px] text-gray-400 hover:bg-surface-800/80">
+                  Primeros {plan.sampleRecipients.length} destinatarios
+                </summary>
+                <div className="border-t border-surface-700 divide-y divide-surface-700 max-h-40 overflow-y-auto">
+                  {plan.sampleRecipients.map((r) => (
+                    <div key={r.phone} className="flex items-center justify-between px-3 py-1.5 text-[11px]">
+                      <span className="text-gray-300 font-mono">+{r.phone}</span>
+                      <span className="text-gray-500">
+                        {r.name || '—'} · {r.language === 'es' ? '🇪🇸' : '🇺🇸'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         )}
 
