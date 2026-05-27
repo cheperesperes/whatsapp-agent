@@ -172,8 +172,77 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 3. Dry-run mode returns plan
+  // 3. Dry-run mode returns plan + rendered template preview
   if (dryRun) {
+    // Fetch the Meta template components so the UI can render an exact
+    // WhatsApp-bubble preview of what each recipient sees. We try both
+    // languages so the preview matches per-language audience splits.
+    const templatePreviews: Array<{
+      language: string;
+      header?: { type: string; link?: string | null; text?: string | null };
+      body?: { text: string; rendered: string };
+      footer?: { text: string };
+      buttons?: Array<{ type: string; text: string; url?: string | null }>;
+    }> = [];
+    try {
+      const wabaResolveRes = await fetch(
+        `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}?fields=whatsapp_business_account`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+      );
+      const wabaResolveData = await wabaResolveRes.json();
+      const wabaId = wabaResolveData?.whatsapp_business_account?.id;
+      if (wabaId) {
+        const tRes = await fetch(
+          `https://graph.facebook.com/${META_GRAPH_VERSION}/${wabaId}/message_templates?fields=name,language,components&name=${encodeURIComponent(templateName)}&limit=10`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+        );
+        const tData = await tRes.json();
+        for (const tpl of tData.data || []) {
+          if (tpl.name !== templateName) continue;
+          const tplLang = tpl.language || 'es';
+          const sampleName = tplLang.startsWith('en') ? 'friend' : 'amigo/a';
+          const sampleCode = coupon?.code || '';
+          const sampleDiscount = discountText(coupon, tplLang.startsWith('en') ? 'en' : 'es');
+          const sub = [sampleName, sampleCode, sampleDiscount];
+          let header: any;
+          let body: any;
+          let footer: any;
+          let buttons: any[] | undefined;
+          for (const comp of tpl.components || []) {
+            const type = (comp.type || '').toUpperCase();
+            if (type === 'HEADER') {
+              header = {
+                type: comp.format || 'TEXT',
+                link:
+                  comp.example?.header_handle?.[0] ||
+                  comp.example?.header_url?.[0] ||
+                  null,
+                text: comp.text || null,
+              };
+            } else if (type === 'BODY') {
+              const raw = comp.text || '';
+              const rendered = raw.replace(/\{\{\s*(\d+)\s*\}\}/g, (_: string, n: string) => {
+                const idx = Number(n) - 1;
+                return sub[idx] ?? `{{${n}}}`;
+              });
+              body = { text: raw, rendered };
+            } else if (type === 'FOOTER') {
+              footer = { text: comp.text || '' };
+            } else if (type === 'BUTTONS') {
+              buttons = (comp.buttons || []).map((b: any) => ({
+                type: (b.type || '').toUpperCase(),
+                text: b.text || '',
+                url: b.url || null,
+              }));
+            }
+          }
+          templatePreviews.push({ language: tplLang, header, body, footer, buttons });
+        }
+      }
+    } catch {
+      /* preview is best-effort; plan summary still returns */
+    }
+
     return NextResponse.json({
       dryRun: true,
       recipientCount: recipList.length,
@@ -194,6 +263,7 @@ export async function POST(req: NextRequest) {
         language: r.language,
         name: r.name,
       })),
+      templatePreviews,
     });
   }
 
