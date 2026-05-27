@@ -186,13 +186,27 @@ export async function POST(req: NextRequest) {
     }> = [];
     let previewDebug: any = null;
     try {
-      const wabaResolveRes = await fetch(
-        `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}?fields=whatsapp_business_account`,
-        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
-      );
-      const wabaResolveData = await wabaResolveRes.json();
-      const wabaId = wabaResolveData?.whatsapp_business_account?.id;
-      previewDebug = { wabaId: wabaId ?? null, wabaResolveOk: wabaResolveRes.ok };
+      // Mirror /api/marketing/templates WABA resolution: env first, then
+      // phone-number lookup as fallback. Pure phone-lookup was returning
+      // wabaResolveOk=false in prod even though the same call works in
+      // the templates route — env-cached value is more reliable.
+      let wabaId: string | null =
+        process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ??
+        process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ??
+        null;
+      let wabaSource = wabaId ? 'env' : 'unset';
+      if (!wabaId && phoneId) {
+        const wabaResolveRes = await fetch(
+          `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}?fields=whatsapp_business_account`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+        );
+        const wabaResolveData = await wabaResolveRes.json();
+        if (wabaResolveRes.ok && wabaResolveData?.whatsapp_business_account?.id) {
+          wabaId = wabaResolveData.whatsapp_business_account.id;
+          wabaSource = 'phone_lookup';
+        }
+      }
+      previewDebug = { wabaId: wabaId ?? null, wabaSource };
       if (wabaId) {
         const tRes = await fetch(
           `https://graph.facebook.com/${META_GRAPH_VERSION}/${wabaId}/message_templates?fields=name,language,components&limit=100`,
