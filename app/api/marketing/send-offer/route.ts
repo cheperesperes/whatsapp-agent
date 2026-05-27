@@ -184,6 +184,7 @@ export async function POST(req: NextRequest) {
       footer?: { text: string };
       buttons?: Array<{ type: string; text: string; url?: string | null }>;
     }> = [];
+    let previewDebug: any = null;
     try {
       const wabaResolveRes = await fetch(
         `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}?fields=whatsapp_business_account`,
@@ -191,13 +192,21 @@ export async function POST(req: NextRequest) {
       );
       const wabaResolveData = await wabaResolveRes.json();
       const wabaId = wabaResolveData?.whatsapp_business_account?.id;
+      previewDebug = { wabaId: wabaId ?? null, wabaResolveOk: wabaResolveRes.ok };
       if (wabaId) {
         const tRes = await fetch(
-          `https://graph.facebook.com/${META_GRAPH_VERSION}/${wabaId}/message_templates?fields=name,language,components&name=${encodeURIComponent(templateName)}&limit=10`,
+          `https://graph.facebook.com/${META_GRAPH_VERSION}/${wabaId}/message_templates?fields=name,language,components&limit=100`,
           { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
         );
         const tData = await tRes.json();
-        for (const tpl of tData.data || []) {
+        const allTemplates = tData.data || [];
+        previewDebug = {
+          ...previewDebug,
+          templatesOk: tRes.ok,
+          templatesCount: allTemplates.length,
+          matchedCount: allTemplates.filter((x: any) => x.name === templateName).length,
+        };
+        for (const tpl of allTemplates) {
           if (tpl.name !== templateName) continue;
           const tplLang = tpl.language || 'es';
           const sampleName = tplLang.startsWith('en') ? 'friend' : 'amigo/a';
@@ -239,8 +248,8 @@ export async function POST(req: NextRequest) {
           templatePreviews.push({ language: tplLang, header, body, footer, buttons });
         }
       }
-    } catch {
-      /* preview is best-effort; plan summary still returns */
+    } catch (e: any) {
+      previewDebug = { error: e?.message ?? String(e) };
     }
 
     return NextResponse.json({
@@ -264,6 +273,7 @@ export async function POST(req: NextRequest) {
         name: r.name,
       })),
       templatePreviews,
+      previewDebug,
     });
   }
 
