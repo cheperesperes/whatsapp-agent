@@ -668,67 +668,185 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
 }
 
 /**
- * The "featured" promo Sol should surface in chat. Named by the
- * FEATURED_COUPON_CODE env var (set in Vercel) and looked up read-only in
- * the shared discount_codes table. Unset env / expired / missing code all
- * return null → Sol behaves exactly as before (no promo nudge). This keeps
- * the feature flag-style: flip it on by setting the env, off by clearing it,
- * with no schema change to the shared checkout table.
+ * A presentable promo from the shared `discount_codes` table. Sol never
+ * picks among these herself — the server computes the single best margin-safe
+ * offer per SKU (see `selectBestOffer`) and injects only that one, so the LLM
+ * never sees cost data and can't over-promise a code checkout would reject.
  */
-export interface FeaturedCoupon {
+export interface Offer {
   code: string;
+  description: string | null;
   discount_type: 'percentage' | 'fixed_amount';
   discount_value: number;
   min_order_total: number | null;
+  max_discount: number | null;
   eligible_brand: string | null;
+  min_margin_pct: number | null;
   valid_until: string | null;
 }
 
-export async function loadFeaturedCoupon(): Promise<FeaturedCoupon | null> {
-  const code = (process.env.FEATURED_COUPON_CODE ?? '').trim();
-  if (!code) return null;
-  const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from('discount_codes')
-    .select('code, discount_type, discount_value, min_order_total, eligible_brand, valid_until')
-    .eq('code', code)
-    .eq('is_active', true)
-    .maybeSingle();
-  if (error || !data) return null;
-  // Respect expiry — never surface a dead promo.
-  if (data.valid_until && new Date(data.valid_until).getTime() < Date.now()) return null;
-  return data as FeaturedCoupon;
+// Codes Sol may auto-present in organic chat. Public, non-segment only:
+// excludes diaspora-targeted (FAMILIA*) and paid-traffic vanity codes
+// (EARLYBUYER15), and the high-floor OFERTA15 (20% floor fails margin on
+// virtually every PECRON SKU). Override without a deploy via the
+// SOL_PRESENTABLE_COUPONS env (comma-separated list of codes).
+const DEFAULT_PRESENTABLE_COUPONS = [
+  'MEMORIAL100', 'PECRON7', 'E3800SAVE50', 'FAMILIA_F5000',
+  'WELCOME50', 'BIENVENIDO10', 'SAVE5', 'HURRICANE5',
+];
+
+function presentableCouponCodes(): string[] {
+  const env = (process.env.SOL_PRESENTABLE_COUPONS ?? '').trim();
+  if (!env) return DEFAULT_PRESENTABLE_COUPONS;
+  return env.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 /**
- * Render the featured promo as an instruction block appended to Sol's
- * catalog context. Returns '' when there's no featured coupon so the prompt
- * is unchanged. Sol is told to surface the code ONLY when the product she's
- * quoting actually qualifies (brand + min order), and that checkout is the
- * authoritative gate — she never promises eligibility she can't verify.
+ * Load the active, in-window, presentable coupons from the shared table.
+ * Returns [] when none — Sol then quotes plain catalog prices with no nudge.
  */
-export function formatFeaturedCouponForPrompt(coupon: FeaturedCoupon | null): string {
-  if (!coupon) return '';
-  const valueStr =
-    coupon.discount_type === 'percentage'
-      ? `${Number(coupon.discount_value)}% de descuento`
-      : `$${Number(coupon.discount_value).toFixed(0)} de descuento`;
-  const minStr = coupon.min_order_total
-    ? `pedido mínimo $${Number(coupon.min_order_total).toFixed(0)}`
-    : 'sin mínimo';
-  const brandStr = coupon.eligible_brand ? `solo marca ${coupon.eligible_brand}` : 'cualquier marca';
-  let expiryStr = '';
-  if (coupon.valid_until) {
-    const d = new Date(coupon.valid_until);
-    expiryStr = ` · vence ${d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}`;
+export async function loadActiveOffers(): Promise<Offer[]> {
+  const codes = presentableCouponCodes();
+  if (codes.length === 0) return [];
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('discount_codes')
+    .select('code, description, discount_type, discount_value, min_order_total, max_discount, eligible_brand, min_margin_pct, valid_until')
+    .eq('is_active', true)
+    .in('code', codes);
+  if (error || !data) return [];
+  const now = Date.now();
+  return (data as Offer[]).filter(
+    (o) => !o.valid_until || new Date(o.valid_until).getTime() >= now,
+  );
+}
+
+/**
+ * Map of lower-cased SKU → wholesale cost, read from the Oiikon-owned
+ * `products` table. Used ONLY server-side to gate offers on margin; cost is
+ * never placed in Sol's prompt. Missing rows just omit the SKU.
+ */
+export async function loadProductCosts(): Promise<Record<string, number>> {
+  const supabase = createServiceClient();
+  const { data, error } = await supabase.from('products').select('sku, cost_price');
+  if (error || !data) return {};
+  const map: Record<string, number> = {};
+  for (const row of data as { sku: string | null; cost_price: number | null }[]) {
+    if (row.sku && row.cost_price != null) {
+      map[row.sku.toLowerCase()] = Number(row.cost_price);
+    }
   }
+  return map;
+}
+
+export interface SelectedOffer {
+  code: string;
+  /** Dollars off the effective (post product-discount) price. */
+  savings: number;
+  /** Price after applying this coupon. */
+  finalPrice: number;
+  /** Human label, e.g. "7% de descuento" or "$100 de descuento". */
+  label: string;
+}
+
+/**
+ * Pick the single best margin-safe offer for ONE product, or null if none
+ * qualifies. "Best" = largest customer savings among offers that:
+ *  - match brand (eligible_brand null = any brand, else case-insensitive ==)
+ *  - effectivePrice >= min_order_total
+ *  - leave gross margin (finalPrice - cost) / finalPrice >= min_margin_pct
+ *
+ * Gross-margin formula validated 2026-05-28 against the MEMORIAL20
+ * deactivation: 20% off drops E3800LFP from 19.9% to -0.1% margin, matching
+ * the operator note "20% kills margin on all PECRON SKUs". When cost is
+ * unknown we cannot verify the floor, so we conservatively skip any
+ * floor-bearing offer rather than quote one checkout might reject.
+ *
+ * Pure function — exported for unit testing.
+ */
+export function selectBestOffer(
+  effectivePrice: number,
+  brand: string,
+  cost: number | null,
+  offers: Offer[],
+): SelectedOffer | null {
+  let best: SelectedOffer | null = null;
+
+  for (const o of offers) {
+    if (o.eligible_brand && o.eligible_brand.toLowerCase() !== brand.toLowerCase()) continue;
+    if (o.min_order_total != null && effectivePrice < Number(o.min_order_total)) continue;
+
+    let savings =
+      o.discount_type === 'percentage'
+        ? effectivePrice * (Number(o.discount_value) / 100)
+        : Number(o.discount_value);
+    if (o.max_discount != null) savings = Math.min(savings, Number(o.max_discount));
+    if (savings <= 0) continue;
+
+    const finalPrice = effectivePrice - savings;
+
+    if (o.min_margin_pct != null) {
+      if (cost == null) continue; // can't verify floor → don't risk it
+      const margin = finalPrice > 0 ? ((finalPrice - cost) / finalPrice) * 100 : -Infinity;
+      if (margin < Number(o.min_margin_pct)) continue;
+    }
+
+    if (!best || savings > best.savings) {
+      best = {
+        code: o.code,
+        savings: Math.round(savings * 100) / 100,
+        finalPrice: Math.round(finalPrice * 100) / 100,
+        label:
+          o.discount_type === 'percentage'
+            ? `${Number(o.discount_value)}% de descuento`
+            : `$${Number(o.discount_value).toFixed(0)} de descuento`,
+      };
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Build the per-SKU "best offer" block appended to Sol's catalog context.
+ * For each in-stock product we compute the single best margin-safe offer and
+ * list ONLY that one. Sol is told to present exactly the listed code for the
+ * equipment in question and never to list multiple or invent codes. Returns
+ * '' when no product has any applicable offer (prompt unchanged).
+ */
+export function formatOffersForPrompt(
+  products: AgentProduct[],
+  offers: Offer[],
+  costBySku: Record<string, number>,
+): string {
+  if (offers.length === 0) return '';
+
+  const lines: string[] = [];
+  for (const p of products) {
+    if (!p.in_stock) continue;
+    const discount = Math.max(0, Math.min(50, p.discount_percentage ?? 0));
+    const effective = discount > 0 ? p.sell_price * (1 - discount / 100) : p.sell_price;
+    const cost = costBySku[p.sku.toLowerCase()] ?? null;
+    const best = selectBestOffer(effective, p.brand, cost, offers);
+    if (best) {
+      lines.push(
+        `• ${p.sku}: código *${best.code}* — ${best.label} (ahorra ~$${best.savings.toFixed(2)}, queda ~$${best.finalPrice.toFixed(2)})`,
+      );
+    }
+  }
+  if (lines.length === 0) return '';
+
   return [
     '',
-    '=== OFERTA DESTACADA ACTIVA (PROMO DEL MOMENTO) ===',
-    `Código: *${coupon.code}* — ${valueStr} (${brandStr}, ${minStr}${expiryStr}).`,
-    'Cuándo mencionarlo: cuando cotices un producto que CALIFICA (marca correcta y precio ≥ el mínimo), SIEMPRE incluye el código y el ahorro en tu respuesta — es un lever de conversión.',
-    `Formato sugerido: "Y con el código *${coupon.code}* ahorras ${valueStr} al pagar${expiryStr ? ' — ' + expiryStr.replace(' · ', '') : ''}."`,
-    'Reglas: el descuento se aplica en el checkout de oiikon.com (tú no lo aplicas). No lo menciones para productos que NO califican (marca distinta o precio bajo el mínimo). No inventes otros códigos ni apiles descuentos.',
+    '=== MEJOR OFERTA POR EQUIPO (una sola, ya validada por margen) ===',
+    'Para cada SKU de abajo ya calculamos LA única oferta aplicable (filtrada por marca, pedido mínimo y margen). Es la ÚNICA que puedes presentar para ese equipo.',
+    ...lines,
+    '',
+    'Reglas de oferta (OBLIGATORIAS):',
+    '• Presenta SOLO el código listado arriba para el equipo en cuestión. NUNCA listes varios cupones ni inventes otros códigos.',
+    '• Si un equipo NO aparece en esta lista, no tiene oferta aplicable — cotiza el precio normal del catálogo, sin cupón.',
+    '• Aunque la pregunta no sea de precio (garantía, specs, compatibilidad), responde primero lo que preguntó y luego añade UNA línea con la oferta del equipo.',
+    '• El descuento se aplica en el checkout de oiikon.com (tú no lo aplicas). Presenta el ahorro como aproximado: "con el código *CÓDIGO* ahorras alrededor de $X".',
     '',
   ].join('\n');
 }
