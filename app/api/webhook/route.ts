@@ -84,6 +84,15 @@ const HOURLY_MESSAGE_CAP = Number(process.env.HOURLY_MESSAGE_CAP ?? 40);
 
 const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
 
+// When Sol's AI generation path fails (Anthropic down, bad/expired key,
+// exhausted credits, timeout), ping the operator on WhatsApp — throttled to
+// one alert per cooldown so a sustained outage doesn't fire on every inbound
+// message. In-memory, so per-lambda-instance; that's fine for a "Sol is down"
+// heartbeat (worst case: one alert per warm instance per cooldown). This is
+// the safety net that turns a silent multi-hour outage into a notification.
+const OPERATOR_AI_ALERT_COOLDOWN_MS = 15 * 60_000;
+let lastOperatorAiAlertAt = 0;
+
 // Escape hatch for the Meta signature check — needed during initial onboarding
 // before META_APP_SECRET is set. Production MUST NOT set this; once the App
 // Secret is in Vercel, drop this flag.
@@ -643,6 +652,32 @@ async function processWebhookLocked(
       `[WEBHOOK] AI error for ${senderPhone} (timeout=${isTimeout}):`,
       err
     );
+
+    // Throttled operator heartbeat: turn a silent outage into a WhatsApp
+    // ping. Best-effort + non-blocking — never delays the customer fallback
+    // below and never throws out of the catch. We stamp the timestamp before
+    // sending so a failed alert send still respects the cooldown (no retry
+    // storm). The operator alert goes through Meta, which is independent of
+    // the (likely Anthropic) failure that landed us here.
+    const nowMs = Date.now();
+    if (nowMs - lastOperatorAiAlertAt > OPERATOR_AI_ALERT_COOLDOWN_MS) {
+      lastOperatorAiAlertAt = nowMs;
+      const errShort = (err instanceof Error ? err.message : String(err)).slice(0, 160);
+      waitUntil(
+        sendWhatsAppMessage(
+          OPERATOR_PHONE,
+          [
+            '⚠️ Sol no está respondiendo (error de IA).',
+            'Los clientes están recibiendo el mensaje de respaldo, no respuestas reales.',
+            `Detalle: ${errShort}${isTimeout ? ' (timeout)' : ''}`,
+            'Revisa facturación/clave de Anthropic + logs de Vercel (/api/webhook).',
+          ].join('\n')
+        ).catch((alertErr) =>
+          console.error('[WEBHOOK] operator AI-alert send failed:', alertErr)
+        )
+      );
+    }
+
     const fallback = isTimeout
       ? 'Estoy tardando más de lo normal en responder. ¿Podría repetir su mensaje? Si persiste, un especialista le contactará.'
       : 'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.';
