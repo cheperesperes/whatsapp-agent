@@ -12,6 +12,8 @@ import {
   getConversationByPhone,
   loadAgentCatalog,
   formatProductCatalogForPrompt,
+  loadFeaturedCoupon,
+  formatFeaturedCouponForPrompt,
   getDashboardStats,
   loadKnowledgeBase,
   formatKnowledgeBaseForPrompt,
@@ -377,7 +379,7 @@ async function processWebhookLocked(
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats, featuredCoupon] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
@@ -385,6 +387,7 @@ async function processWebhookLocked(
       getRecentDispatchedSkus(conversation.id),
       loadCompetitorModels(),
       loadCompetitorStats(),
+      loadFeaturedCoupon(),
     ]);
 
     // Fire-and-forget: learn from competitor mentions in this message.
@@ -402,7 +405,7 @@ async function processWebhookLocked(
 
     const historyWithoutLast = history.slice(0, -1);
 
-    const catalog = formatProductCatalogForPrompt(products);
+    const catalog = formatProductCatalogForPrompt(products) + formatFeaturedCouponForPrompt(featuredCoupon);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
     const competitorPrompt =
