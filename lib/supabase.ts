@@ -586,7 +586,32 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
 
   if (error) throw new Error(`Failed to load agent catalog: ${error.message}`);
 
-  return data ?? [];
+  const rows = (data ?? []) as AgentProduct[];
+  if (rows.length === 0) return rows;
+
+  // Attach the live product-page URL (from products.slug) so the agent catalog
+  // carries price + stock + LINK all from the DB. Without this, links had to
+  // live in AGENT_PROMPT.md, which drifted out of sync (stale prices, bogus
+  // "coming soon" flags). Best-effort: a missing slug just omits the link for
+  // that SKU rather than failing the whole catalog load.
+  const skus = rows.map((r) => r.sku).filter(Boolean);
+  const { data: slugRows, error: slugErr } = await supabase
+    .from('products')
+    .select('sku, slug')
+    .in('sku', skus);
+  if (slugErr) {
+    console.warn('[loadAgentCatalog] product slug lookup failed:', slugErr.message);
+    return rows;
+  }
+  const slugBySku = new Map<string, string>();
+  for (const r of (slugRows ?? []) as { sku: string | null; slug: string | null }[]) {
+    if (r.sku && r.slug) slugBySku.set(r.sku.toUpperCase(), r.slug);
+  }
+  for (const r of rows) {
+    const slug = r.sku ? slugBySku.get(r.sku.toUpperCase()) : undefined;
+    r.product_url = slug ? `https://oiikon.com/product/${slug}` : null;
+  }
+  return rows;
 }
 
 /**
@@ -615,8 +640,8 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
   }
 
   const lines: string[] = [
-    '=== CATÁLOGO ACTUAL DE OIIKON ===',
-    'Cada producto muestra el precio en EE.UU. (sell_price con descuento aplicado si hay) y el descuento activo si aplica. Oiikon envía únicamente dentro de los 48 estados continentales — no muestres precios ni envíos internacionales.',
+    '=== CATÁLOGO ACTUAL DE OIIKON (FUENTE DE VERDAD — EN VIVO DESDE LA BASE DE DATOS) ===',
+    'Este bloque se genera en cada mensaje desde la base de datos: es la ÚNICA fuente válida para PRECIO, DISPONIBILIDAD (solo aparecen productos EN STOCK) y LINK de cada producto. Usa SIEMPRE estos valores y NUNCA cites un precio, un estado de stock, ni un link desde tu memoria, ejemplos, ni tablas del prompt. Cada producto muestra el precio en EE.UU. (sell_price con descuento aplicado si hay) y el descuento activo si aplica. Oiikon envía únicamente dentro de los 48 estados continentales — no muestres precios ni envíos internacionales.',
   ];
 
   for (const [cat, prods] of Object.entries(grouped)) {
@@ -660,6 +685,7 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
       }
 
       lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}`);
+      if (p.product_url) lines.push(`  Link: ${p.product_url}`);
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
     }
   }

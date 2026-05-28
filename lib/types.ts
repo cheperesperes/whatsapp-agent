@@ -87,6 +87,10 @@ export interface AgentProduct {
   product_id: string | null;
   sku: string;
   name: string;
+  /** Product-page URL, attached at load time from products.slug (NOT a column
+   * of agent_product_catalog). Lets the live catalog carry the link so it never
+   * goes stale in the static prompt. */
+  product_url?: string | null;
   category: string;
   brand: string;
   sell_price: number;
