@@ -9,9 +9,9 @@
  *
  * The production problem: Sol was treating these openers as literal questions
  * and dumping the catalog on turn 1. That overwhelms a curious ad-clicker
- * and loses the moment before they've even told us whether they're buying
- * for USA or for family in Cuba. Catalog-dumping is the opposite of what a
- * trained salesperson does.
+ * and loses the moment before they've even told us what they need it for —
+ * whole-home backup, outage essentials, RV, or off-grid. Catalog-dumping is
+ * the opposite of what a trained salesperson does.
  *
  * This module:
  *   • detects canonical ad openers (case / accent / punctuation tolerant,
@@ -197,7 +197,7 @@ export function formatAdArrivalDirective(match: AdOpenerMatch): string {
       '',
       'YOUR REPLY MUST:',
       '• Greet warmly and introduce yourself as Sol from Oiikon (1 short line).',
-      '• Ask ONE qualifying question — pick ONE: "Is this for your own home, or to send to family in Cuba?" / "What are you looking to power — your whole house, a few essentials during outages, or an RV/off-grid setup?"',
+      '• Ask ONE qualifying question — pick ONE: "What are you looking to power — your whole house, a few essentials during outages, or an RV/off-grid setup?" / "Are you getting ready for hurricane season, or do you need backup for everyday outages?"',
       '• Stay under 3 short lines total. Friendly, not salesy.',
       '',
       'YOUR REPLY MUST NOT:',
@@ -215,7 +215,7 @@ export function formatAdArrivalDirective(match: AdOpenerMatch): string {
     '',
     'TU RESPUESTA DEBE:',
     '• Saludar cálidamente y presentarte como Sol de Oiikon (1 línea corta).',
-    '• Hacer UNA sola pregunta de calificación — elige UNA: "¿Es para su casa aquí o para enviar a familia en Cuba?" / "¿Qué busca alimentar — toda la casa, lo esencial durante apagones, o un sistema off-grid?"',
+    '• Hacer UNA sola pregunta de calificación — elige UNA: "¿Qué busca alimentar — toda la casa, lo esencial durante apagones, o un sistema off-grid?" / "¿Se está preparando para la temporada de huracanes o necesita respaldo para los apagones del día a día?"',
     '• Mantenerse en 3 líneas cortas máximo. Amable, no vendedora.',
     '',
     'TU RESPUESTA NO DEBE:',
