@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react';
 interface Campaign {
   id: string;
   date: string;
+  language?: string | null;
   status: string;
   daily_theme: string | null;
   product_sku: string | null;
@@ -340,19 +341,25 @@ export default function MarketingPage() {
       category?: string | null;
       productSku?: string | null;
       guidance?: string | null;
+      language?: 'es' | 'en' | 'both';
     } = {}
   ) {
-    const { force = false, category, productSku, guidance } = options;
+    const { force = false, category, productSku, guidance, language = 'es' } = options;
     if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
     try {
-      const qs = new URLSearchParams();
-      if (force) qs.set('force', 'true');
-      if (category) qs.set('category', category);
-      if (productSku) qs.set('product_sku', productSku);
-      if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
-      const suffix = qs.toString() ? `?${qs.toString()}` : '';
-      await fetch(`/api/cron/marketing-daily${suffix}`, { cache: 'no-store' });
+      // 'both' = generate a Spanish campaign and an English campaign for today
+      // (separate posts). Each is its own per-(date,language) campaign.
+      const langs: Array<'es' | 'en'> = language === 'both' ? ['es', 'en'] : [language];
+      for (const lang of langs) {
+        const qs = new URLSearchParams();
+        if (force) qs.set('force', 'true');
+        if (category) qs.set('category', category);
+        if (productSku) qs.set('product_sku', productSku);
+        if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
+        qs.set('language', lang);
+        await fetch(`/api/cron/marketing-daily?${qs.toString()}`, { cache: 'no-store' });
+      }
     } finally {
       setGenerating(false);
       reload();
@@ -540,6 +547,9 @@ function CampaignHero({
             <p className="text-lg text-gray-100 font-semibold mt-1 leading-snug">{campaign.daily_theme}</p>
           )}
           <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
+            <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">
+              {campaign.language === 'en' ? '🇺🇸 English' : '🇪🇸 Español'}
+            </span>
             {categoryLabel && (
               <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">{categoryLabel}</span>
             )}
@@ -673,11 +683,15 @@ function CategoryLauncher({
   busy,
 }: {
   products: Product[];
-  onPick: (cat: string, opts: { productSku?: string | null; guidance?: string | null }) => void;
+  onPick: (
+    cat: string,
+    opts: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both' },
+  ) => void;
   busy: boolean;
 }) {
   const [productSku, setProductSku] = useState<string>('');
   const [guidance, setGuidance] = useState<string>('');
+  const [language, setLanguage] = useState<'es' | 'en' | 'both'>('es');
 
   return (
     <div className="card p-6">
@@ -697,12 +711,40 @@ function CategoryLauncher({
         />
       </div>
 
+      <div className="mb-4">
+        <label className="block text-[11px] text-gray-500 mb-1">Idioma</label>
+        <div className="flex gap-2">
+          {([
+            ['es', '🇪🇸 Español'],
+            ['en', '🇺🇸 English'],
+            ['both', '🌐 Ambos'],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setLanguage(val)}
+              disabled={busy}
+              className={`flex-1 text-xs px-2 py-1.5 rounded border transition-colors disabled:opacity-50 ${
+                language === val
+                  ? 'bg-brand-500 border-brand-500 text-white'
+                  : 'bg-surface-800 border-surface-600 text-gray-300 hover:bg-surface-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-gray-600 mt-1">
+          &quot;Ambos&quot; genera un post en español y otro en inglés (el video se crea solo para el español).
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {CATEGORIES.map((c) => (
           <button
             key={c.value}
             type="button"
-            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null })}
+            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null, language })}
             disabled={busy}
             className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
           >

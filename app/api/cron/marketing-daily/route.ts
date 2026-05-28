@@ -63,8 +63,17 @@ export async function GET(req: NextRequest) {
   const guidanceParam = req.nextUrl.searchParams.get('guidance')?.trim() ?? '';
   const guidance = guidanceParam ? guidanceParam.slice(0, 2000) : null;
 
-  // Skip if already ran today (unless force=true)
-  let existing = await getCampaignByDate(today);
+  // Language of THIS campaign. Default 'es' so the scheduled cron and any
+  // legacy callers behave exactly as before. The dashboard sends 'en' for the
+  // English variant. Video (HeyGen, the costly step) is only produced for the
+  // primary language to keep cost at one video/day.
+  const langParam = req.nextUrl.searchParams.get('language');
+  const language: 'es' | 'en' = langParam === 'en' ? 'en' : 'es';
+  const PRIMARY_LANGUAGE: 'es' | 'en' = 'es';
+  const makeVideo = language === PRIMARY_LANGUAGE;
+
+  // Skip if already ran today for THIS language (unless force=true)
+  let existing = await getCampaignByDate(today, language);
   if (existing && !force && !['failed'].includes(existing.status)) {
     return NextResponse.json({
       ok: true,
@@ -86,7 +95,7 @@ export async function GET(req: NextRequest) {
   try {
     // ── Step 1: Create or reset campaign record ────────────────────────────
     if (!existing) {
-      const campaign = await createCampaign(today, category);
+      const campaign = await createCampaign(today, category, language);
       campaignId = campaign.id;
     } else {
       // Retry failed / force-regenerate
@@ -140,6 +149,7 @@ export async function GET(req: NextRequest) {
     const content = await generateMarketingContent(fullBrief, products, category, {
       productSku,
       guidance,
+      language,
     });
 
     const warnings = validateContent(content);
@@ -166,6 +176,28 @@ export async function GET(req: NextRequest) {
       youtube_tags: content.youtube_tags,
       video_status: 'pending',
     });
+
+    // ── Step 6b: Non-primary language → skip video (one video/day) ─────────
+    // The English variant ships as text-only so we don't pay for a second
+    // HeyGen render. It goes straight to approval; the operator can attach a
+    // video manually if a topic warrants it.
+    if (!makeVideo) {
+      const { updateContent } = await import('@/lib/marketing/db');
+      await updateContent(campaignId, { video_status: 'skipped' });
+      await updateCampaign(campaignId, { status: 'pending_approval' });
+      const { sendMarketingPreview } = await import('@/lib/marketing/notify');
+      await sendMarketingPreview(campaignId, null);
+      return NextResponse.json({
+        ok: true,
+        run_id: runId,
+        campaign_id: campaignId,
+        language,
+        status: 'pending_approval_no_video',
+        theme: content.daily_theme,
+        product: content.product_sku,
+        duration_ms: Date.now() - startedAt,
+      });
+    }
 
     // ── Step 7: Submit HeyGen video job ────────────────────────────────────
     // Pull up to 3 product images so HeyGen can build a multi-scene Reel with
