@@ -63,7 +63,9 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [savedId, setSavedId] = useState<string | null>(null);
-  const [region, setRegion] = useState<'cuba' | 'usa'>('cuba');
+  // USA-only since 2026-05 lockdown — operator can still flip to Cuba if needed
+  // for legacy data inspection, but defaulting to Cuba sent the wrong signal.
+  const [region, setRegion] = useState<'cuba' | 'usa'>('usa');
 
   const supabase = createBrowserClient();
 
