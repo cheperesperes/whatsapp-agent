@@ -668,6 +668,72 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
 }
 
 /**
+ * The "featured" promo Sol should surface in chat. Named by the
+ * FEATURED_COUPON_CODE env var (set in Vercel) and looked up read-only in
+ * the shared discount_codes table. Unset env / expired / missing code all
+ * return null → Sol behaves exactly as before (no promo nudge). This keeps
+ * the feature flag-style: flip it on by setting the env, off by clearing it,
+ * with no schema change to the shared checkout table.
+ */
+export interface FeaturedCoupon {
+  code: string;
+  discount_type: 'percentage' | 'fixed_amount';
+  discount_value: number;
+  min_order_total: number | null;
+  eligible_brand: string | null;
+  valid_until: string | null;
+}
+
+export async function loadFeaturedCoupon(): Promise<FeaturedCoupon | null> {
+  const code = (process.env.FEATURED_COUPON_CODE ?? '').trim();
+  if (!code) return null;
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('discount_codes')
+    .select('code, discount_type, discount_value, min_order_total, eligible_brand, valid_until')
+    .eq('code', code)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error || !data) return null;
+  // Respect expiry — never surface a dead promo.
+  if (data.valid_until && new Date(data.valid_until).getTime() < Date.now()) return null;
+  return data as FeaturedCoupon;
+}
+
+/**
+ * Render the featured promo as an instruction block appended to Sol's
+ * catalog context. Returns '' when there's no featured coupon so the prompt
+ * is unchanged. Sol is told to surface the code ONLY when the product she's
+ * quoting actually qualifies (brand + min order), and that checkout is the
+ * authoritative gate — she never promises eligibility she can't verify.
+ */
+export function formatFeaturedCouponForPrompt(coupon: FeaturedCoupon | null): string {
+  if (!coupon) return '';
+  const valueStr =
+    coupon.discount_type === 'percentage'
+      ? `${Number(coupon.discount_value)}% de descuento`
+      : `$${Number(coupon.discount_value).toFixed(0)} de descuento`;
+  const minStr = coupon.min_order_total
+    ? `pedido mínimo $${Number(coupon.min_order_total).toFixed(0)}`
+    : 'sin mínimo';
+  const brandStr = coupon.eligible_brand ? `solo marca ${coupon.eligible_brand}` : 'cualquier marca';
+  let expiryStr = '';
+  if (coupon.valid_until) {
+    const d = new Date(coupon.valid_until);
+    expiryStr = ` · vence ${d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}`;
+  }
+  return [
+    '',
+    '=== OFERTA DESTACADA ACTIVA (PROMO DEL MOMENTO) ===',
+    `Código: *${coupon.code}* — ${valueStr} (${brandStr}, ${minStr}${expiryStr}).`,
+    'Cuándo mencionarlo: cuando cotices un producto que CALIFICA (marca correcta y precio ≥ el mínimo), SIEMPRE incluye el código y el ahorro en tu respuesta — es un lever de conversión.',
+    `Formato sugerido: "Y con el código *${coupon.code}* ahorras ${valueStr} al pagar${expiryStr ? ' — ' + expiryStr.replace(' · ', '') : ''}."`,
+    'Reglas: el descuento se aplica en el checkout de oiikon.com (tú no lo aplicas). No lo menciones para productos que NO califican (marca distinta o precio bajo el mínimo). No inventes otros códigos ni apiles descuentos.',
+    '',
+  ].join('\n');
+}
+
+/**
  * Resolve a product image URL by SKU (case-insensitive).
  * Tries `primary_image_url` → first usable `gallery_images` entry → legacy
  * `image_url` column (which is what oiikon.com itself renders for older

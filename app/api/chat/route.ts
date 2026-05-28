@@ -29,6 +29,8 @@ import {
   storeMessage,
   loadAgentCatalog,
   formatProductCatalogForPrompt,
+  loadFeaturedCoupon,
+  formatFeaturedCouponForPrompt,
   loadKnowledgeBase,
   formatKnowledgeBaseForPrompt,
   loadCustomerProfile,
@@ -133,13 +135,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const [history, products, knowledgeEntries, customerProfile, competitors, competitorStats] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, competitors, competitorStats, featuredCoupon] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
       loadCustomerProfile(syntheticPhone),
       loadCompetitorModels(),
       loadCompetitorStats(),
+      loadFeaturedCoupon(),
     ]);
 
     // Fire-and-forget competitor extraction
@@ -155,7 +158,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const historyWithoutLast = history.slice(0, -1);
 
-    const catalog = formatProductCatalogForPrompt(products);
+    const catalog = formatProductCatalogForPrompt(products) + formatFeaturedCouponForPrompt(featuredCoupon);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
     const competitorPrompt =
