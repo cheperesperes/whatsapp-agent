@@ -223,7 +223,16 @@ export async function POST(req: NextRequest) {
         for (const tpl of allTemplates) {
           if (tpl.name !== templateName) continue;
           const tplLang = tpl.language || 'es';
-          const sampleName = tplLang.startsWith('en') ? 'friend' : 'amigo/a';
+          // Prefer a real recipient's display_name so the preview shows
+          // exactly what the first lead receives (not a generic placeholder).
+          // Match by language first if possible, fall back to anyone, then
+          // fall back to the literal placeholder.
+          const realRecipient =
+            recipList.find((r) => r.name && r.language === (tplLang.startsWith('en') ? 'en' : 'es')) ||
+            recipList.find((r) => r.name) ||
+            null;
+          const sampleName =
+            realRecipient?.name || (tplLang.startsWith('en') ? 'friend' : 'amigo/a');
           const sampleCode = coupon?.code || '';
           const sampleDiscount = discountText(coupon, tplLang.startsWith('en') ? 'en' : 'es');
           const sub = [sampleName, sampleCode, sampleDiscount];
