@@ -1118,6 +1118,14 @@ interface SendOfferPlan {
   templateName: string;
   sampleRecipients: Array<{ phone: string; language: string; name: string | null }>;
   templatePreviews?: TemplatePreview[];
+  previewDebug?: {
+    wabaId?: string | null;
+    wabaSource?: string;
+    templatesOk?: boolean;
+    templatesCount?: number;
+    matchedCount?: number;
+    error?: string;
+  } | null;
 }
 
 interface SendOfferResult {
@@ -1194,6 +1202,41 @@ function WhatsAppMessagePreview({ preview }: { preview: TemplatePreview }) {
       </div>
     </div>
   );
+}
+
+// Local approximation of the offer message, used when Meta's live template
+// components can't be fetched (WABA unresolved, template not yet approved, or
+// a fetch error). Mirrors the oiikon_offer body shape so the operator always
+// sees roughly what each lead receives instead of a blank panel.
+function buildFallbackPreviews(plan: SendOfferPlan): TemplatePreview[] {
+  const code = plan.coupon?.code ?? 'CODIGO';
+  const disc = plan.coupon
+    ? plan.coupon.type === 'percentage'
+      ? `${plan.coupon.discount}%`
+      : `$${plan.coupon.discount}`
+    : '';
+  const nameEs = plan.sampleRecipients.find((r) => r.language === 'es')?.name || 'amigo/a';
+  const nameEn = plan.sampleRecipients.find((r) => r.language === 'en')?.name || 'friend';
+  const out: TemplatePreview[] = [];
+  if (plan.breakdownByLanguage.es > 0 || plan.breakdownByLanguage.en === 0) {
+    out.push({
+      language: 'es',
+      body: {
+        text: '',
+        rendered: `Hola ${nameEs}, código ${code} te da ${disc} OFF en oiikon.com. Responde STOP para cancelar.`,
+      },
+    });
+  }
+  if (plan.breakdownByLanguage.en > 0) {
+    out.push({
+      language: 'en_US',
+      body: {
+        text: '',
+        rendered: `Hi ${nameEn}, code ${code} gets you ${disc} OFF at oiikon.com. Reply STOP to opt out.`,
+      },
+    });
+  }
+  return out;
 }
 
 function SendOfferPanel() {
@@ -1358,18 +1401,35 @@ function SendOfferPanel() {
               </div>
             )}
 
-            {plan.templatePreviews && plan.templatePreviews.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[11px] uppercase tracking-wider text-gray-500">
-                  Vista previa del mensaje (lo que recibe cada lead)
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {plan.templatePreviews.map((tp) => (
-                    <WhatsAppMessagePreview key={tp.language} preview={tp} />
-                  ))}
+            {(() => {
+              const hasReal = !!(plan.templatePreviews && plan.templatePreviews.length > 0);
+              const previews = hasReal ? plan.templatePreviews! : buildFallbackPreviews(plan);
+              return (
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                    Vista previa del mensaje (lo que recibe cada lead)
+                  </p>
+                  {!hasReal && (
+                    <p className="text-[11px] text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded px-3 py-2 leading-relaxed">
+                      ⚠ Vista previa aproximada — no se pudo cargar la plantilla real de Meta
+                      {plan.previewDebug?.error
+                        ? ` (${plan.previewDebug.error})`
+                        : plan.previewDebug?.matchedCount === 0
+                          ? ` (la plantilla "${plan.templateName}" no se encontró aprobada en Meta)`
+                          : plan.previewDebug?.wabaSource === 'unset'
+                            ? ' (WABA no resuelto: revisa META_WHATSAPP_BUSINESS_ACCOUNT_ID)'
+                            : ''}
+                      . El texto real depende de la plantilla aprobada; verifícala en Meta antes de enviar.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {previews.map((tp) => (
+                      <WhatsAppMessagePreview key={tp.language} preview={tp} />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {plan.sampleRecipients && plan.sampleRecipients.length > 0 && (
               <details className="bg-surface-800/50 border border-surface-600 rounded">
