@@ -97,6 +97,10 @@ export async function POST(req: NextRequest) {
     testPhones,
     testLanguage,
     testName,
+    // When false (default) the audience send skips any lead that already got
+    // an OUTBOUND_OFFER in the last 24h, so re-running doesn't double-message
+    // a batch already sent today. Set true to deliberately re-send.
+    includeRecentlyMessaged = false,
   } = body || {};
   if (!templateName) {
     return NextResponse.json(
@@ -106,6 +110,10 @@ export async function POST(req: NextRequest) {
   }
 
   const sb = createServiceClient();
+
+  // Set when the audience path drops leads already messaged in the last 24h.
+  // Surfaced in the dry-run plan so the operator sees the dedupe before sending.
+  let skippedRecentlyMessaged = 0;
 
   let recipList: Array<{ phone: string; language: 'es' | 'en'; name: string | null }>;
   if (Array.isArray(testPhones) && testPhones.length > 0) {
@@ -151,6 +159,36 @@ export async function POST(req: NextRequest) {
     }));
     if (recipList.length === 0) {
       return NextResponse.json({ error: 'No recipients matched audience filter.' }, { status: 400 });
+    }
+
+    // Dedupe: drop leads who already received an OUTBOUND_OFFER in the last
+    // 24h so a re-run reaches only the remaining audience instead of
+    // double-messaging the batch already sent today.
+    if (!includeRecentlyMessaged) {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentOffers } = await sb
+        .from('messages')
+        .select('content')
+        .like('content', '[OUTBOUND_OFFER]%')
+        .gte('created_at', since);
+      const messaged = new Set<string>();
+      for (const row of recentOffers || []) {
+        const m = String((row as any).content).match(/to=(\+?\d+)/);
+        if (m) messaged.add(m[1]);
+      }
+      const before = recipList.length;
+      recipList = recipList.filter((r) => !messaged.has(r.phone));
+      skippedRecentlyMessaged = before - recipList.length;
+    }
+    if (recipList.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'No recipients left after skipping leads messaged in the last 24h. Set includeRecentlyMessaged=true to re-send anyway.',
+          skippedRecentlyMessaged,
+        },
+        { status: 400 },
+      );
     }
   }
 
@@ -278,6 +316,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       dryRun: true,
       recipientCount: recipList.length,
+      skippedRecentlyMessaged,
       breakdownByLanguage: {
         es: recipList.filter((r) => r.language === 'es').length,
         en: recipList.filter((r) => r.language === 'en').length,
@@ -287,6 +326,10 @@ export async function POST(req: NextRequest) {
             code: coupon.code,
             discount: coupon.discount_value,
             type: coupon.discount_type,
+            // Surface eligibility so the operator sees, before blasting, that
+            // a brand/min-order-restricted coupon won't work for every lead.
+            eligible_brand: coupon.eligible_brand ?? null,
+            min_order_total: coupon.min_order_total ?? null,
           }
         : null,
       templateName,

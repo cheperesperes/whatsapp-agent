@@ -1106,8 +1106,15 @@ interface TemplatePreview {
 
 interface SendOfferPlan {
   recipientCount: number;
+  skippedRecentlyMessaged?: number;
   breakdownByLanguage: { es: number; en: number };
-  coupon: { code: string; discount: number; type: string } | null;
+  coupon: {
+    code: string;
+    discount: number;
+    type: string;
+    eligible_brand?: string | null;
+    min_order_total?: number | null;
+  } | null;
   templateName: string;
   sampleRecipients: Array<{ phone: string; language: string; name: string | null }>;
   templatePreviews?: TemplatePreview[];
@@ -1325,14 +1332,31 @@ function SendOfferPanel() {
                 <strong>Plan:</strong> {plan.recipientCount} destinatarios · ES: {plan.breakdownByLanguage.es}, EN:{' '}
                 {plan.breakdownByLanguage.en}
               </p>
+              {!!plan.skippedRecentlyMessaged && plan.skippedRecentlyMessaged > 0 && (
+                <p className="text-gray-500">
+                  Se omitieron {plan.skippedRecentlyMessaged} leads que ya recibieron una oferta en las últimas 24h.
+                </p>
+              )}
               {plan.coupon && (
                 <p className="text-gray-400">
                   <strong>Cupón:</strong> {plan.coupon.code} ·{' '}
                   {plan.coupon.type === 'percentage' ? `${plan.coupon.discount}%` : `$${plan.coupon.discount}`}
+                  {plan.coupon.eligible_brand && ` · solo ${plan.coupon.eligible_brand}`}
+                  {plan.coupon.min_order_total ? ` · pedido mín. $${plan.coupon.min_order_total}` : ''}
                 </p>
               )}
               <p className="text-gray-500 font-mono text-[10px]">Plantilla: {plan.templateName}</p>
             </div>
+
+            {plan.coupon && (plan.coupon.eligible_brand || plan.coupon.min_order_total) && (
+              <div className="text-[11px] text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded px-3 py-2 leading-relaxed">
+                ⚠ Este cupón es condicional
+                {plan.coupon.eligible_brand ? `: solo aplica a productos ${plan.coupon.eligible_brand}` : ''}
+                {plan.coupon.min_order_total ? ` con pedido mínimo de $${plan.coupon.min_order_total}` : ''}.
+                Se enviará a los {plan.recipientCount} leads, pero solo podrán canjearlo quienes compren un
+                producto que califique (el checkout de oiikon.com valida marca, mínimo y margen).
+              </div>
+            )}
 
             {plan.templatePreviews && plan.templatePreviews.length > 0 && (
               <div className="space-y-2">
@@ -1350,7 +1374,7 @@ function SendOfferPanel() {
             {plan.sampleRecipients && plan.sampleRecipients.length > 0 && (
               <details className="bg-surface-800/50 border border-surface-600 rounded">
                 <summary className="px-3 py-2 cursor-pointer text-[11px] text-gray-400 hover:bg-surface-800/80">
-                  Primeros {plan.sampleRecipients.length} destinatarios
+                  Muestra de {plan.sampleRecipients.length} (se enviará a los {plan.recipientCount})
                 </summary>
                 <div className="border-t border-surface-700 divide-y divide-surface-700 max-h-40 overflow-y-auto">
                   {plan.sampleRecipients.map((r) => (
