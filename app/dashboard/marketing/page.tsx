@@ -342,9 +342,10 @@ export default function MarketingPage() {
       productSku?: string | null;
       guidance?: string | null;
       language?: 'es' | 'en' | 'both';
+      media?: 'image' | 'video' | 'both';
     } = {}
   ) {
-    const { force = false, category, productSku, guidance, language = 'es' } = options;
+    const { force = false, category, productSku, guidance, language = 'es', media = 'image' } = options;
     if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
     try {
@@ -358,6 +359,7 @@ export default function MarketingPage() {
         if (productSku) qs.set('product_sku', productSku);
         if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
         qs.set('language', lang);
+        qs.set('media', media);
         await fetch(`/api/cron/marketing-daily?${qs.toString()}`, { cache: 'no-store' });
       }
     } finally {
@@ -495,7 +497,7 @@ function CampaignHero({
   approving: boolean;
   generating: boolean;
   onApprove: (approved: boolean, options?: { text_only?: boolean }) => void;
-  onRegenerate: (cat: string, opts?: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both' }) => void;
+  onRegenerate: (cat: string, opts?: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both'; media?: 'image' | 'video' | 'both' }) => void;
   onDeletePublished: () => void;
 }) {
   const [productSku, setProductSku] = useState<string>(campaign.product_sku ?? '');
@@ -503,6 +505,7 @@ function CampaignHero({
   const [regenLang, setRegenLang] = useState<'es' | 'en' | 'both'>(
     (campaign.language as 'es' | 'en' | 'both') ?? 'es',
   );
+  const [regenMedia, setRegenMedia] = useState<'image' | 'video' | 'both'>('image');
   const content = campaign.marketing_content?.[0];
   const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === campaign.status);
   const terminal = campaign.status === 'failed' || campaign.status === 'rejected';
@@ -676,6 +679,32 @@ function CampaignHero({
           </div>
         </div>
 
+        {/* Format for the regenerated post (image / video / both). */}
+        <div>
+          <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Formato</label>
+          <div className="flex gap-1.5">
+            {([
+              ['image', '📷 Imagen'],
+              ['video', '🎬 Video'],
+              ['both', '🎬+📷 Ambos'],
+            ] as const).map(([val, lbl]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setRegenMedia(val)}
+                disabled={generating}
+                className={`flex-1 text-[11px] px-2 py-1.5 rounded border transition-colors disabled:opacity-50 ${
+                  regenMedia === val
+                    ? 'bg-brand-500 border-brand-500 text-white'
+                    : 'bg-surface-800 border-surface-600 text-gray-300 hover:bg-surface-700'
+                }`}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           {CATEGORIES.map((c) => {
             const current = campaign.category === c.value;
@@ -688,6 +717,7 @@ function CampaignHero({
                     productSku: productSku || null,
                     guidance: guidance || null,
                     language: regenLang,
+                    media: regenMedia,
                   })
                 }
                 disabled={generating}
@@ -715,13 +745,14 @@ function CategoryLauncher({
   products: Product[];
   onPick: (
     cat: string,
-    opts: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both' },
+    opts: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both'; media?: 'image' | 'video' | 'both' },
   ) => void;
   busy: boolean;
 }) {
   const [productSku, setProductSku] = useState<string>('');
   const [guidance, setGuidance] = useState<string>('');
   const [language, setLanguage] = useState<'es' | 'en' | 'both'>('es');
+  const [media, setMedia] = useState<'image' | 'video' | 'both'>('image');
 
   return (
     <div className="card p-6">
@@ -769,12 +800,40 @@ function CategoryLauncher({
         </p>
       </div>
 
+      <div className="mb-4">
+        <label className="block text-[11px] text-gray-500 mb-1">Formato</label>
+        <div className="flex gap-2">
+          {([
+            ['image', '📷 Imagen'],
+            ['video', '🎬 Video'],
+            ['both', '🎬+📷 Ambos'],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setMedia(val)}
+              disabled={busy}
+              className={`flex-1 text-xs px-2 py-1.5 rounded border transition-colors disabled:opacity-50 ${
+                media === val
+                  ? 'bg-brand-500 border-brand-500 text-white'
+                  : 'bg-surface-800 border-surface-600 text-gray-300 hover:bg-surface-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-gray-600 mt-1">
+          Imagen = rápido y económico. Video = clip Higgsfield (más caro, tarda unos minutos).
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {CATEGORIES.map((c) => (
           <button
             key={c.value}
             type="button"
-            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null, language })}
+            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null, language, media })}
             disabled={busy}
             className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
           >
