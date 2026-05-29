@@ -52,7 +52,7 @@ export const CATEGORIES: Array<{ value: MarketingCategory; label: string; angle:
   { value: 'instalacion', label: '🔧 Instalación', angle: 'Cómo conectar paneles, cómo recargar con solar, montaje en hogar. Práctico pero sin riesgo eléctrico.' },
   { value: 'baterias', label: '🔋 Baterías', angle: 'Foco en la batería LiFePO4: ciclos de vida, seguridad vs baterías de plomo, expansión con baterías externas.' },
   { value: 'apagones', label: '⚡ Apagones', angle: 'Apagones en EE.UU. — huracanes en FL/TX, ice storms, wildfires CA, grid failures: cómo preparar el hogar y mantener lo esencial funcionando.' },
-  { value: 'familia', label: '👨‍👩‍👧 Familia', angle: 'Historia humana en EE.UU. — cómo la energía de respaldo protege a la familia durante un huracán o apagón largo: nevera, médicos esenciales, comunicación.' },
+  { value: 'familia', label: '🏠 Hogar', angle: 'Historia humana en EE.UU. para CUALQUIER hogar — cómo el respaldo de energía mantiene lo esencial en un apagón largo o huracán: nevera, equipos médicos, comunicación. No asumas un destinatario "familiar"; sirve a personas solas, parejas, RVeros y dueños de negocio por igual.' },
 ];
 
 export async function generateMarketingContent(
@@ -162,8 +162,11 @@ brief de investigación entran en conflicto, GANA LA REGLA.
   Mención breve del contexto está OK; dwelling o amarillismo NO.
 • Tono: educado, cálido, respetuoso, optimista. Somos EDUCACIÓN + VENTA.
 • Sin humor ni sarcasmo que pueda malinterpretarse entre culturas.
-• Lenguaje inclusivo: "familia", "seres queridos", "comunidad hispana en USA".
-  Evita estereotipos por país de origen.
+• Habla a CUALQUIER cliente en EE.UU.: dueños de casa, RVeros, off-grid,
+  preparadores, pequeños negocios — no asumas "familia" como destinatario por
+  defecto. La comunidad hispana en EE.UU. es UN público más, no el único.
+  Evita estereotipos por país de origen y evita el marco de "enviar a la
+  familia" — el foco es la SOLUCIÓN de respaldo aquí en EE.UU.
 
 §3.6 DISCLOSURE DE IA + PROPIEDAD INTELECTUAL
 • Al final del facebook_post y instagram_caption (antes de los hashtags)
@@ -178,8 +181,9 @@ brief de investigación entran en conflicto, GANA LA REGLA.
 ═══════════════════════════════════════════════════════════════════════════════
 
 ÁNGULO DE VALOR PERMITIDO:
-• La estación solar es una INVERSIÓN FAMILIAR accesible. Destaca precio
-  (usa solo el que aparece en PRODUCTO DEL DÍA), durabilidad, tranquilidad.
+• La estación solar es una SOLUCIÓN de respaldo accesible para cualquier
+  hogar o uso en EE.UU. Destaca precio (usa solo el que aparece en PRODUCTO
+  DEL DÍA), durabilidad, tranquilidad — sin centrar el mensaje en "la familia".
 • Educa con 1 beneficio concreto cualitativo ("mantener luces y nevera",
   "cargar celulares y router", "compatible con paneles solares").
 
@@ -187,10 +191,10 @@ CTAs OBLIGATORIOS:
 • Incluye SIEMPRE dos llamadas a la acción al final del facebook_post,
   instagram_caption, y youtube_description:
   1. Link al producto: https://oiikon.com/product/${product.sku.toLowerCase()}
-  2. Chat por WhatsApp: https://wa.me/14848644191?text=Hola%2C%20tengo%20una%20pregunta%20sobre%20el%20${product.sku}
+  2. Chat por WhatsApp: https://wa.me/15616988477?text=Hola%2C%20tengo%20una%20pregunta%20sobre%20el%20${product.sku}
 • Formato sugerido:
   "👉 Más info: https://oiikon.com/product/${product.sku.toLowerCase()}
-   💬 O chatea con nosotros: https://wa.me/14848644191"
+   💬 O chatea con nosotros: https://wa.me/15616988477"
 • En el youtube_script, menciona verbalmente "También puedes escribirnos
   por WhatsApp para resolver tus dudas" cerca del final.
 
@@ -213,8 +217,8 @@ ${language === 'en' ? `
 • Google Ads (headlines + descriptions): English only — broader US audience.
 • YouTube script: pick the primary language that fits today's brief; one-take
   in that language.
-• Hashtags: mix ES + EN (#FamiliaAntesTodo #HurricanePrep #PECRON #RVLife
-  #HispanosUSA #OiikonSolar etc).
+• Hashtags: mix ES + EN (#EnergiaDeRespaldo #HurricanePrep #PECRON #RVLife
+  #OffGrid #BlackoutReady #SolarPortatil #OiikonSolar etc).
 ` : ''}
 Genera el siguiente contenido de marketing en formato JSON válido. ${language === 'en' ? 'ALL fields in ENGLISH per the override above.' : language === 'bilingual' ? 'BILINGÜE per the override above.' : 'TODO en español.'} Sin explicaciones, solo el JSON:
 
@@ -274,7 +278,7 @@ Genera el siguiente contenido de marketing en formato JSON válido. ${language =
   return content;
 }
 
-const WHATSAPP_LINK = 'https://wa.me/14848644191';
+const WHATSAPP_LINK = 'https://wa.me/15616988477';
 
 function stripLegalDisclaimer(text: string): string {
   if (!text) return text;
@@ -293,7 +297,7 @@ function stripLegalDisclaimer(text: string): string {
 function normalizeCaption(text: string, channel: 'facebook' | 'instagram' | 'youtube'): string {
   if (!text) return text;
   const stripped = stripLegalDisclaimer(text);
-  if (stripped.includes(WHATSAPP_LINK) || stripped.includes('wa.me/14848644191')) {
+  if (stripped.includes(WHATSAPP_LINK) || stripped.includes('wa.me/15616988477')) {
     return stripped;
   }
   // Inject WhatsApp CTA. For IG/YT keep short form ("💬 WhatsApp: ...").

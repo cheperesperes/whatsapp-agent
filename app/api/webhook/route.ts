@@ -12,8 +12,9 @@ import {
   getConversationByPhone,
   loadAgentCatalog,
   formatProductCatalogForPrompt,
-  loadFeaturedCoupon,
-  formatFeaturedCouponForPrompt,
+  loadActiveOffers,
+  loadProductCosts,
+  formatOffersForPrompt,
   getDashboardStats,
   loadKnowledgeBase,
   formatKnowledgeBaseForPrompt,
@@ -85,6 +86,15 @@ const RATE_LIMIT_MAX_HOLD_MS = 30_000;
 const HOURLY_MESSAGE_CAP = Number(process.env.HOURLY_MESSAGE_CAP ?? 40);
 
 const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
+
+// AI-failure operator heartbeat debounce. During a sustained Anthropic outage
+// (credits lapsed, key revoked, 5xx storm) many leads fail at once. We escalate
+// EVERY failed conversation (durable per-lead record in the dashboard queue),
+// but only ping the operator's WhatsApp once per window so Ed isn't buried in
+// dozens of identical alerts. Module state resets on cold start, so this is
+// best-effort across lambda instances — acceptable for an alert dedup.
+let lastAiFailureAlertAt = 0;
+const AI_FAILURE_ALERT_WINDOW_MS = 5 * 60_000;
 
 // Escape hatch for the Meta signature check — needed during initial onboarding
 // before META_APP_SECRET is set. Production MUST NOT set this; once the App
@@ -379,7 +389,7 @@ async function processWebhookLocked(
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats, featuredCoupon] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats, activeOffers, productCosts] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
@@ -387,7 +397,8 @@ async function processWebhookLocked(
       getRecentDispatchedSkus(conversation.id),
       loadCompetitorModels(),
       loadCompetitorStats(),
-      loadFeaturedCoupon(),
+      loadActiveOffers(),
+      loadProductCosts(),
     ]);
 
     // Fire-and-forget: learn from competitor mentions in this message.
@@ -405,7 +416,7 @@ async function processWebhookLocked(
 
     const historyWithoutLast = history.slice(0, -1);
 
-    const catalog = formatProductCatalogForPrompt(products) + formatFeaturedCouponForPrompt(featuredCoupon);
+    const catalog = formatProductCatalogForPrompt(products) + formatOffersForPrompt(products, activeOffers, productCosts);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
     const competitorPrompt =
@@ -646,13 +657,53 @@ async function processWebhookLocked(
       `[WEBHOOK] AI error for ${senderPhone} (timeout=${isTimeout}):`,
       err
     );
+
+    // Sol's AI call failed (Anthropic outage / credits lapsed / key revoked).
+    // Don't let the lead vanish: escalate so the thread lands in the dashboard
+    // handoff queue AND the customer's next message forwards to the operator
+    // instead of hitting the still-broken AI. Ed runs `/bot {phone}` to resume
+    // Sol once the API recovers. Best-effort — must not mask the original error.
+    try {
+      await escalateConversation(conversation.id, 'ai_failure', messageText);
+    } catch (escErr) {
+      console.error(`[WEBHOOK] ai_failure escalation failed for ${senderPhone}:`, escErr);
+    }
+
     const fallback = isTimeout
       ? 'Estoy tardando más de lo normal en responder. ¿Podría repetir su mensaje? Si persiste, un especialista le contactará.'
       : 'Lo siento, tuve un problema técnico. Por favor intente de nuevo en un momento. Si el problema persiste, un especialista le contactará pronto.';
     try {
       await sendReplyForParsed(parsed, fallback);
+      // Persist the fallback so assistant rows DON'T silently stop during an AI
+      // outage. Previously a failure left only the inbound user row, making the
+      // conversation look dead in the DB and hiding the outage from monitoring.
+      await storeMessage(conversation.id, 'assistant', fallback);
     } catch (sendErr) {
       console.error(`[WEBHOOK] fallback sendMessage failed for ${senderPhone}:`, sendErr);
+    }
+
+    // Operator heartbeat — debounced. The escalation above is the durable
+    // per-lead record; here we only ping Ed once per window so a broad outage
+    // doesn't bury him in identical alerts. Without this the overnight outage
+    // on 2026-05-27 stranded 3 warm E3800LFP leads with no one alerted.
+    const nowMs = Date.now();
+    if (nowMs - lastAiFailureAlertAt > AI_FAILURE_ALERT_WINDOW_MS) {
+      lastAiFailureAlertAt = nowMs;
+      try {
+        await sendWhatsAppMessage(
+          OPERATOR_PHONE,
+          [
+            '⚠️ Sol no pudo responder (falla de IA).',
+            `Cliente: ${senderPhone}`,
+            `Pregunta: "${messageText.slice(0, 120)}"`,
+            '',
+            'La conversación quedó escalada. Responde al cliente y usa',
+            `"/bot ${senderPhone}" para devolver a Sol cuando la IA se recupere.`,
+          ].join('\n'),
+        );
+      } catch (alertErr) {
+        console.error('[WEBHOOK] ai_failure operator alert failed:', alertErr);
+      }
     }
   }
 }

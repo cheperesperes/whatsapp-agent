@@ -7,6 +7,7 @@ import { useEffect, useState, useCallback } from 'react';
 interface Campaign {
   id: string;
   date: string;
+  language?: string | null;
   status: string;
   daily_theme: string | null;
   product_sku: string | null;
@@ -340,19 +341,25 @@ export default function MarketingPage() {
       category?: string | null;
       productSku?: string | null;
       guidance?: string | null;
+      language?: 'es' | 'en' | 'both';
     } = {}
   ) {
-    const { force = false, category, productSku, guidance } = options;
+    const { force = false, category, productSku, guidance, language = 'es' } = options;
     if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
     setGenerating(true);
     try {
-      const qs = new URLSearchParams();
-      if (force) qs.set('force', 'true');
-      if (category) qs.set('category', category);
-      if (productSku) qs.set('product_sku', productSku);
-      if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
-      const suffix = qs.toString() ? `?${qs.toString()}` : '';
-      await fetch(`/api/cron/marketing-daily${suffix}`, { cache: 'no-store' });
+      // 'both' = generate a Spanish campaign and an English campaign for today
+      // (separate posts). Each is its own per-(date,language) campaign.
+      const langs: Array<'es' | 'en'> = language === 'both' ? ['es', 'en'] : [language];
+      for (const lang of langs) {
+        const qs = new URLSearchParams();
+        if (force) qs.set('force', 'true');
+        if (category) qs.set('category', category);
+        if (productSku) qs.set('product_sku', productSku);
+        if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
+        qs.set('language', lang);
+        await fetch(`/api/cron/marketing-daily?${qs.toString()}`, { cache: 'no-store' });
+      }
     } finally {
       setGenerating(false);
       reload();
@@ -540,6 +547,9 @@ function CampaignHero({
             <p className="text-lg text-gray-100 font-semibold mt-1 leading-snug">{campaign.daily_theme}</p>
           )}
           <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
+            <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">
+              {campaign.language === 'en' ? '🇺🇸 English' : '🇪🇸 Español'}
+            </span>
             {categoryLabel && (
               <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">{categoryLabel}</span>
             )}
@@ -673,11 +683,15 @@ function CategoryLauncher({
   busy,
 }: {
   products: Product[];
-  onPick: (cat: string, opts: { productSku?: string | null; guidance?: string | null }) => void;
+  onPick: (
+    cat: string,
+    opts: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both' },
+  ) => void;
   busy: boolean;
 }) {
   const [productSku, setProductSku] = useState<string>('');
   const [guidance, setGuidance] = useState<string>('');
+  const [language, setLanguage] = useState<'es' | 'en' | 'both'>('es');
 
   return (
     <div className="card p-6">
@@ -697,12 +711,40 @@ function CategoryLauncher({
         />
       </div>
 
+      <div className="mb-4">
+        <label className="block text-[11px] text-gray-500 mb-1">Idioma</label>
+        <div className="flex gap-2">
+          {([
+            ['es', '🇪🇸 Español'],
+            ['en', '🇺🇸 English'],
+            ['both', '🌐 Ambos'],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setLanguage(val)}
+              disabled={busy}
+              className={`flex-1 text-xs px-2 py-1.5 rounded border transition-colors disabled:opacity-50 ${
+                language === val
+                  ? 'bg-brand-500 border-brand-500 text-white'
+                  : 'bg-surface-800 border-surface-600 text-gray-300 hover:bg-surface-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-gray-600 mt-1">
+          &quot;Ambos&quot; genera un post en español y otro en inglés (el video se crea solo para el español).
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {CATEGORIES.map((c) => (
           <button
             key={c.value}
             type="button"
-            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null })}
+            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null, language })}
             disabled={busy}
             className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
           >
@@ -1106,11 +1148,26 @@ interface TemplatePreview {
 
 interface SendOfferPlan {
   recipientCount: number;
+  skippedRecentlyMessaged?: number;
   breakdownByLanguage: { es: number; en: number };
-  coupon: { code: string; discount: number; type: string } | null;
+  coupon: {
+    code: string;
+    discount: number;
+    type: string;
+    eligible_brand?: string | null;
+    min_order_total?: number | null;
+  } | null;
   templateName: string;
   sampleRecipients: Array<{ phone: string; language: string; name: string | null }>;
   templatePreviews?: TemplatePreview[];
+  previewDebug?: {
+    wabaId?: string | null;
+    wabaSource?: string;
+    templatesOk?: boolean;
+    templatesCount?: number;
+    matchedCount?: number;
+    error?: string;
+  } | null;
 }
 
 interface SendOfferResult {
@@ -1187,6 +1244,41 @@ function WhatsAppMessagePreview({ preview }: { preview: TemplatePreview }) {
       </div>
     </div>
   );
+}
+
+// Local approximation of the offer message, used when Meta's live template
+// components can't be fetched (WABA unresolved, template not yet approved, or
+// a fetch error). Mirrors the oiikon_offer body shape so the operator always
+// sees roughly what each lead receives instead of a blank panel.
+function buildFallbackPreviews(plan: SendOfferPlan): TemplatePreview[] {
+  const code = plan.coupon?.code ?? 'CODIGO';
+  const disc = plan.coupon
+    ? plan.coupon.type === 'percentage'
+      ? `${plan.coupon.discount}%`
+      : `$${plan.coupon.discount}`
+    : '';
+  const nameEs = plan.sampleRecipients.find((r) => r.language === 'es')?.name || 'amigo/a';
+  const nameEn = plan.sampleRecipients.find((r) => r.language === 'en')?.name || 'friend';
+  const out: TemplatePreview[] = [];
+  if (plan.breakdownByLanguage.es > 0 || plan.breakdownByLanguage.en === 0) {
+    out.push({
+      language: 'es',
+      body: {
+        text: '',
+        rendered: `Hola ${nameEs}, código ${code} te da ${disc} OFF en oiikon.com. Responde STOP para cancelar.`,
+      },
+    });
+  }
+  if (plan.breakdownByLanguage.en > 0) {
+    out.push({
+      language: 'en_US',
+      body: {
+        text: '',
+        rendered: `Hi ${nameEn}, code ${code} gets you ${disc} OFF at oiikon.com. Reply STOP to opt out.`,
+      },
+    });
+  }
+  return out;
 }
 
 function SendOfferPanel() {
@@ -1325,32 +1417,66 @@ function SendOfferPanel() {
                 <strong>Plan:</strong> {plan.recipientCount} destinatarios · ES: {plan.breakdownByLanguage.es}, EN:{' '}
                 {plan.breakdownByLanguage.en}
               </p>
+              {!!plan.skippedRecentlyMessaged && plan.skippedRecentlyMessaged > 0 && (
+                <p className="text-gray-500">
+                  Se omitieron {plan.skippedRecentlyMessaged} leads que ya recibieron una oferta en las últimas 24h.
+                </p>
+              )}
               {plan.coupon && (
                 <p className="text-gray-400">
                   <strong>Cupón:</strong> {plan.coupon.code} ·{' '}
                   {plan.coupon.type === 'percentage' ? `${plan.coupon.discount}%` : `$${plan.coupon.discount}`}
+                  {plan.coupon.eligible_brand && ` · solo ${plan.coupon.eligible_brand}`}
+                  {plan.coupon.min_order_total ? ` · pedido mín. $${plan.coupon.min_order_total}` : ''}
                 </p>
               )}
               <p className="text-gray-500 font-mono text-[10px]">Plantilla: {plan.templateName}</p>
             </div>
 
-            {plan.templatePreviews && plan.templatePreviews.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[11px] uppercase tracking-wider text-gray-500">
-                  Vista previa del mensaje (lo que recibe cada lead)
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {plan.templatePreviews.map((tp) => (
-                    <WhatsAppMessagePreview key={tp.language} preview={tp} />
-                  ))}
-                </div>
+            {plan.coupon && (plan.coupon.eligible_brand || plan.coupon.min_order_total) && (
+              <div className="text-[11px] text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded px-3 py-2 leading-relaxed">
+                ⚠ Este cupón es condicional
+                {plan.coupon.eligible_brand ? `: solo aplica a productos ${plan.coupon.eligible_brand}` : ''}
+                {plan.coupon.min_order_total ? ` con pedido mínimo de $${plan.coupon.min_order_total}` : ''}.
+                Se enviará a los {plan.recipientCount} leads, pero solo podrán canjearlo quienes compren un
+                producto que califique (el checkout de oiikon.com valida marca, mínimo y margen).
               </div>
             )}
+
+            {(() => {
+              const hasReal = !!(plan.templatePreviews && plan.templatePreviews.length > 0);
+              const previews = hasReal ? plan.templatePreviews! : buildFallbackPreviews(plan);
+              return (
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                    Vista previa del mensaje (lo que recibe cada lead)
+                  </p>
+                  {!hasReal && (
+                    <p className="text-[11px] text-amber-300 bg-amber-900/20 border border-amber-800/50 rounded px-3 py-2 leading-relaxed">
+                      ⚠ Vista previa aproximada — no se pudo cargar la plantilla real de Meta
+                      {plan.previewDebug?.error
+                        ? ` (${plan.previewDebug.error})`
+                        : plan.previewDebug?.matchedCount === 0
+                          ? ` (la plantilla "${plan.templateName}" no se encontró aprobada en Meta)`
+                          : plan.previewDebug?.wabaSource === 'unset'
+                            ? ' (WABA no resuelto: revisa META_WHATSAPP_BUSINESS_ACCOUNT_ID)'
+                            : ''}
+                      . El texto real depende de la plantilla aprobada; verifícala en Meta antes de enviar.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {previews.map((tp) => (
+                      <WhatsAppMessagePreview key={tp.language} preview={tp} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {plan.sampleRecipients && plan.sampleRecipients.length > 0 && (
               <details className="bg-surface-800/50 border border-surface-600 rounded">
                 <summary className="px-3 py-2 cursor-pointer text-[11px] text-gray-400 hover:bg-surface-800/80">
-                  Primeros {plan.sampleRecipients.length} destinatarios
+                  Muestra de {plan.sampleRecipients.length} (se enviará a los {plan.recipientCount})
                 </summary>
                 <div className="border-t border-surface-700 divide-y divide-surface-700 max-h-40 overflow-y-auto">
                   {plan.sampleRecipients.map((r) => (

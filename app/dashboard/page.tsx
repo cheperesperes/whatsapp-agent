@@ -107,16 +107,39 @@ function ConvItem({ conv, isSelected, onClick }: ConvItemProps) {
 
 function ChatThread({
   messages,
+  conversationId,
   onAddToKB,
 }: {
   messages: Message[];
+  conversationId: string | null;
   onAddToKB: (msg: Message, suggestedAnswer: string) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevConvId = useRef<string | null>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Switching to a different conversation: jump straight to the latest
+    // message so the admin opens on the newest exchange.
+    const switchedConversation = prevConvId.current !== conversationId;
+    prevConvId.current = conversationId;
+    if (switchedConversation) {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+      return;
+    }
+
+    // Same conversation, new message(s) arrived: only follow to the bottom if
+    // the admin is already near it. If they've scrolled up to read earlier
+    // messages, leave their position alone instead of yanking them down.
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom < 120) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, conversationId]);
 
   if (messages.length === 0) {
     return (
@@ -137,7 +160,7 @@ function ChatThread({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
       {messages.map((msg) => {
         if (msg.role === 'system') {
           return (
@@ -1010,7 +1033,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Messages */}
-              <ChatThread messages={messages} onAddToKB={openKBModal} />
+              <ChatThread messages={messages} conversationId={selectedId} onAddToKB={openKBModal} />
 
               {/* Operator composer */}
               <Composer onSend={handleSendOperatorText} disabled={actionLoading} />

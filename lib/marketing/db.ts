@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase';
 export interface MarketingCampaign {
   id: string;
   date: string;
+  language: string;
   status: string;
   research_brief: string | null;
   daily_theme: string | null;
@@ -60,11 +61,15 @@ export interface CampaignPerformance {
 
 // ── Campaigns ─────────────────────────────────────────────────────────────────
 
-export async function createCampaign(date: string, category?: string | null): Promise<MarketingCampaign> {
+export async function createCampaign(
+  date: string,
+  category?: string | null,
+  language: 'es' | 'en' = 'es',
+): Promise<MarketingCampaign> {
   const sb = createServiceClient();
   const { data, error } = await sb
     .from('marketing_campaigns')
-    .insert({ date, status: 'researching', category: category ?? null })
+    .insert({ date, status: 'researching', category: category ?? null, language })
     .select()
     .single();
   if (error) throw new Error(`createCampaign: ${error.message}`);
@@ -80,12 +85,16 @@ export async function updateCampaign(
   if (error) throw new Error(`updateCampaign: ${error.message}`);
 }
 
-export async function getCampaignByDate(date: string): Promise<MarketingCampaign | null> {
+export async function getCampaignByDate(
+  date: string,
+  language: 'es' | 'en' = 'es',
+): Promise<MarketingCampaign | null> {
   const sb = createServiceClient();
   const { data, error } = await sb
     .from('marketing_campaigns')
     .select('*')
     .eq('date', date)
+    .eq('language', language)
     .limit(1);
   if (error) console.error('[getCampaignByDate] error:', error.message, error.code);
   return (data?.[0] as MarketingCampaign | undefined) ?? null;
