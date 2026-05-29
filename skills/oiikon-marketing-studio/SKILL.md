@@ -99,6 +99,20 @@ Use the `hypermove-video` skill for the Higgsfield video mechanics. Marketing sp
 - **Voice/script (if narrated):** Spanish spoken scripts must spell out acronyms (LFP→"litio", RV→"casa rodante") — see memory `feedback_ai_voice_no_acronyms`. Conversational, "tú", no specs jargon.
 - **Cost:** video costs more than images — preflight `get_cost`, generate one, gate on approval before re-rolls.
 
+## Advertising-video playbook (what actually converts, 2026)
+
+Research-backed rules for the ad videos — apply these to every clip:
+
+- **Hook in the first 3 seconds.** ~65% scroll away by 3s; Meta scores "Hook Rate" (3s-views ÷ impressions). Open on a *dramatic product-in-action shot or the pain point* — e.g. lights going out, then the station glowing — NOT a logo/intro. First line of caption must hit the problem immediately.
+- **Length 15–30s, vertical 9:16.** Sweet spot for paid social. Retention > duration: aim **70%+ watch-through** (the metric platforms amplify). Below 30% → restructure the hook/pacing.
+- **Three-act structure:** (1) 0–3s hook + problem → (2) 3–20s the solution: show the product *solving it* (fridge/lights/CPAP staying on), one concrete benefit, not a spec list → (3) last few seconds: one clear CTA (code + oiikon.com / WhatsApp).
+- **Sell the transformation, not features.** "Never lose power again" beats "5120Wh LiFePO4." Specs go in the badge, not the narration.
+- **Captions always** (most watch muted) — burn in short on-screen text; also our deterministic spec/offer overlay.
+- **Authentic > polished for PAID conversion.** On Reels/TikTok, native/UGC-style ("looks like a friend recommending it") outperforms polished commercial by 25–40%. So: use the **cinematic Higgsfield product-motion clips for brand/organic/hero**, but for **paid-conversion** ads consider a UGC/testimonial style (real customer clip, or HeyGen talking-style) — flag to Ed which lane a given video is for.
+- **Reels is the cheapest, highest-engagement Meta placement** (20–35% lower CPM, 2–3× engagement) — prioritize 9:16 Reels.
+- **Test order:** hook first (drives view-through), then offer/visuals (mid-watch), then CTA (conversion). Push budget to any hook +5pp view-through over control.
+- Keep all the brand/realism guardrails (no fear-mongering, no cords, USA-only, no competitor mentions).
+
 ## Daily routine (queue, never auto-publish)
 
 Runs ~7:00am America/New_York:
