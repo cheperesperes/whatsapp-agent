@@ -76,7 +76,16 @@ export async function GET(req: NextRequest) {
   const langParam = req.nextUrl.searchParams.get('language');
   const language: 'es' | 'en' = langParam === 'en' ? 'en' : 'es';
   const PRIMARY_LANGUAGE: 'es' | 'en' = 'es';
-  const makeVideo = language === PRIMARY_LANGUAGE;
+
+  // Media format selector: 'image' (text + product photo, fast/cheap), 'video'
+  // (Higgsfield/HeyGen clip), or 'both'. Default 'video' when no param so the
+  // SCHEDULED cron behaves exactly as before; the dashboard sends an explicit
+  // choice (defaults to 'image' there). Video still only renders for the
+  // primary language to cap cost at one video/day.
+  const mediaParam = req.nextUrl.searchParams.get('media');
+  const media: 'image' | 'video' | 'both' =
+    mediaParam === 'image' || mediaParam === 'both' ? mediaParam : 'video';
+  const makeVideo = (media === 'video' || media === 'both') && language === PRIMARY_LANGUAGE;
 
   // Skip if already ran today for THIS language (unless force=true)
   let existing = await getCampaignByDate(today, language);
