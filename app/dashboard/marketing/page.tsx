@@ -134,8 +134,8 @@ const CATEGORIES: Array<{ value: string; label: string; desc: string }> = [
   { value: 'tips', label: '💡 Tips', desc: 'Consejos prácticos' },
   { value: 'instalacion', label: '🔧 Instalación', desc: 'Cómo conectar / instalar' },
   { value: 'baterias', label: '🔋 Baterías', desc: 'Foco en LiFePO4, ciclos, seguridad' },
-  { value: 'apagones', label: '⚡ Apagones', desc: 'Contexto del apagón en Cuba' },
-  { value: 'familia', label: '👨‍👩‍👧 Familia', desc: 'Historia humana de impacto' },
+  { value: 'apagones', label: '⚡ Apagones', desc: 'Apagones y huracanes en EE.UU.' },
+  { value: 'familia', label: '🏠 Hogar', desc: 'Historia humana — cualquier hogar US' },
 ];
 
 function humanDuration(fromIso: string | null | undefined): string {
@@ -495,11 +495,14 @@ function CampaignHero({
   approving: boolean;
   generating: boolean;
   onApprove: (approved: boolean, options?: { text_only?: boolean }) => void;
-  onRegenerate: (cat: string, opts?: { productSku?: string | null; guidance?: string | null }) => void;
+  onRegenerate: (cat: string, opts?: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both' }) => void;
   onDeletePublished: () => void;
 }) {
   const [productSku, setProductSku] = useState<string>(campaign.product_sku ?? '');
   const [guidance, setGuidance] = useState<string>('');
+  const [regenLang, setRegenLang] = useState<'es' | 'en' | 'both'>(
+    (campaign.language as 'es' | 'en' | 'both') ?? 'es',
+  );
   const content = campaign.marketing_content?.[0];
   const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === campaign.status);
   const terminal = campaign.status === 'failed' || campaign.status === 'rejected';
@@ -647,6 +650,32 @@ function CampaignHero({
           onGuidanceChange={setGuidance}
         />
 
+        {/* Language for the regenerated post (es / en / both). */}
+        <div>
+          <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Idioma</label>
+          <div className="flex gap-1.5">
+            {([
+              ['es', '🇪🇸 Español'],
+              ['en', '🇺🇸 English'],
+              ['both', '🌐 Ambos'],
+            ] as const).map(([val, lbl]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setRegenLang(val)}
+                disabled={generating}
+                className={`flex-1 text-[11px] px-2 py-1.5 rounded border transition-colors disabled:opacity-50 ${
+                  regenLang === val
+                    ? 'bg-brand-500 border-brand-500 text-white'
+                    : 'bg-surface-800 border-surface-600 text-gray-300 hover:bg-surface-700'
+                }`}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           {CATEGORIES.map((c) => {
             const current = campaign.category === c.value;
@@ -658,6 +687,7 @@ function CampaignHero({
                   onRegenerate(c.value, {
                     productSku: productSku || null,
                     guidance: guidance || null,
+                    language: regenLang,
                   })
                 }
                 disabled={generating}

@@ -3,6 +3,12 @@ import { createServerClient } from '@supabase/ssr';
 import { conductDailyResearch } from '@/lib/marketing/research';
 import { generateMarketingContent, validateContent } from '@/lib/marketing/content';
 import { createProductReviewVideo } from '@/lib/marketing/heygen';
+import { createProductVideo as createHiggsfieldVideo } from '@/lib/marketing/higgsfield';
+
+// Video provider switch. 'heygen' (default) = talking-avatar video reading the
+// script. 'higgsfield' = cinematic product-motion clip from the product image
+// (needs HIGGSFIELD_API_KEY). Reversible — flip back by unsetting the env.
+const VIDEO_PROVIDER = (process.env.VIDEO_PROVIDER ?? 'heygen').toLowerCase();
 import {
   createCampaign,
   updateCampaign,
@@ -206,18 +212,30 @@ export async function GET(req: NextRequest) {
     const productImages = content.product_sku
       ? await getProductImages(content.product_sku, 3)
       : [];
-    console.log(`[marketing-daily] ${runId} — submitting HeyGen video job (${productImages.length} bg images)`);
+    const useHiggsfield = VIDEO_PROVIDER === 'higgsfield' && !!process.env.HIGGSFIELD_API_KEY;
+    console.log(`[marketing-daily] ${runId} — submitting ${useHiggsfield ? 'Higgsfield' : 'HeyGen'} video job (${productImages.length} bg images)`);
     try {
-      const videoJob = await createProductReviewVideo(content.youtube_script, campaignId, productImages);
+      let videoJob: { video_id: string };
+      if (useHiggsfield) {
+        // Image-to-video: animate the product still with a short, bright motion
+        // prompt (Seedance over-flags dark scenes as NSFW — keep it clean).
+        const motionPrompt =
+          `Subtle premium product commercial motion: a slow gentle push-in and soft light sweep across the ` +
+          `${content.product_sku ?? 'PECRON'} power station. The product stays sharp, accurate and centered. ` +
+          `Bright, clean, photorealistic. No people, no text, no camera shake.`;
+        videoJob = await createHiggsfieldVideo(motionPrompt, campaignId, productImages);
+      } else {
+        videoJob = await createProductReviewVideo(content.youtube_script, campaignId, productImages);
+      }
       const { updateContent } = await import('@/lib/marketing/db');
       await updateContent(campaignId, {
-        heygen_video_id: videoJob.video_id,
+        heygen_video_id: videoJob.video_id, // column reused as the video job id regardless of provider
         video_status: 'processing',
       });
-      console.log(`[marketing-daily] ${runId} — HeyGen video_id: ${videoJob.video_id}`);
-    } catch (heygenErr) {
-      // HeyGen failure is non-fatal — we can still approve and post text content
-      console.warn(`[marketing-daily] ${runId} — HeyGen failed: ${heygenErr}`);
+      console.log(`[marketing-daily] ${runId} — ${useHiggsfield ? 'Higgsfield' : 'HeyGen'} video_id: ${videoJob.video_id}`);
+    } catch (videoErr) {
+      // Video failure is non-fatal — we can still approve and post text content
+      console.warn(`[marketing-daily] ${runId} — video provider failed: ${videoErr}`);
       await updateCampaign(campaignId, { status: 'pending_approval' });
 
       // Notify Eduardo even without video
