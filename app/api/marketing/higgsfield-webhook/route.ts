@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   }
 
   const videoId =
-    body.id ?? body.generation_id ?? body.data?.id ?? body.video_id ?? null;
+    body.request_id ?? body.id ?? body.data?.request_id ?? body.video_id ?? null;
 
   console.log(`[higgsfield-webhook] campaign=${campaignId} video_id=${videoId}`);
 
