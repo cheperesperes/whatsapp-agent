@@ -94,6 +94,7 @@ export async function createProductVideo(
       Accept: 'application/json',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) {
     const err = await res.text();
@@ -109,6 +110,9 @@ export async function createProductVideo(
 export async function getVideoStatus(requestId: string): Promise<HiggsfieldVideoStatus> {
   const res = await fetch(`${HIGGSFIELD_BASE}/requests/${encodeURIComponent(requestId)}/status`, {
     headers: { Authorization: authHeader(), Accept: 'application/json' },
+    // Hard timeout — the status endpoint has hung indefinitely in prod, which
+    // left campaigns stuck in "creating_video" forever. Fail fast instead.
+    signal: AbortSignal.timeout(12_000),
   });
   if (!res.ok) throw new Error(`Higgsfield status check failed (${res.status})`);
 
