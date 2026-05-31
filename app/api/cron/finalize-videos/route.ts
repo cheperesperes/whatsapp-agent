@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   const sb = createServiceClient();
   const { data: rows, error } = await sb
     .from('marketing_campaigns')
-    .select('id, updated_at, marketing_content(heygen_video_id, video_status)')
+    .select('id, updated_at, product_sku, marketing_content(heygen_video_id, video_status)')
     .eq('status', 'creating_video');
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -92,12 +92,39 @@ export async function GET(req: NextRequest) {
     }
 
     if (st.status === 'completed') {
+      // Product-integrity gate (rulebook §1): vision-check mid-video frames vs
+      // the approved product photo before it can be approved/published. Graceful
+      // — never blocks finalization; a detected morph just flags for the human.
+      let verifyNote: string | null = null;
+      try {
+        const sku = (c as any).product_sku as string | null;
+        if (sku && st.video_url) {
+          const { data: prod } = await sb
+            .from('products')
+            .select('primary_image_url, name')
+            .ilike('sku', sku)
+            .limit(1)
+            .maybeSingle();
+          const ref = (prod as any)?.primary_image_url as string | undefined;
+          if (ref) {
+            const { verifyVideoAccuracy } = await import('@/lib/marketing/video-verify');
+            const v = await verifyVideoAccuracy(st.video_url, ref, (prod as any)?.name ?? sku);
+            verifyNote = v.skipped
+              ? `⚠️ Verificación de video omitida (${v.note}) — revisar manualmente antes de publicar.`
+              : v.passed
+                ? `✅ Video verificado: producto íntegro (conf ${v.minConfidence}, ${v.framesChecked} frames).`
+                : `🚨 VERIFICACIÓN FALLÓ — posible producto distorsionado: ${v.issues.join('; ')}. REVISAR/RECHAZAR.`;
+          }
+        }
+      } catch (e: any) {
+        verifyNote = `⚠️ Verificación de video con error (${e?.message ?? e}) — revisar manualmente.`;
+      }
       await Promise.all([
         updateContent((c as any).id, { video_status: 'ready', video_url: st.video_url ?? undefined }),
-        updateCampaign((c as any).id, { status: 'pending_approval' }),
+        updateCampaign((c as any).id, { status: 'pending_approval', error_message: verifyNote }),
       ]);
       await sendMarketingPreview((c as any).id, st.video_url ?? null);
-      results.push({ id: (c as any).id, action: 'finalized_ready', has_url: !!st.video_url });
+      results.push({ id: (c as any).id, action: 'finalized_ready', has_url: !!st.video_url, verify: verifyNote });
     } else if (st.status === 'failed') {
       await timeOut(st.error ?? 'Video generation failed.');
       results.push({ id: (c as any).id, action: 'finalized_failed' });
