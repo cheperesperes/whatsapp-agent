@@ -28,6 +28,9 @@
     },
     "app/api/cron/competitor-stats/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/finalize-videos/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -54,6 +57,10 @@
     {
       "path": "/api/cron/competitor-stats",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/finalize-videos",
+      "schedule": "*/5 * * * *"
     }
   ],
   "headers": [
