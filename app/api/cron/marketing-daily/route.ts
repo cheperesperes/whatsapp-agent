@@ -228,10 +228,17 @@ export async function GET(req: NextRequest) {
       if (useHiggsfield) {
         // Image-to-video: animate the product still with a short, bright motion
         // prompt (Seedance over-flags dark scenes as NSFW — keep it clean).
+        // Accuracy tactics (skill playbook): SLOW camera so labels stay legible,
+        // concrete nouns, and a strong NEGATIVE baseline forbidding the exact
+        // morphs the post-render verification gate catches (warped labels,
+        // distorted geometry, duplicated/fabricated parts, morphed logo).
         const motionPrompt =
-          `Subtle premium product commercial motion: a slow gentle push-in and soft light sweep across the ` +
-          `${content.product_sku ?? 'PECRON'} power station. The product stays sharp, accurate and centered. ` +
-          `Bright, clean, photorealistic. No people, no text, no camera shake.`;
+          `Subtle premium product commercial motion: a very slow, gentle dolly-in and a soft light sweep across the ` +
+          `${content.product_sku ?? 'PECRON'} power station. The product stays perfectly sharp, accurate, undistorted and centered; ` +
+          `its real labels, text, color, ports and logo remain identical to the input image and fully legible. ` +
+          `Bright, clean, photorealistic studio look. ` +
+          `Negative: no label warping, no changing or fabricated text, no distorted or melting geometry, ` +
+          `no duplicated or extra parts, no morphing logo, no people, no overlay text, no fast moves, no camera shake.`;
         videoJob = await createHiggsfieldVideo(motionPrompt, campaignId, productImages);
       } else {
         videoJob = await createProductReviewVideo(content.youtube_script, campaignId, productImages);
