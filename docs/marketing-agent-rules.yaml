@@ -1,0 +1,407 @@
+# =============================================================================
+# AI Marketing Agent — Rulebook & Configuration
+# Platforms: Facebook, Instagram, YouTube
+# Video Engine: Higgsfield AI
+# Version: 1.0
+# Owner: Marketing Ops
+# -----------------------------------------------------------------------------
+# CANONICAL SOURCE OF TRUTH for the Oiikon marketing agent. The marketing-studio
+# skill + content engine + finalize/approval pipeline must enforce these rules.
+# Oiikon adaptations to confirm: banned competitor names (Jackery, EcoFlow,
+# Bluetti, Anker SOLIX, Goal Zero), brand palette/fonts, asset paths, locales
+# (es + en, USA-only). See skills/oiikon-marketing-studio for enforcement notes.
+# =============================================================================
+
+agent:
+  name: "BrandPostAgent"
+  version: "1.0.0"
+  mode: "supervised"            # supervised | semi_auto | full_auto
+  kill_switch_command: "/agent pause"
+  rollback_window_seconds: 60
+  audit_log_required: true
+
+# -----------------------------------------------------------------------------
+# 1. PRODUCT IMAGE & VIDEO INTEGRITY
+# -----------------------------------------------------------------------------
+product_integrity:
+  source_of_truth:
+    approved_asset_path: "/brand-assets/products/{SKU}/approved/"
+    allow_external_sources: false
+    allow_ai_generated_product: false   # Higgsfield may NOT generate the product itself
+    higgsfield_allowed_for:
+      - "backgrounds"
+      - "camera_motion"
+      - "lighting"
+      - "text_overlays"
+      - "transitions"
+    higgsfield_forbidden_for:
+      - "product_geometry"
+      - "product_labels"
+      - "product_color"
+      - "packaging_text"
+      - "logo"
+
+  sku_verification:
+    require_sku_declaration: true
+    cross_check:
+      - "filename"
+      - "metadata_alt_text"
+      - "vision_match_to_catalog"
+    min_confidence_score: 0.95
+    on_failure: "halt_and_flag_human"
+
+  prompt_filters:
+    banned_phrases:
+      - "imagine"
+      - "variation of"
+      - "similar to"
+      - "redesign"
+      - "new flavor of"
+      - "improved version"
+      - "with extra"
+    enforce_factual_description_only: true
+
+  label_and_text_protection:
+    ocr_diff_required: true
+    reference_source: "approved_asset_path"
+    max_character_mutation: 0
+    on_failure: "reject_render"
+
+  color_fidelity:
+    reference: "brand_locked_hex"
+    tolerance_delta_e: 3
+    on_failure: "reject_render"
+
+  negative_prompt_baseline:
+    - "no distorted product"
+    - "no warped labels"
+    - "no text artifacts"
+    - "no extra limbs or fingers"
+    - "no logo morphing"
+    - "no color shift on packaging"
+    - "no duplicate products"
+    - "no fabricated features"
+
+# -----------------------------------------------------------------------------
+# 2. PLATFORM SPECIFICATIONS
+# -----------------------------------------------------------------------------
+platforms:
+  instagram:
+    formats:
+      reel:    { aspect: "9:16", max_duration_sec: 90 }
+      feed:    { aspect: "1:1",  max_duration_sec: 60 }
+      story:   { aspect: "9:16", max_duration_sec: 15 }
+    caption_visible_chars: 125
+    hashtag_count: { min: 3, max: 5 }
+    safe_zone_margin_pct: 10
+    cadence_per_week: { min: 3, max: 5 }
+
+  facebook:
+    formats:
+      feed:  { aspect: "1:1",  max_duration_sec: 240 }
+      reel:  { aspect: "9:16", max_duration_sec: 90 }
+      video: { aspect: "16:9", max_duration_sec: 600 }
+    caption_visible_chars: 80
+    hashtag_count: { min: 1, max: 2 }
+    safe_zone_margin_pct: 10
+    cadence_per_week: { min: 4, max: 7 }
+
+  youtube:
+    formats:
+      short:    { aspect: "9:16", max_duration_sec: 60 }
+      longform: { aspect: "16:9", min_duration_sec: 60 }
+    title_max_chars: 60
+    description_min_words: 250
+    hashtag_count: { min: 2, max: 3 }
+    thumbnail_variants_required: 3
+    thumbnail_ab_test: true
+    cadence:
+      shorts_per_week: 7
+      longform_per_week: { min: 1, max: 2 }
+
+# -----------------------------------------------------------------------------
+# 3. BRAND VOICE & VISUAL STANDARDS
+# -----------------------------------------------------------------------------
+brand_standards:
+  voice_matrix:
+    instagram: "aspirational_playful"
+    facebook:  "warm_community"
+    youtube:   "educational_authoritative"
+  banned_words:
+    - "<competitor_name_1>"
+    - "<competitor_name_2>"
+    - "cheap"
+    - "guaranteed"
+  voice_classifier_min_score: 0.85
+  on_voice_failure: "rewrite_or_reject"
+
+  visual:
+    palette_hex:
+      primary:   "#000000"
+      secondary: "#FFFFFF"
+      accent:    "#FF6B00"
+    fonts_allowed:
+      - "BrandFont-Regular"
+      - "BrandFont-Bold"
+    logo:
+      required_on_video: true
+      min_size_pct_of_frame_height: 1.5
+      clear_space_pct: 5
+    approved_look_library: "/brand-assets/looks/"
+    filters_outside_library: "forbidden"
+
+# -----------------------------------------------------------------------------
+# 4. CONTENT STRATEGY
+# -----------------------------------------------------------------------------
+content_strategy:
+  hook_first_3_seconds:
+    required: true
+    min_motion_score: 0.6
+    min_onscreen_text_presence: true
+    on_failure: "regenerate"
+
+  caption_structure:
+    required_order: ["hook", "value", "cta", "hashtags"]
+    max_ctas: 1
+
+  content_mix_30_day:
+    value_educational_entertaining_pct: 70
+    social_proof_ugc_pct: 20
+    promotional_pct: 10
+    enforce_rolling_window: true
+    on_breach: "block_promo_post"
+
+  persona_targeting:
+    personas:
+      - "first_time_buyer"
+      - "loyal_customer"
+      - "lapsed_customer"
+      - "brand_curious"
+    max_single_persona_share_pct: 40
+    rotation_required: true
+
+  ab_testing:
+    one_variable_at_a_time: true
+    min_sample_size_impressions: 5000
+    log_path: "/agent/logs/ab_tests/"
+
+# -----------------------------------------------------------------------------
+# 5. POSTING CADENCE, TIMING & FREQUENCY CAPS
+# -----------------------------------------------------------------------------
+scheduling:
+  timezone: "audience_local"
+  allowed_post_windows:
+    instagram: ["07:00-09:00", "12:00-13:00", "18:00-21:00"]
+    facebook:  ["08:00-10:00", "13:00-15:00", "19:00-21:00"]
+    youtube:   ["15:00-18:00", "20:00-22:00"]
+  duplicate_creative_lockout_days: 30
+  max_posts_per_day:
+    instagram: 2
+    facebook: 3
+    youtube_shorts: 1
+    youtube_longform: 1
+
+# -----------------------------------------------------------------------------
+# 6. LOCALIZATION & ACCESSIBILITY
+# -----------------------------------------------------------------------------
+localization:
+  per_locale_copy_required: true
+  machine_translation_allowed: false
+  native_review_required_first_run: true
+  currency_units_auto_localize: true
+
+accessibility:
+  captions_required: true
+  alt_text_required: true
+  alt_text_human_review: true
+  color_contrast_min: "WCAG_AA"
+  flashing_max_hz: 3
+
+# -----------------------------------------------------------------------------
+# 7. MUSIC, TALENT & RIGHTS
+# -----------------------------------------------------------------------------
+rights_management:
+  music:
+    library_path: "/licensed-music/"
+    platform_native_audio_allowed: true
+    unlicensed_audio: "blocked"
+  talent_releases:
+    db_path: "/rights/talent/"
+    require_signed_release: true
+    check_expiry_before_publish: true
+  ugc:
+    require_written_permission: true
+    archive_with_post: true
+
+# -----------------------------------------------------------------------------
+# 8. LEGAL, COMPLIANCE & CLAIMS
+# -----------------------------------------------------------------------------
+compliance:
+  approved_claims_library: "/legal/approved_claims.json"
+  banned_claim_terms:
+    - "#1"
+    - "best"
+    - "guaranteed"
+    - "cure"
+    - "miracle"
+  auto_disclosures:
+    paid_or_incentivized: ["#ad", "#sponsored"]
+    gifted: ["#gifted"]
+  industry_rules:
+    alcohol:
+      age_gate_min: 21
+      responsibility_line_required: true
+    supplements:
+      fda_disclaimer_required: true
+    finance:
+      risk_disclaimer_required: true
+  privacy:
+    gdpr_ccpa_consent_log_required: true
+
+# -----------------------------------------------------------------------------
+# 9. CRISIS & SENSITIVITY
+# -----------------------------------------------------------------------------
+crisis_monitoring:
+  news_feed_sources:
+    - "google_news_api"
+    - "reuters"
+    - "brand_keyword_alerts"
+  trigger_keywords:
+    - "tragedy"
+    - "disaster"
+    - "outage"
+    - "recall"
+  on_trigger: "pause_all_scheduled_posts"
+  notify_channels: ["#marketing-ops", "ops@brand.com"]
+
+# -----------------------------------------------------------------------------
+# 10. ENGAGEMENT & RESPONSE SLAs
+# -----------------------------------------------------------------------------
+engagement:
+  seed_first_comment: true
+  seed_comment_window_minutes: 5
+  response_sla:
+    business_hours_minutes: 60
+    after_hours_minutes: 720
+  negative_comments: "route_to_human"
+  auto_reply_negative: false
+
+# -----------------------------------------------------------------------------
+# 11. PERFORMANCE GATES & LEARNING LOOP
+# -----------------------------------------------------------------------------
+performance:
+  tag_every_post_with_hypothesis: true
+  review_window_hours: 72
+  metrics_pull_sources: ["meta_graph_api", "youtube_analytics_api"]
+  minimum_thresholds:
+    instagram_reel_reach_rate_24h_pct: 1.0
+    facebook_post_engagement_rate_pct: 0.5
+    youtube_short_retention_pct: 50
+    youtube_longform_avg_view_duration_pct: 40
+  on_bottom_quartile: "retire_template"
+  on_top_quartile: "clone_for_next_batch"
+
+# -----------------------------------------------------------------------------
+# 12. PAID PROMOTION & BUDGET GUARDRAILS
+# -----------------------------------------------------------------------------
+paid_promotion:
+  require_human_approval: true
+  daily_spend_cap_usd: 250
+  weekly_spend_cap_usd: 1500
+  monthly_spend_cap_usd: 5000
+  cpa_kill_switch:
+    threshold_multiplier_over_target: 1.5
+    sustained_hours: 48
+  require_organic_baseline_days: 7
+
+# -----------------------------------------------------------------------------
+# 13. APPROVAL WORKFLOW
+# -----------------------------------------------------------------------------
+approval_workflow:
+  initial_phase_posts: 50
+  initial_phase_human_approval_pct: 100
+  post_initial_phase_auto_publish_requires: "100%_automated_check_pass"
+  flagged_queue:
+    routing: ["slack:#content-approvals", "email:approvers@brand.com"]
+  paid_boost_two_person_rule: true
+
+# -----------------------------------------------------------------------------
+# 14. CROSS-PLATFORM REPURPOSING
+# -----------------------------------------------------------------------------
+repurposing:
+  identical_asset_across_platforms: false
+  recut_recaption_required: true
+  reject_foreign_platform_watermarks:
+    - "tiktok_logo"
+    - "snapchat_logo"
+
+# -----------------------------------------------------------------------------
+# 15. SEO & DISCOVERABILITY
+# -----------------------------------------------------------------------------
+seo:
+  youtube:
+    keyword_research_required: true
+    description_min_words: 250
+    timestamps_required: true
+    end_screens_required: true
+    cards_required: true
+  instagram:
+    keywords_in_first_line: true
+  filename_convention: "{brand}-{sku}-{campaign}-{format}.mp4"
+  reject_filenames_matching:
+    - "final"
+    - "v[0-9]+"
+    - "REAL"
+    - "untitled"
+
+# -----------------------------------------------------------------------------
+# 16. AUDIT TRAIL (per published asset)
+# -----------------------------------------------------------------------------
+audit_trail:
+  fields_required:
+    - "sku"
+    - "source_asset_hash"
+    - "higgsfield_prompt"
+    - "higgsfield_seed"
+    - "higgsfield_model_version"
+    - "automated_check_results"
+    - "approver_id"
+    - "platform_post_id"
+    - "publish_timestamp_utc"
+  storage_path: "/agent/audit/"
+  retention_days: 730
+
+# -----------------------------------------------------------------------------
+# 17. QUARTERLY GOVERNANCE
+# -----------------------------------------------------------------------------
+governance:
+  brand_audit_frequency_days: 90
+  audit_report_includes:
+    - "voice_drift"
+    - "visual_drift"
+    - "performance_vs_benchmark"
+    - "hashtag_health"
+    - "audience_sentiment"
+  human_strategy_review_required: true
+
+# -----------------------------------------------------------------------------
+# 18. ESCALATION MATRIX
+# -----------------------------------------------------------------------------
+escalation:
+  levels:
+    L1_auto_reject:
+      examples: ["ocr_diff_fail", "color_fidelity_fail", "banned_word_detected"]
+      action: "block_and_log"
+    L2_human_review:
+      examples: ["sku_confidence_below_threshold", "voice_score_borderline"]
+      action: "route_to_approver"
+    L3_legal_review:
+      examples: ["claim_outside_library", "industry_disclaimer_missing"]
+      action: "route_to_legal"
+    L4_executive:
+      examples: ["crisis_trigger", "spend_cap_breach", "rights_violation"]
+      action: "halt_agent_notify_cmo"
+
+# =============================================================================
+# END OF CONFIG
+# =============================================================================
