@@ -178,6 +178,37 @@ Canonical config: `docs/marketing-agent-rules.yaml`. Mode = **supervised** (huma
 - Crisis: before generating, check news for tragedy/disaster/outage/recall → pause + notify ops. Privacy: WhatsApp offers need logged consent; honor STOP/BAJA.
 - Audit trail (retain 730d): SKU, source_asset_hash, exact prompt, seed, model version, automated_check_results, approver_id, platform post IDs, publish_timestamp_utc.
 
+## Render-accuracy & posting tactics (squeeze accuracy out of Higgsfield)
+
+**Render side**
+- **Image-to-video ONLY** when the product is on screen (never text-to-video — it hallucinates packaging). Feed the highest-res approved hero still available.
+- **Lock & reuse the seed.** Once a render passes checks, save its seed; reuse it for every variant (aspect ratios, recaptions) so the product looks identical across Reels/Feed/YouTube. (→ store `higgsfield_seed` in the audit trail.)
+- **Render 3–5s segments and stitch** (ffmpeg) for longer pieces — far more accurate than one 15s clip.
+- **Pin the product via Higgsfield reference-elements** on every product video — cuts drift sharply.
+- **Slow/static camera for label-readable shots**; reserve Hyper Motion for kinetic moments where the label isn't the focus (fast moves are where labels mutate).
+- **★ Best fix — don't render packaging text in AI.** Render the *scene* (background/motion/lighting) and **composite the real product/label PNG on top in post**. Eliminates OCR/label drift entirely. Pairs with rulebook §1 (`allow_ai_generated_product:false`).
+- **Render at 2× then downscale** — hides minor artifacts + gives per-platform crop room.
+
+**Prompt side**
+- Anchor with **concrete nouns, forbid abstract** ("E3800LFP on a wood floor, soft window light from left, slow dolly-in" ≫ "elegant lifestyle shot"). Specificity reduces hallucination.
+- Use a **locked prompt-template library** (hero / lifestyle / problem-solution per product) — the agent PICKS a tested prompt, never free-writes.
+- Always include the **negative-prompt baseline** (even when redundant — free insurance).
+
+**Verification side**
+- **1-frame proof first**: generate a single keyframe in the new scene, approve it, *then* run the full motion render (saves credits, catches drift early).
+- **Over-generate 3 renders, pick best** (auto-scorer or human) rather than publishing the first pass.
+- **Fresh-eyes 30-min hold** before publishing; **reverse-image check** the final render.
+
+**Posting side**
+- **Schedule with a 15–30 min buffer** (Meta Business Suite / Buffer) — never publish live; gives a pull window.
+- **Native upload, never share-from-link** (algorithms penalize external links).
+- IG: long caption as the **first comment**. Preview in the **real platform composer** before publishing (render-tool view can crop wrong).
+- **Platform-native audio** on IG for reach (layer alongside licensed). **Never edit after publishing** — delete + repost (edited posts get de-prioritized in hour 1).
+- **Seed legit engagement in the first 60 min** (algorithm's reach-decision window).
+- **Watermark a unique render ID** (corner or metadata) → traceable to seed/prompt in the audit log.
+
+**Code items these imply (next builds):** capture+reuse `higgsfield_seed`; composite-real-product-over-AI-background pipeline; 1-frame-proof step before full render; schedule-with-buffer queue; first-comment + first-hour engagement seeding.
+
 ## Related
 - Config: `docs/marketing-agent-rules.yaml` (full rulebook).
 - Memory: `project_higgsfield_marketing` (Higgsfield recipe + scene library), `project_sol_smart_offers` (offer selection), `feedback_marketing_broad_audience`, `feedback_ai_voice_no_acronyms`, `project_marketing_bilingual`, `reference_oiikon_shared_db`.
