@@ -138,6 +138,47 @@ Comments / shares / saves per post; FB-referral sessions (GA4); returning-user %
 - Respect the **paid-ad pause** + Trustpilot ≥15 gate; only use real reviews/UGC.
 - Include WhatsApp `15616988477` (live line) + opt-out path on outbound. Bilingual ES/EN per [[project_marketing_bilingual]].
 
+## Compliance Rules (rulebook §1–18) — enforce on every campaign
+Canonical config: `docs/marketing-agent-rules.yaml`. Mode = **supervised** (human approval before any publish; kill switch `/agent pause`).
+
+### Hard blocks (reject + require human override)
+- No competitor names: Jackery, EcoFlow, Bluetti, Anker/SOLIX, Goal Zero.
+- No banned claim terms: #1, best/el mejor, guaranteed/garantizamos, cure, miracle/milagro, cheap/barato.
+- No invented specs: every Wh/Ah/W/%/hour/$ must appear literally in the product object — reject any number not in source.
+- No false urgency: últimas unidades, solo hoy, quedan pocas, stock limitado, última oportunidad, vence hoy.
+- No guilt / fear / disaster exploitation. USA-only: 48 continental states, USD; reject Cuba/Canada/Mexico/PR/territory shipping claims.
+
+### Product integrity (NO AI-generated products)
+- Product images come ONLY from approved Supabase product assets — never another source.
+- Higgsfield/HeyGen animate motion, background, lighting, transitions ONLY — never product geometry, labels, color, packaging text, or logo.
+- Inject all negative prompts in BOTH providers: no distorted product, warped labels, text artifacts, logo morphing, packaging color shift, duplicate/fabricated products, visible cords.
+- (Infra, next) Post-render gates: vision SKU match ≥0.95, OCR label diff = 0 char mutation, color ΔE ≤3 vs brand hex → else reject_render / L2.
+
+### Voice & brand
+- Voice by platform: IG aspirational/playful · FB warm/community · YT educational/authoritative.
+- Brand palette: primary `#000000`, secondary `#FFFFFF`, accent `#FF6B00` (confirm). Logo ≥1.5% frame height, 5% clear space when overlays added.
+- Bilingual native ES + EN, NO machine translation. New language variant's first run → native-speaker sign-off.
+
+### Platform formats
+- IG Reels 9:16 ≤90s, caption ≤125 visible chars, 3–5 hashtags. FB feed 1:1 ≤240s, caption ≤80 chars, 1–2 hashtags. YT Shorts 9:16 ≤60s, description ≥250 words, 2–3 tags, timestamps.
+- Caption order: hook → value → CTA (max 1) → hashtags. IG: 2–3 SEO keywords in first line.
+- Recut per platform (9:16 FB/IG, 16:9 YT) — never publish identical asset; reject TikTok/Snap watermarks; 30-day duplicate-creative lockout; 10% safe-zone margin.
+- AI disclosure "🤖 Contenido creado con IA, revisado por humanos." before hashtags on FB/IG.
+
+### Strategy mix
+- Rolling 30-day mix: 70% value/educational · 20% social-proof/UGC · 10% promo max — block promo if breached.
+- Persona rotation (first_time_buyer, loyal, lapsed, brand_curious): no single persona >40% over 30d.
+- Tag every post with a testable hypothesis; review at 72h vs thresholds (IG reach ≥1%, FB engagement ≥0.5%, YT short retention ≥50%, YT long avg-view ≥40%); retire bottom-quartile, clone top-quartile.
+
+### Workflow, rights & governance
+- Supervised: every campaign → pending_approval; first 50 posts = 100% human approval; after, auto-publish only on 0 automated-check warnings; flagged → human.
+- Music: licensed library or platform-native audio ONLY; unlicensed blocked. UGC needs written permission + archive. Talent needs signed, unexpired release.
+- Paid boost: two approvers + spend caps ($250/d, $1500/w, $5000/mo) + CPA kill switch (1.5× target, 48h). (Dormant — ads paused.)
+- Escalation: L1 auto-reject (competitor/urgency/false claim) · L2 human (voice <0.85, SKU <0.95) · L3 legal (claim outside approved library) · L4 executive (crisis / spend breach / rights violation).
+- Crisis: before generating, check news for tragedy/disaster/outage/recall → pause + notify ops. Privacy: WhatsApp offers need logged consent; honor STOP/BAJA.
+- Audit trail (retain 730d): SKU, source_asset_hash, exact prompt, seed, model version, automated_check_results, approver_id, platform post IDs, publish_timestamp_utc.
+
 ## Related
+- Config: `docs/marketing-agent-rules.yaml` (full rulebook).
 - Memory: `project_higgsfield_marketing` (Higgsfield recipe + scene library), `project_sol_smart_offers` (offer selection), `feedback_marketing_broad_audience`, `feedback_ai_voice_no_acronyms`, `project_marketing_bilingual`, `reference_oiikon_shared_db`.
 - Skills: `hypermove-video` (Higgsfield video), `oiikon-marketing-offer-broadcast` (WhatsApp offer blast), `oiikon-ad-campaign-launch` (Google Pmax), `sol-marketing-playbook` (WhatsApp 1:1).

@@ -375,6 +375,23 @@ export function validateContent(content: GeneratedContent): string[] {
     if (allText.includes(c)) warnings.push(`Competidor mencionado: "${c}" (revisar)`);
   }
 
+  // §8 Banned absolute/superlative claim terms (rulebook compliance)
+  const claimTerms = [
+    '#1', 'número 1', 'numero 1', 'número uno', 'numero uno',
+    'guaranteed', 'garantizamos', 'resultado garantizado',
+    'miracle', 'milagro', 'milagroso', 'milagrosa',
+    'cheap', 'cheapest', 'barato', 'baratísimo', 'baratisimo', 'más barato', 'mas barato',
+  ];
+  for (const term of claimTerms) {
+    if (allText.includes(term)) warnings.push(`Afirmación prohibida: "${term}"`);
+  }
+
+  // §3.1 USA-only — flag non-US shipping/geography (Cuba also caught by Sol's filter)
+  const nonUsGeo = ['cuba', 'cubano', 'cubana', 'canadá', 'méxico', 'puerto rico', 'el caribe', 'internacional'];
+  for (const g of nonUsGeo) {
+    if (allText.includes(g)) warnings.push(`Geografía fuera de EE.UU.: "${g}" (servicio USA-only — revisar)`);
+  }
+
   // §3.6 AI disclosure must appear
   if (!content.facebook_post.includes('IA') && !content.facebook_post.toLowerCase().includes('inteligencia artificial')) {
     warnings.push('Falta disclosure de IA en facebook_post');
