@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   const sb = createServiceClient();
   const { data: rows, error } = await sb
     .from('marketing_campaigns')
-    .select('id, updated_at, product_sku, marketing_content(heygen_video_id, video_status)')
+    .select('id, updated_at, product_sku, marketing_content(heygen_video_id, video_status, youtube_title)')
     .eq('status', 'creating_video');
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
       // the approved product photo before it can be approved/published. Graceful
       // — never blocks finalization; a detected morph just flags for the human.
       let verifyNote: string | null = null;
+      let verdictOk = true; // default true → finishing proceeds unless a HARD integrity fail
       try {
         const sku = (c as any).product_sku as string | null;
         if (sku && st.video_url) {
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest) {
           if (ref) {
             const { verifyVideoAccuracy } = await import('@/lib/marketing/video-verify');
             const v = await verifyVideoAccuracy(st.video_url, ref, (prod as any)?.name ?? sku);
+            verdictOk = v.ok;
             verifyNote = v.skipped
               ? `⚠️ Verificación de video omitida (${v.note}) — revisar manualmente antes de publicar.`
               : v.passed
@@ -119,12 +121,38 @@ export async function GET(req: NextRequest) {
       } catch (e: any) {
         verifyNote = `⚠️ Verificación de video con error (${e?.message ?? e}) — revisar manualmente.`;
       }
+
+      // Finish the clip: burn brand captions + a music bed, then store it.
+      // Skipped when integrity hard-failed (don't polish a clip the human will
+      // reject) — graceful, so a finish failure just keeps the raw render URL.
+      let finalUrl: string | undefined = st.video_url ?? undefined;
+      let finishNote: string | null = null;
+      if (verdictOk && st.video_url) {
+        try {
+          const { finishVideo } = await import('@/lib/marketing/video-post');
+          const fin = await finishVideo(st.video_url, {
+            campaignId: (c as any).id,
+            headline: content?.youtube_title ?? null,
+            cta: 'oiikon.com',
+          });
+          if (fin.ok && fin.url) {
+            finalUrl = fin.url;
+            finishNote = `🎬 Video finalizado (${fin.note}).`;
+          } else {
+            finishNote = `🎬 Captions/música omitidas (${fin.note}).`;
+          }
+        } catch (e: any) {
+          finishNote = `🎬 Finalización de video con error (${e?.message ?? e}).`;
+        }
+      }
+
+      const note = [verifyNote, finishNote].filter(Boolean).join(' ') || null;
       await Promise.all([
-        updateContent((c as any).id, { video_status: 'ready', video_url: st.video_url ?? undefined }),
-        updateCampaign((c as any).id, { status: 'pending_approval', error_message: verifyNote }),
+        updateContent((c as any).id, { video_status: 'ready', video_url: finalUrl }),
+        updateCampaign((c as any).id, { status: 'pending_approval', error_message: note }),
       ]);
-      await sendMarketingPreview((c as any).id, st.video_url ?? null);
-      results.push({ id: (c as any).id, action: 'finalized_ready', has_url: !!st.video_url, verify: verifyNote });
+      await sendMarketingPreview((c as any).id, finalUrl ?? null);
+      results.push({ id: (c as any).id, action: 'finalized_ready', has_url: !!finalUrl, verify: verifyNote, finish: finishNote });
     } else if (st.status === 'failed') {
       await timeOut(st.error ?? 'Video generation failed.');
       results.push({ id: (c as any).id, action: 'finalized_failed' });
