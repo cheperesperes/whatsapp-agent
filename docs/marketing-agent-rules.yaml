@@ -136,13 +136,20 @@ brand_standards:
   on_voice_failure: "rewrite_or_reject"
 
   visual:
+    # Oiikon Marketing Kit (brand.jsx). USA-broad — no Cuba copy/imagery.
     palette_hex:
-      primary:   "#000000"
+      primary:   "#F97316"   # Oiikon orange
+      primary_hover: "#EA580C"
+      primary_deep:  "#C2410C"
+      ink:       "#020817"   # near-black text/surfaces
+      ink_soft:  "#1E293B"
+      cream:     "#FFF7ED"
       secondary: "#FFFFFF"
-      accent:    "#FF6B00"
+      whatsapp:  "#25D366"
+      accent:    "#F97316"
     fonts_allowed:
-      - "BrandFont-Regular"
-      - "BrandFont-Bold"
+      - "Inter"              # 900/Black for display + captions, 700 for CTAs
+      - "Inter-Black"        # bundled at assets/fonts/Inter-Black.ttf (video captions)
     logo:
       required_on_video: true
       min_size_pct_of_frame_height: 1.5
