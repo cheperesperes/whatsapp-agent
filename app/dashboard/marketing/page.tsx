@@ -158,10 +158,42 @@ function formatDate(dateStr: string) {
 
 type ContentRow = NonNullable<Campaign['marketing_content']>[number];
 
+// Always tells the operator where the video stands — generating / ready / error
+// / skipped — instead of silently rendering a <video> that spins forever on a
+// dead or missing URL (the "I can't see the video" confusion).
+function VideoStatusChip({ content, className = '' }: { content: ContentRow; className?: string }) {
+  const vs = content.video_status;
+  if ((vs === 'processing' || vs === 'pending') && !content.video_url) {
+    return (
+      <div className={`flex items-center gap-2 rounded bg-surface-800/70 ring-1 ring-surface-600 p-2.5 text-xs text-brand-200 ${className}`}>
+        <svg className="animate-spin w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+        </svg>
+        🎬 Generando video… puede tardar unos minutos. La página se actualiza sola.
+      </div>
+    );
+  }
+  if (vs === 'failed') {
+    return (
+      <p className={`rounded bg-red-950/40 ring-1 ring-red-900/40 p-2.5 text-xs text-red-300 ${className}`}>
+        🚨 No se pudo generar el video. Publica «📝 Solo texto» o regenera el video.
+      </p>
+    );
+  }
+  if (vs === 'skipped') {
+    return <p className={`text-[11px] text-gray-500 ${className}`}>📷 Sin video (campaña de imagen).</p>;
+  }
+  if (vs === 'ready' && content.video_url) {
+    return <p className={`text-[11px] text-green-400 ${className}`}>✅ Video listo</p>;
+  }
+  return null;
+}
+
 function ContentPreview({ content }: { content: ContentRow }) {
   const blocks: Array<{ label: string; body: React.ReactNode }> = [];
 
-  if (content.video_url) {
+  if (content.video_url && content.video_status !== 'failed') {
     blocks.push({
       label: '🎬 Video',
       body: (
@@ -172,6 +204,8 @@ function ContentPreview({ content }: { content: ContentRow }) {
         />
       ),
     });
+  } else if (content.video_status && content.video_status !== 'ready') {
+    blocks.push({ label: '🎬 Video', body: <VideoStatusChip content={content} /> });
   }
 
   if (content.facebook_post) {
@@ -1010,10 +1044,11 @@ function FacebookPreview({ content }: { content: ContentRow }) {
             </p>
           ))}
         </div>
-        {content.video_url && (
+        {content.video_url && content.video_status !== 'failed' && (
           <video controls src={content.video_url} className="mt-3 w-full rounded" />
         )}
       </div>
+      <VideoStatusChip content={content} className="mt-3" />
     </div>
   );
 }
