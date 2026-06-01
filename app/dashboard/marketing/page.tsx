@@ -13,6 +13,7 @@ interface Campaign {
   product_sku: string | null;
   category: string | null;
   updated_at?: string | null;
+  created_at?: string | null;
   error_message: string | null;
   marketing_content?: Array<{
     video_url: string | null;
@@ -332,13 +333,16 @@ export default function MarketingPage() {
 
   useEffect(() => { reload(); }, [reload]);
 
-  const today = data?.campaigns.find(
-    (c) => c.date === new Date().toISOString().split('T')[0]
-  );
+  const todayStr = new Date().toISOString().split('T')[0];
+  // Multi-campaign-per-day: ALL of today's campaigns (newest first), each shown
+  // as its own card so the operator can run unlimited posts.
+  const todays = (data?.campaigns ?? [])
+    .filter((c) => c.date === todayStr)
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
 
-  // Auto-poll while the daily pipeline is in-flight so the operator sees
+  // Auto-poll while ANY of today's campaigns is in-flight so the operator sees
   // research → generating → creating_video progress without manual refresh.
-  const inFlight = today && ['researching', 'generating', 'creating_video'].includes(today.status);
+  const inFlight = todays.some((c) => ['researching', 'generating', 'creating_video'].includes(c.status));
   useEffect(() => {
     if (!inFlight) return;
     const id = setInterval(reload, 5000);
@@ -348,8 +352,8 @@ export default function MarketingPage() {
   // Self-heal: drive video finalization from the dashboard so a stuck
   // `creating_video` campaign completes (or times out) even when the */5 cron
   // is misconfigured (e.g. CRON_SECRET unset → the cron 401s and never runs).
-  // Session-authed; fires on entering the state and every 20s while it persists.
-  const creatingVideo = today?.status === 'creating_video';
+  // Session-authed; fires while ANY campaign is creating_video, every 20s.
+  const creatingVideo = todays.some((c) => c.status === 'creating_video');
   useEffect(() => {
     if (!creatingVideo) return;
     const finalize = () =>
@@ -360,17 +364,15 @@ export default function MarketingPage() {
     const id = setInterval(finalize, 20000);
     return () => clearInterval(id);
   }, [creatingVideo, reload]);
-
-  const pending = data?.campaigns.find((c) => c.status === 'pending_approval');
   const history = data?.campaigns.filter((c) => c.status === 'published').slice(0, 10) ?? [];
 
-  async function approve(approved: boolean, options: { text_only?: boolean } = {}) {
-    if (!pending) return;
+  async function approve(campaignId: string, approved: boolean, options: { text_only?: boolean } = {}) {
+    if (!campaignId) return;
     setApproving(true);
     await fetch('/api/marketing/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approved, campaign_id: pending.id, text_only: options.text_only ?? false }),
+      body: JSON.stringify({ approved, campaign_id: campaignId, text_only: options.text_only ?? false }),
     });
     setApproving(false);
     reload();
@@ -389,6 +391,8 @@ export default function MarketingPage() {
   async function generate(
     options: {
       force?: boolean;
+      isNew?: boolean;
+      campaignId?: string | null;
       category?: string | null;
       productSku?: string | null;
       guidance?: string | null;
@@ -396,16 +400,18 @@ export default function MarketingPage() {
       media?: 'image' | 'video' | 'both';
     } = {}
   ) {
-    const { force = false, category, productSku, guidance, language = 'es', media = 'image' } = options;
-    if (force && !confirm('¿Regenerar la campaña de hoy? La versión actual se perderá.')) return;
+    const { force = false, isNew = false, campaignId, category, productSku, guidance, language = 'es', media = 'image' } = options;
+    if (force && !confirm('¿Regenerar esta campaña? La versión actual se perderá.')) return;
     setGenerating(true);
     try {
-      // 'both' = generate a Spanish campaign and an English campaign for today
-      // (separate posts). Each is its own per-(date,language) campaign.
+      // 'both' = generate a Spanish campaign and an English campaign (separate
+      // posts). Each is its own campaign row.
       const langs: Array<'es' | 'en'> = language === 'both' ? ['es', 'en'] : [language];
       for (const lang of langs) {
         const qs = new URLSearchParams();
         if (force) qs.set('force', 'true');
+        if (isNew) qs.set('new', 'true');               // always insert a fresh campaign
+        if (campaignId) qs.set('campaign_id', campaignId); // regenerate a specific one
         if (category) qs.set('category', category);
         if (productSku) qs.set('product_sku', productSku);
         if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
@@ -427,7 +433,7 @@ export default function MarketingPage() {
     );
   }
 
-  const content0 = today?.marketing_content?.[0];
+  const content0 = todays[0]?.marketing_content?.[0];
 
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-surface-900">
@@ -460,25 +466,28 @@ export default function MarketingPage() {
 
       <div className="p-4 sm:p-6 space-y-5 max-w-3xl mx-auto w-full">
 
-        {/* ─────────────────  HERO  ───────────────── */}
-        {!today ? (
-          <CategoryLauncher
-            products={products}
-            onPick={(cat, opts) => generate({ category: cat, ...opts })}
-            busy={generating}
-          />
-        ) : (
+        {/* ────────  RUN NEW CAMPAIGN (always available) ──────── */}
+        <CategoryLauncher
+          products={products}
+          onPick={(cat, opts) => generate({ isNew: true, category: cat, ...opts })}
+          busy={generating}
+          heading={todays.length > 0 ? 'Crear otra campaña' : undefined}
+        />
+
+        {/* ────────  TODAY'S CAMPAIGNS (one card each) ──────── */}
+        {todays.map((c) => (
           <CampaignHero
-            campaign={today}
+            key={c.id}
+            campaign={c}
             products={products}
-            inFlight={!!inFlight}
+            inFlight={['researching', 'generating', 'creating_video'].includes(c.status)}
             approving={approving}
             generating={generating}
-            onApprove={approve}
-            onRegenerate={(cat, opts) => generate({ force: true, category: cat, ...opts })}
-            onDeletePublished={() => deletePublished(today.id)}
+            onApprove={(approved, opts) => approve(c.id, approved, opts)}
+            onRegenerate={(cat, opts) => generate({ force: true, campaignId: c.id, category: cat, ...opts })}
+            onDeletePublished={() => deletePublished(c.id)}
           />
-        )}
+        ))}
 
         {/* ─────────────  HISTORY  ───────────── */}
         {history.length > 0 && (
@@ -792,6 +801,7 @@ function CategoryLauncher({
   products,
   onPick,
   busy,
+  heading,
 }: {
   products: Product[];
   onPick: (
@@ -799,17 +809,25 @@ function CategoryLauncher({
     opts: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both'; media?: 'image' | 'video' | 'both' },
   ) => void;
   busy: boolean;
+  heading?: string;
 }) {
   const [productSku, setProductSku] = useState<string>('');
   const [guidance, setGuidance] = useState<string>('');
   const [language, setLanguage] = useState<'es' | 'en' | 'both'>('es');
   const [media, setMedia] = useState<'image' | 'video' | 'both'>('image');
 
+  // When there are already campaigns today, render as a compact collapsible
+  // "create another" panel so it doesn't dominate the list.
+  const isExtra = !!heading;
+
   return (
-    <div className="card p-6">
-      <div className="text-center mb-5">
-        <p className="text-3xl mb-2">📭</p>
-        <p className="text-sm text-gray-300">Aún no hay campaña para hoy</p>
+    <details className="card p-6" open={!isExtra}>
+      <summary className={isExtra ? 'cursor-pointer text-sm font-medium text-brand-400 list-none' : 'hidden'}>
+        ➕ {heading}
+      </summary>
+      <div className="text-center mb-5" style={isExtra ? { marginTop: '1rem' } : undefined}>
+        <p className="text-3xl mb-2">{isExtra ? '➕' : '📭'}</p>
+        <p className="text-sm text-gray-300">{isExtra ? 'Crear otra campaña para hoy' : 'Aún no hay campaña para hoy'}</p>
         <p className="text-[11px] text-gray-500 mt-1">Elige un ángulo para generar el contenido:</p>
       </div>
 
@@ -902,7 +920,7 @@ function CategoryLauncher({
           Iniciando pipeline...
         </p>
       )}
-    </div>
+    </details>
   );
 }
 

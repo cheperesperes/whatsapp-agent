@@ -100,6 +100,17 @@ export async function getCampaignByDate(
   return (data?.[0] as MarketingCampaign | undefined) ?? null;
 }
 
+export async function getCampaignById(id: string): Promise<MarketingCampaign | null> {
+  const sb = createServiceClient();
+  const { data, error } = await sb
+    .from('marketing_campaigns')
+    .select('*')
+    .eq('id', id)
+    .limit(1);
+  if (error) console.error('[getCampaignById] error:', error.message, error.code);
+  return (data?.[0] as MarketingCampaign | undefined) ?? null;
+}
+
 export async function getPendingApprovalCampaign(): Promise<MarketingCampaign | null> {
   const sb = createServiceClient();
   const { data } = await sb

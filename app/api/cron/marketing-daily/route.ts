@@ -14,6 +14,7 @@ import {
   updateCampaign,
   createContent,
   getCampaignByDate,
+  getCampaignById,
   upsertFacebookGroups,
 } from '@/lib/marketing/db';
 import { loadMemory, consolidateMemory, formatMemoryForPrompt } from '@/lib/marketing/memory';
@@ -87,9 +88,25 @@ export async function GET(req: NextRequest) {
     mediaParam === 'image' || mediaParam === 'both' ? mediaParam : 'video';
   const makeVideo = (media === 'video' || media === 'both') && language === PRIMARY_LANGUAGE;
 
-  // Skip if already ran today for THIS language (unless force=true)
-  let existing = await getCampaignByDate(today, language);
-  if (existing && !force && !['failed'].includes(existing.status)) {
+  // Multi-campaign-per-day: the dashboard can launch unlimited posts.
+  //  • new=true        → ALWAYS create a fresh campaign (operator "Run new campaign")
+  //  • force=true       → regenerate a SPECIFIC existing campaign in place
+  //  • neither          → scheduled-cron behavior: one idempotent post per (date,language)
+  const wantNew = req.nextUrl.searchParams.get('new') === 'true';
+
+  // When regenerating a specific campaign, the dashboard passes its id so we
+  // target exactly that row (instead of "today's" first match).
+  const targetId = req.nextUrl.searchParams.get('campaign_id')?.trim() || null;
+
+  // The cron (and legacy callers) still de-dupe per (date,language). A manual
+  // "Run new campaign" (new=true) bypasses that and always inserts a new row.
+  let existing = targetId
+    ? await getCampaignById(targetId)
+    : wantNew
+      ? null
+      : await getCampaignByDate(today, language);
+
+  if (existing && !force && !wantNew && !['failed'].includes(existing.status)) {
     return NextResponse.json({
       ok: true,
       skipped: true,
