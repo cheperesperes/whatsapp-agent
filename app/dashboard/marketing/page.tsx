@@ -344,6 +344,23 @@ export default function MarketingPage() {
     const id = setInterval(reload, 5000);
     return () => clearInterval(id);
   }, [inFlight, reload]);
+
+  // Self-heal: drive video finalization from the dashboard so a stuck
+  // `creating_video` campaign completes (or times out) even when the */5 cron
+  // is misconfigured (e.g. CRON_SECRET unset → the cron 401s and never runs).
+  // Session-authed; fires on entering the state and every 20s while it persists.
+  const creatingVideo = today?.status === 'creating_video';
+  useEffect(() => {
+    if (!creatingVideo) return;
+    const finalize = () =>
+      fetch('/api/marketing/finalize', { method: 'POST', cache: 'no-store' })
+        .then(() => reload())
+        .catch(() => {});
+    finalize();
+    const id = setInterval(finalize, 20000);
+    return () => clearInterval(id);
+  }, [creatingVideo, reload]);
+
   const pending = data?.campaigns.find((c) => c.status === 'pending_approval');
   const history = data?.campaigns.filter((c) => c.status === 'published').slice(0, 10) ?? [];
 
