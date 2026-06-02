@@ -306,6 +306,9 @@ export default function MarketingPage() {
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Which specific campaign card is mid-action — so a busy label (e.g.
+  // "Publicando…") only shows on the card you clicked, not every card.
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const togglePreview = (id: string) =>
@@ -369,12 +372,39 @@ export default function MarketingPage() {
   async function approve(campaignId: string, approved: boolean, options: { text_only?: boolean } = {}) {
     if (!campaignId) return;
     setApproving(true);
+    setBusyId(campaignId);
     await fetch('/api/marketing/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ approved, campaign_id: campaignId, text_only: options.text_only ?? false }),
     });
     setApproving(false);
+    setBusyId(null);
+    reload();
+  }
+
+  async function deleteCampaign(campaignId: string) {
+    if (!campaignId) return;
+    if (!confirm('¿Eliminar esta campaña por completo? Si ya está publicada, también se borrará el post en redes. Esta acción no se puede deshacer.')) return;
+    setBusyId(campaignId);
+    await fetch('/api/marketing/campaign-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_id: campaignId }),
+    }).catch(() => {});
+    setBusyId(null);
+    reload();
+  }
+
+  async function editCampaign(campaignId: string, fields: Record<string, string>) {
+    if (!campaignId) return;
+    setBusyId(campaignId);
+    await fetch('/api/marketing/campaign-edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_id: campaignId, fields }),
+    }).catch(() => {});
+    setBusyId(null);
     reload();
   }
 
@@ -403,6 +433,7 @@ export default function MarketingPage() {
     const { force = false, isNew = false, campaignId, category, productSku, guidance, language = 'es', media = 'image' } = options;
     if (force && !confirm('¿Regenerar esta campaña? La versión actual se perderá.')) return;
     setGenerating(true);
+    if (campaignId) setBusyId(campaignId);
     try {
       // 'both' = generate a Spanish campaign and an English campaign (separate
       // posts). Each is its own campaign row.
@@ -421,6 +452,7 @@ export default function MarketingPage() {
       }
     } finally {
       setGenerating(false);
+      setBusyId(null);
       reload();
     }
   }
@@ -481,11 +513,14 @@ export default function MarketingPage() {
             campaign={c}
             products={products}
             inFlight={['researching', 'generating', 'creating_video'].includes(c.status)}
-            approving={approving}
-            generating={generating}
+            approving={approving && busyId === c.id}
+            generating={generating && busyId === c.id}
+            busy={busyId === c.id}
             onApprove={(approved, opts) => approve(c.id, approved, opts)}
             onRegenerate={(cat, opts) => generate({ force: true, campaignId: c.id, category: cat, ...opts })}
             onDeletePublished={() => deletePublished(c.id)}
+            onDelete={() => deleteCampaign(c.id)}
+            onEdit={(fields) => editCampaign(c.id, fields)}
           />
         ))}
 
@@ -547,18 +582,24 @@ function CampaignHero({
   inFlight,
   approving,
   generating,
+  busy,
   onApprove,
   onRegenerate,
   onDeletePublished,
+  onDelete,
+  onEdit,
 }: {
   campaign: Campaign;
   products: Product[];
   inFlight: boolean;
   approving: boolean;
   generating: boolean;
+  busy: boolean;
   onApprove: (approved: boolean, options?: { text_only?: boolean }) => void;
   onRegenerate: (cat: string, opts?: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both'; media?: 'image' | 'video' | 'both' }) => void;
   onDeletePublished: () => void;
+  onDelete: () => void;
+  onEdit: (fields: Record<string, string>) => void;
 }) {
   const [productSku, setProductSku] = useState<string>(campaign.product_sku ?? '');
   const [guidance, setGuidance] = useState<string>('');
@@ -566,7 +607,11 @@ function CampaignHero({
     (campaign.language as 'es' | 'en' | 'both') ?? 'es',
   );
   const [regenMedia, setRegenMedia] = useState<'image' | 'video' | 'both'>('image');
+  const [editing, setEditing] = useState(false);
   const content = campaign.marketing_content?.[0];
+  const [draftFb, setDraftFb] = useState<string>(content?.facebook_post ?? '');
+  const [draftIg, setDraftIg] = useState<string>(content?.instagram_caption ?? '');
+  const [draftYt, setDraftYt] = useState<string>(content?.youtube_title ?? '');
   const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === campaign.status);
   const terminal = campaign.status === 'failed' || campaign.status === 'rejected';
   const readyToApprove = campaign.status === 'pending_approval';
@@ -624,7 +669,89 @@ function CampaignHero({
             )}
           </div>
         </div>
+
+        {/* Per-card actions: Edit text + Delete. Available on every card. */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {content && !inFlight && (
+            <button
+              type="button"
+              onClick={() => {
+                setDraftFb(content?.facebook_post ?? '');
+                setDraftIg(content?.instagram_caption ?? '');
+                setDraftYt(content?.youtube_title ?? '');
+                setEditing((v) => !v);
+              }}
+              disabled={busy}
+              className="px-2.5 py-1.5 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs transition-colors disabled:opacity-50"
+              title="Editar el texto del post a mano"
+            >
+              {editing ? '✕ Cerrar' : '✏️ Editar'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={busy}
+            className="px-2.5 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-800/60 border border-red-800/40 text-red-200 text-xs transition-colors disabled:opacity-50"
+            title="Eliminar esta campaña por completo"
+          >
+            🗑️ Eliminar
+          </button>
+        </div>
       </div>
+
+      {/* Inline editor — hand-edit the post copy before approving. */}
+      {editing && content && (
+        <div className="mx-5 mb-3 p-3 rounded-lg bg-surface-800 border border-surface-600 space-y-3">
+          <div>
+            <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Texto Facebook</label>
+            <textarea
+              value={draftFb}
+              onChange={(e) => setDraftFb(e.target.value)}
+              rows={6}
+              className="w-full text-xs bg-surface-900 border border-surface-600 rounded p-2 text-gray-200"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Caption Instagram</label>
+            <textarea
+              value={draftIg}
+              onChange={(e) => setDraftIg(e.target.value)}
+              rows={4}
+              className="w-full text-xs bg-surface-900 border border-surface-600 rounded p-2 text-gray-200"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Título YouTube</label>
+            <input
+              value={draftYt}
+              onChange={(e) => setDraftYt(e.target.value)}
+              className="w-full text-xs bg-surface-900 border border-surface-600 rounded p-2 text-gray-200"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onEdit({ facebook_post: draftFb, instagram_caption: draftIg, youtube_title: draftYt });
+                setEditing(false);
+              }}
+              disabled={busy}
+              className="flex-1 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-medium disabled:opacity-50"
+            >
+              {busy ? 'Guardando…' : '💾 Guardar cambios'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              disabled={busy}
+              className="px-4 py-2 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pipeline hint */}
       {STATUS_DETAIL[campaign.status] && (
@@ -643,7 +770,7 @@ function CampaignHero({
       {content && <ChannelStatusChips content={content} />}
 
       {/* Rendered FB-style preview (always visible, no toggle) */}
-      {content && <FacebookPreview content={content} />}
+      {content && <FacebookPreview content={content} productSku={campaign.product_sku} />}
 
       {/* Primary CTA — stacks vertically on phones (full-width tap targets,
           ≥48pt high) and inlines back into a row on tablet+. Each button keeps
@@ -1055,9 +1182,24 @@ function ChannelStatusChips({ content }: { content: ContentRow }) {
   );
 }
 
-function FacebookPreview({ content }: { content: ContentRow }) {
+function FacebookPreview({ content, productSku }: { content: ContentRow; productSku?: string | null }) {
   const body = content.facebook_post ?? content.instagram_caption ?? '';
   const lines = body.split('\n');
+  const hasVideo = !!content.video_url && content.video_status !== 'failed';
+
+  // Fetch the publish-ready product image so the operator sees the actual
+  // visual for an image/text post (no video). Matches what the publisher sends.
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (hasVideo || !productSku) { setImgUrl(null); return; }
+    let alive = true;
+    fetch(`/api/marketing/product-image?sku=${encodeURIComponent(productSku)}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => { if (alive) setImgUrl(d?.image_url ?? null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [productSku, hasVideo]);
+
   return (
     <div className="bg-surface-800/50 px-5 py-4 border-b border-surface-700">
       <div className="bg-white text-gray-900 rounded-lg p-4 shadow-sm max-w-xl mx-auto">
@@ -1079,11 +1221,35 @@ function FacebookPreview({ content }: { content: ContentRow }) {
             </p>
           ))}
         </div>
-        {content.video_url && content.video_status !== 'failed' && (
-          <video controls src={content.video_url} className="mt-3 w-full rounded" />
-        )}
+        {hasVideo ? (
+          <video controls src={content.video_url!} className="mt-3 w-full rounded" />
+        ) : imgUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imgUrl} alt="Imagen del producto" className="mt-3 w-full rounded border border-gray-200" />
+        ) : null}
       </div>
       <VideoStatusChip content={content} className="mt-3" />
+
+      {/* Per-channel text preview — see exactly what each platform gets. */}
+      {(content.instagram_caption || content.youtube_title) && (
+        <div className="max-w-xl mx-auto mt-3 space-y-2">
+          {content.instagram_caption && (
+            <details className="rounded bg-surface-800/70 ring-1 ring-surface-600 p-2.5">
+              <summary className="text-[11px] text-gray-400 cursor-pointer">📸 Instagram caption</summary>
+              <p className="text-xs text-gray-300 whitespace-pre-wrap mt-1.5">{content.instagram_caption}</p>
+            </details>
+          )}
+          {content.youtube_title && (
+            <details className="rounded bg-surface-800/70 ring-1 ring-surface-600 p-2.5">
+              <summary className="text-[11px] text-gray-400 cursor-pointer">▶️ YouTube</summary>
+              <p className="text-xs text-gray-200 font-medium mt-1.5">{content.youtube_title}</p>
+              {content.youtube_description && (
+                <p className="text-xs text-gray-400 whitespace-pre-wrap mt-1">{content.youtube_description}</p>
+              )}
+            </details>
+          )}
+        </div>
+      )}
     </div>
   );
 }
