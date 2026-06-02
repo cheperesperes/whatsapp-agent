@@ -539,6 +539,9 @@ export default function MarketingPage() {
         {/* ───────  SEND OFFER TO LEADS ─────── */}
         <SendOfferPanel />
 
+        {/* ───────  PAYPAL PAY-LINK GENERATOR ─────── */}
+        <PayLinkPanel products={products} />
+
         {/* ───────  FB GROUPS ─────── */}
         {data && data.groups.length > 0 && (
           <details className="card">
@@ -1604,6 +1607,123 @@ function buildFallbackPreviews(plan: SendOfferPlan): TemplatePreview[] {
     });
   }
   return out;
+}
+
+// ─────────────────  PAYPAL PAY-LINK GENERATOR  ─────────────────
+// Creates a Facebook-style tap-to-pay link for an EXACT total (qty × price +
+// shipping), guest checkout. For customers who "only know how to pay by link."
+function PayLinkPanel({ products }: { products: Product[] }) {
+  const [sku, setSku] = useState('');
+  const [qty, setQty] = useState(1);
+  const [shipping, setShipping] = useState(0);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ url?: string; total?: number; error?: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function generate() {
+    if (!sku) return;
+    setBusy(true);
+    setResult(null);
+    setCopied(false);
+    try {
+      const res = await fetch('/api/marketing/pay-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: [{ sku, qty }], shipping, note: note || undefined }),
+      });
+      const d = await res.json();
+      setResult(res.ok ? { url: d.url, total: d.total } : { error: d.error || `Error ${res.status}` });
+    } catch (e) {
+      setResult({ error: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details className="card">
+      <summary className="px-4 py-3 cursor-pointer text-sm font-medium text-gray-200 flex items-center gap-2">
+        💳 Crear link de pago (PayPal · checkout como invitado)
+      </summary>
+      <div className="px-4 pb-4 space-y-3 border-t border-surface-700 pt-3">
+        <p className="text-[11px] text-gray-500">
+          Genera un link de pago con el total exacto (cantidad × precio + envío). El cliente lo toca y paga como invitado con tarjeta o PayPal — sin crear cuenta. Ideal para «mi tío solo sabe pagar por link».
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Producto</label>
+            <select
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              className="w-full text-xs bg-surface-900 border border-surface-600 rounded p-2 text-gray-200"
+            >
+              <option value="">— elige —</option>
+              {products.map((p) => (
+                <option key={p.sku} value={p.sku}>
+                  {p.sku} — {p.name?.slice(0, 40)}{p.sell_price ? ` · $${p.sell_price}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Cantidad</label>
+              <input
+                type="number" min={1} max={99} value={qty}
+                onChange={(e) => setQty(Math.max(1, Math.min(99, Number(e.target.value) || 1)))}
+                className="w-full text-xs bg-surface-900 border border-surface-600 rounded p-2 text-gray-200"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Envío $ (0 = gratis)</label>
+              <input
+                type="number" min={0} value={shipping}
+                onChange={(e) => setShipping(Math.max(0, Number(e.target.value) || 0))}
+                className="w-full text-xs bg-surface-900 border border-surface-600 rounded p-2 text-gray-200"
+              />
+            </div>
+          </div>
+        </div>
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Nota interna (opcional) — ej. envío a Houston, cliente Carlos"
+          className="w-full text-xs bg-surface-900 border border-surface-600 rounded p-2 text-gray-200"
+        />
+        <button
+          type="button"
+          onClick={generate}
+          disabled={busy || !sku}
+          className="w-full py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium disabled:opacity-50"
+        >
+          {busy ? 'Generando…' : '💳 Generar link de pago'}
+        </button>
+
+        {result?.error && (
+          <p className="text-xs text-red-300 bg-red-950/40 rounded p-2">⚠️ {result.error}</p>
+        )}
+        {result?.url && (
+          <div className="rounded-lg bg-surface-800 border border-surface-600 p-3 space-y-2">
+            <p className="text-xs text-gray-300">
+              Total: <span className="font-semibold text-green-400">${result.total?.toFixed(2)}</span> · listo para enviar
+            </p>
+            <div className="flex gap-2">
+              <input readOnly value={result.url} className="flex-1 text-[11px] bg-surface-900 border border-surface-600 rounded p-2 text-gray-300" />
+              <button
+                type="button"
+                onClick={() => { navigator.clipboard?.writeText(result.url!); setCopied(true); }}
+                className="px-3 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs whitespace-nowrap"
+              >
+                {copied ? '✓ Copiado' : 'Copiar'}
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-500">Pega este link en WhatsApp. El cliente paga como invitado — sin cuenta.</p>
+          </div>
+        )}
+      </div>
+    </details>
+  );
 }
 
 function SendOfferPanel() {
