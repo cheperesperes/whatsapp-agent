@@ -770,7 +770,7 @@ function CampaignHero({
       {content && <ChannelStatusChips content={content} />}
 
       {/* Rendered FB-style preview (always visible, no toggle) */}
-      {content && <FacebookPreview content={content} />}
+      {content && <FacebookPreview content={content} productSku={campaign.product_sku} />}
 
       {/* Primary CTA — stacks vertically on phones (full-width tap targets,
           ≥48pt high) and inlines back into a row on tablet+. Each button keeps
@@ -1182,9 +1182,24 @@ function ChannelStatusChips({ content }: { content: ContentRow }) {
   );
 }
 
-function FacebookPreview({ content }: { content: ContentRow }) {
+function FacebookPreview({ content, productSku }: { content: ContentRow; productSku?: string | null }) {
   const body = content.facebook_post ?? content.instagram_caption ?? '';
   const lines = body.split('\n');
+  const hasVideo = !!content.video_url && content.video_status !== 'failed';
+
+  // Fetch the publish-ready product image so the operator sees the actual
+  // visual for an image/text post (no video). Matches what the publisher sends.
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (hasVideo || !productSku) { setImgUrl(null); return; }
+    let alive = true;
+    fetch(`/api/marketing/product-image?sku=${encodeURIComponent(productSku)}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => { if (alive) setImgUrl(d?.image_url ?? null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [productSku, hasVideo]);
+
   return (
     <div className="bg-surface-800/50 px-5 py-4 border-b border-surface-700">
       <div className="bg-white text-gray-900 rounded-lg p-4 shadow-sm max-w-xl mx-auto">
@@ -1206,11 +1221,35 @@ function FacebookPreview({ content }: { content: ContentRow }) {
             </p>
           ))}
         </div>
-        {content.video_url && content.video_status !== 'failed' && (
-          <video controls src={content.video_url} className="mt-3 w-full rounded" />
-        )}
+        {hasVideo ? (
+          <video controls src={content.video_url!} className="mt-3 w-full rounded" />
+        ) : imgUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imgUrl} alt="Imagen del producto" className="mt-3 w-full rounded border border-gray-200" />
+        ) : null}
       </div>
       <VideoStatusChip content={content} className="mt-3" />
+
+      {/* Per-channel text preview — see exactly what each platform gets. */}
+      {(content.instagram_caption || content.youtube_title) && (
+        <div className="max-w-xl mx-auto mt-3 space-y-2">
+          {content.instagram_caption && (
+            <details className="rounded bg-surface-800/70 ring-1 ring-surface-600 p-2.5">
+              <summary className="text-[11px] text-gray-400 cursor-pointer">📸 Instagram caption</summary>
+              <p className="text-xs text-gray-300 whitespace-pre-wrap mt-1.5">{content.instagram_caption}</p>
+            </details>
+          )}
+          {content.youtube_title && (
+            <details className="rounded bg-surface-800/70 ring-1 ring-surface-600 p-2.5">
+              <summary className="text-[11px] text-gray-400 cursor-pointer">▶️ YouTube</summary>
+              <p className="text-xs text-gray-200 font-medium mt-1.5">{content.youtube_title}</p>
+              {content.youtube_description && (
+                <p className="text-xs text-gray-400 whitespace-pre-wrap mt-1">{content.youtube_description}</p>
+              )}
+            </details>
+          )}
+        </div>
+      )}
     </div>
   );
 }
