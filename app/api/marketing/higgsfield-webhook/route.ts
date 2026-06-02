@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateCampaign, updateContent } from '@/lib/marketing/db';
 import { sendMarketingPreview } from '@/lib/marketing/notify';
 import { getVideoStatus } from '@/lib/marketing/higgsfield';
+import { checkWebhookSecret } from '@/lib/marketing/webhook-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -13,6 +14,10 @@ export const runtime = 'nodejs';
  * authoritative status/url via getVideoStatus rather than trusting the payload.
  */
 export async function POST(req: NextRequest) {
+  const sec = checkWebhookSecret(req);
+  if (!sec.ok) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
   const campaignId = req.nextUrl.searchParams.get('campaign');
 
   let body: Record<string, any> = {};

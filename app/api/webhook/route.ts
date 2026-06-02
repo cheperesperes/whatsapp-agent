@@ -98,8 +98,11 @@ const AI_FAILURE_ALERT_WINDOW_MS = 5 * 60_000;
 
 // Escape hatch for the Meta signature check — needed during initial onboarding
 // before META_APP_SECRET is set. Production MUST NOT set this; once the App
-// Secret is in Vercel, drop this flag.
-const SKIP_META_SIG_VERIFY = process.env.SKIP_META_SIGNATURE === '1';
+// Secret is in Vercel, drop this flag. Hard guard: the bypass is IGNORED in
+// production so a stray env var can never disable signature verification on the
+// live webhook (defense against accidental/ malicious prod misconfig).
+const IS_PRODUCTION = process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+const SKIP_META_SIG_VERIFY = process.env.SKIP_META_SIGNATURE === '1' && !IS_PRODUCTION;
 
 // Opt-out keywords (case-insensitive, whole message or substring match).
 // Tagged by language so we send the unsubscribe confirmation in the

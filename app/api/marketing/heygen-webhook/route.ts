@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateCampaign, updateContent } from '@/lib/marketing/db';
 import { sendMarketingPreview } from '@/lib/marketing/notify';
 import { getVideoStatus } from '@/lib/marketing/heygen';
+import { checkWebhookSecret } from '@/lib/marketing/webhook-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,6 +20,11 @@ interface HeyGenWebhookPayload {
 }
 
 export async function POST(req: NextRequest) {
+  const sec = checkWebhookSecret(req);
+  if (!sec.ok) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
   let payload: HeyGenWebhookPayload;
 
   try {
