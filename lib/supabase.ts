@@ -626,10 +626,15 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
 
       if (p.battery_capacity_wh) specs.push(`${p.battery_capacity_wh.toLocaleString()}Wh`);
       if (p.battery_capacity_ah) specs.push(`${p.battery_capacity_ah}Ah`);
+      if (p.battery_voltage) specs.push(`${p.battery_voltage}V`);
       if (p.inverter_watts) specs.push(`${p.inverter_watts.toLocaleString()}W inversor`);
       if (p.output_watts && p.category === 'kit') specs.push(`${p.output_watts.toLocaleString()}W salida`);
+      if (p.peak_watts) specs.push(`${p.peak_watts.toLocaleString()}W pico`);
       if (p.panel_watts) specs.push(`${p.panel_watts}W panel`);
       if (p.solar_input_watts) specs.push(`${p.solar_input_watts.toLocaleString()}W solar`);
+      // Weight — customers ask this often (portability, can an older relative
+      // carry it, shipping). Data is 100% populated in agent_product_catalog.
+      if (p.weight_lbs) specs.push(`${p.weight_lbs} lb`);
       if (p.supports_external_battery) specs.push('expandible con batería externa');
 
       const specsStr = specs.length ? ` (${specs.join(', ')})` : '';
@@ -661,6 +666,11 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
 
       lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}`);
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
+      // Real expansion/compatibility pairings (source: pecron.com) so Sol names
+      // the correct battery instead of guessing. Only present when populated.
+      if (p.compatible_with && p.compatible_with.trim()) {
+        lines.push(`  Compatible con: ${p.compatible_with.trim()}`);
+      }
     }
   }
 
