@@ -666,6 +666,11 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
 
       lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}`);
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
+      // Real expansion/compatibility pairings (source: pecron.com) so Sol names
+      // the correct battery instead of guessing. Only present when populated.
+      if (p.compatible_with && p.compatible_with.trim()) {
+        lines.push(`  Compatible con: ${p.compatible_with.trim()}`);
+      }
     }
   }
 
