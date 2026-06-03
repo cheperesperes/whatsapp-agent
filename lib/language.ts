@@ -86,6 +86,10 @@ const ENGLISH_STOPWORDS = new Set([
   'hello', 'hey', 'yes', 'yeah', 'yep', 'nope',
   'price', 'shipping', 'much', 'cost', 'cheap', 'expensive',
   'power', 'battery', 'solar', 'watt', 'watts',
+  // Short standalone openers we saw default-to-Spanish incorrectly when they
+  // were the customer's first/only word. All zero-collision with Spanish.
+  'house', 'home', 'info', 'more', 'fridge', 'fridges', 'lights', 'outage',
+  'outages', 'backup', 'whole', 'camping', 'off-grid', 'offgrid', 'rv',
   // common English verbs that aren't Spanish loan-words
   'make', 'makes', 'made', 'take', 'takes', 'took', 'give', 'gives',
   'gave', 'buy', 'buys', 'bought', 'sell', 'sells', 'sold',

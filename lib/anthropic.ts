@@ -95,6 +95,15 @@ export async function generateSolResponse(
         `• Si el cliente quiere una llamada o seguimiento fuera del navegador, pídele su teléfono o WhatsApp.\n`
       : '';
 
+  // Final-line language re-assertion. The turn-1 / dynamic directives are
+  // written in Spanish (the base prompt's language) and sit AFTER the language
+  // lock, so for an English customer the model's MOST RECENT instruction was
+  // Spanish — a recency bias that could leak Spanish into an English reply.
+  // Re-stating the language as the very last line neutralizes that.
+  const languageReassert = languageLock.includes('ENGLISH')
+    ? '=== FINAL REMINDER === Respond ONLY in English. The instructions above may be written in Spanish, but your reply to the customer MUST be in English.'
+    : '=== RECORDATORIO FINAL === Responde SOLO en español, sin importar el idioma de las instrucciones anteriores.';
+
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
@@ -103,7 +112,7 @@ ${customerProfilePrompt}
 ${competitorComparisons}
 ${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}${channelBlock}`;
+${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}${channelBlock}${languageLock ? `\n\n${languageReassert}\n` : ''}`;
 
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',
