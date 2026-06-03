@@ -103,6 +103,8 @@ export interface ParsedIncomingMessage {
   provider: MessageProvider;
   /** Meta phone-number ID that received this message — used to route the reply through the same sender. */
   metaRecipientPhoneNumberId: string;
+  /** Click-to-WhatsApp ad referral (FB/IG ad arrival), if present. */
+  referral: import('./whatsapp-meta').AdReferral | null;
 }
 
 export function parseIncomingMessage(body: unknown): ParsedIncomingMessage | null {
@@ -119,6 +121,7 @@ export function parseIncomingMessage(body: unknown): ParsedIncomingMessage | nul
     channel: 'whatsapp',
     provider: 'meta',
     metaRecipientPhoneNumberId: meta.recipientPhoneNumberId,
+    referral: meta.referral,
   };
 }
 

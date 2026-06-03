@@ -71,6 +71,15 @@ export async function sendMetaWhatsAppImage(
 }
 
 // ── Inbound: parse webhook payload ──────────────────────────
+/** Click-to-WhatsApp ad referral (present when the customer arrived from a
+ *  Facebook/Instagram ad — Meta attaches it to the FIRST message only). */
+export interface AdReferral {
+  sourceUrl: string | null;   // the ad's destination URL (often the product page)
+  sourceType: string | null;  // 'ad' | 'post' | ...
+  headline: string | null;    // ad headline text
+  body: string | null;        // ad body text
+}
+
 export interface ParsedMetaIncoming {
   senderPhone: string;
   senderName: string | null;
@@ -80,6 +89,8 @@ export interface ParsedMetaIncoming {
   timestamp: number;
   /** The Meta phone-number ID that received this message — used to route replies back through the same sender. */
   recipientPhoneNumberId: string;
+  /** Set only when the message carries a click-to-WhatsApp ad referral. */
+  referral: AdReferral | null;
 }
 
 export function parseMetaIncomingMessage(body: unknown): ParsedMetaIncoming | null {
@@ -98,6 +109,18 @@ export function parseMetaIncomingMessage(body: unknown): ParsedMetaIncoming | nu
     const messageText =
       msg.type === 'text' ? msg.text?.body ?? '' : '';
 
+    // Click-to-WhatsApp ad referral — Meta attaches `referral` to the first
+    // message when the customer tapped a FB/IG ad. Carries the product/ad URL.
+    const rawRef = (msg as { referral?: Record<string, unknown> }).referral;
+    const referral = rawRef
+      ? {
+          sourceUrl: (rawRef.source_url as string) ?? null,
+          sourceType: (rawRef.source_type as string) ?? null,
+          headline: (rawRef.headline as string) ?? null,
+          body: (rawRef.body as string) ?? null,
+        }
+      : null;
+
     return {
       senderPhone,
       senderName: profileName,
@@ -106,6 +129,7 @@ export function parseMetaIncomingMessage(body: unknown): ParsedMetaIncoming | nu
       messageId: msg.id,
       timestamp: Number(msg.timestamp),
       recipientPhoneNumberId: value.metadata.phone_number_id,
+      referral,
     };
   } catch {
     return null;

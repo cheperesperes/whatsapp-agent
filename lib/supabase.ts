@@ -872,6 +872,62 @@ export function formatOffersForPrompt(
  * webp URL is proxied through wsrv.nl which transcodes to JPEG on the fly.
  * Without this the `sendImage` call 400s and the customer gets nothing.
  */
+/**
+ * Resolve a click-to-WhatsApp ad URL (e.g.
+ * "https://oiikon.com/product/pecron-e3600lfp") to a catalog SKU + name, so Sol
+ * can open the conversation referencing the exact product the customer clicked.
+ * Matches on the products slug; falls back to scanning the URL for a known SKU.
+ * Returns null when nothing matches (Sol then uses the generic ad opener).
+ */
+/**
+ * Patch a small set of safe scalar fields on a conversation row. Used to seed
+ * product_interest from the click-to-WhatsApp ad referral. Best-effort.
+ */
+export async function updateConversationFields(
+  conversationId: string,
+  patch: { product_interest?: string | null },
+): Promise<void> {
+  const supabase = createServiceClient();
+  await supabase
+    .from('conversations')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', conversationId);
+}
+
+export async function resolveProductFromUrl(
+  url: string | null | undefined,
+): Promise<{ sku: string; name: string } | null> {
+  if (!url || typeof url !== 'string') return null;
+  const lower = url.toLowerCase();
+  const supabase = createServiceClient();
+
+  // 1) Try slug match (the last path segment of /product/<slug>).
+  const seg = lower.split('?')[0].replace(/\/+$/, '').split('/').pop() ?? '';
+  if (seg) {
+    const { data } = await supabase
+      .from('products')
+      .select('sku, name, slug, url_slug')
+      .or(`slug.eq.${seg},url_slug.eq.${seg}`)
+      .limit(1)
+      .maybeSingle();
+    if (data?.sku) return { sku: data.sku, name: (data as any).name ?? data.sku };
+  }
+
+  // 2) Fallback: scan the URL for any in-stock SKU token (slugs embed the SKU,
+  //    e.g. ".../pecron-e3600lfp" contains "e3600lfp").
+  const { data: rows } = await supabase
+    .from('agent_product_catalog')
+    .select('sku, name')
+    .eq('in_stock', true);
+  for (const r of rows ?? []) {
+    const sku = String((r as any).sku ?? '').toLowerCase();
+    if (sku && sku.length >= 4 && lower.includes(sku)) {
+      return { sku: (r as any).sku, name: (r as any).name ?? (r as any).sku };
+    }
+  }
+  return null;
+}
+
 export async function getProductImages(sku: string, max = 2): Promise<string[]> {
   if (!sku?.trim() || max <= 0) return [];
 
