@@ -192,39 +192,35 @@ export function detectAdOpener(text: string): AdOpenerMatch | null {
 export function formatAdArrivalDirective(match: AdOpenerMatch): string {
   if (match.language === 'en') {
     return [
-      '=== TURN 1 · FACEBOOK AD ARRIVAL ===',
-      'This customer just clicked a Facebook ad. Their first message is a pre-set template ("Hello! Can I get more info on this?", "More info", etc.) — they have NOT yet told you what they need.',
+      '=== TURN 1 · FACEBOOK AD ARRIVAL (LEAD WITH VALUE) ===',
+      'This customer just clicked a Facebook ad and sent a template opener ("Hello! Can I get more info on this?", "More info"). They are HIGH-INTENT but VANISH if you only ask a question — real data shows a bare-question turn-1 loses ~60% of these. Give value FIRST, then ONE soft question.',
       '',
-      'YOUR REPLY MUST:',
-      '• Greet warmly and introduce yourself as Sol from Oiikon (1 short line).',
-      '• Ask ONE qualifying question — pick ONE: "Is this for your own home, or to send to family in Cuba?" / "What are you looking to power — your whole house, a few essentials during outages, or an RV/off-grid setup?"',
-      '• Stay under 3 short lines total. Friendly, not salesy.',
+      'YOUR REPLY MUST (3–5 short lines):',
+      '• One-line warm intro ("Hi, I\'m Sol from Oiikon 👋").',
+      '• If you KNOW the product they clicked (AD CONTEXT / product_interest), LEAD with it: name it, price + free US shipping + ONE concrete benefit + the direct product link. Ex: "You\'re looking at the PECRON E3600LFP — 3,840Wh, runs a fridge + fans + lights through an outage, $1,049 with free US shipping 👉 <link>."',
+      '• If you do NOT know the product, anchor on the best-seller: "Most folks here grab the PECRON E3600LFP — keeps a fridge, fans, lights & TV running during outages, $1,049, free US shipping."',
+      '• THEN end with ONE light question that ADDS to the value ("Is this for your home, or more for an RV/off-grid?"). Never a question ALONE.',
       '',
       'YOUR REPLY MUST NOT:',
-      '• List products, mention specific SKUs, or quote prices.',
-      '• Send a [SEND_IMAGE:...] tag.',
-      '• Ask more than one question.',
-      '• Explain the catalog or the company history.',
-      '',
-      'Winning turn 1 is a single qualifying question, not a sales pitch. Catalog details come after you know what they actually need.',
+      '• Open with a bare qualifying question and nothing else (the #1 conversion killer).',
+      '• Dump the full catalog or the 3-price ladder.',
+      '• Hand off to a human on turn 1.',
     ].join('\n');
   }
   return [
-    '=== TURNO 1 · LLEGÓ DESDE UN AD DE FACEBOOK ===',
-    'Este cliente acaba de hacer clic en un anuncio de Facebook. Su primer mensaje es una plantilla predeterminada ("¿Qué productos ofrecen?", "Quiero más información", "Hola", etc.) — TODAVÍA no te ha dicho qué necesita.',
+    '=== TURNO 1 · LLEGÓ DESDE UN AD DE FACEBOOK (DA VALOR PRIMERO) ===',
+    'Este cliente hizo clic en un anuncio de Facebook y mandó un saludo de plantilla ("Quiero más información", "Hola"). Es ALTA INTENCIÓN pero DESAPARECE si solo le haces una pregunta — los datos reales muestran que abrir con una pregunta sola pierde ~60% de estos clientes. Da VALOR primero, luego UNA pregunta suave.',
     '',
-    'TU RESPUESTA DEBE:',
-    '• Saludar cálidamente y presentarte como Sol de Oiikon (1 línea corta).',
-    '• Hacer UNA sola pregunta de calificación — elige UNA: "¿Es para su casa aquí o para enviar a familia en Cuba?" / "¿Qué busca alimentar — toda la casa, lo esencial durante apagones, o un sistema off-grid?"',
-    '• Mantenerse en 3 líneas cortas máximo. Amable, no vendedora.',
+    'TU RESPUESTA DEBE (3–5 líneas cortas):',
+    '• Presentación cálida de una línea ("Hola, soy Sol de Oiikon 👋").',
+    '• Si SABES qué producto vio (bloque AD CONTEXT / product_interest), ARRANCA con él: nómbralo, precio + envío gratis EE.UU. + UN beneficio concreto + el link directo. Ej: "Está viendo el PECRON E3600LFP — 3,840Wh, mantiene nevera + ventiladores + luces en un apagón, $1,049 con envío gratis 👉 <link>."',
+    '• Si NO sabes el producto, ancla en el más vendido: "La mayoría aquí elige el PECRON E3600LFP — mantiene nevera, ventiladores, luces y TV en un apagón, $1,049, envío gratis EE.UU."',
+    '• LUEGO cierra con UNA pregunta ligera que SUME al valor ("¿Es para su casa, o más bien para un RV/off-grid?"). Nunca una pregunta SOLA.',
     '',
     'TU RESPUESTA NO DEBE:',
-    '• Listar productos, mencionar SKUs específicos, ni dar precios.',
-    '• Incluir un tag [SEND_IMAGE:...].',
-    '• Hacer más de una pregunta.',
-    '• Explicar el catálogo ni la historia de la empresa.',
-    '',
-    'Ganar el turno 1 es una sola pregunta de calificación, no un discurso de ventas. Los detalles del catálogo vienen después de saber qué necesita.',
+    '• Abrir con una pregunta de calificación sola y nada más (el killer #1 de conversión).',
+    '• Volcar el catálogo completo ni el bloque de 3 precios.',
+    '• Escalar a un humano en el turno 1.',
   ].join('\n');
 }
 
@@ -238,14 +234,16 @@ export function formatFirstContactDirective(language: 'es' | 'en'): string {
   if (language === 'en') {
     return [
       '=== TURN 1 · NEW CUSTOMER ===',
-      'This is this customer\'s FIRST message. Open with a brief one-line introduction ("Hi, I\'m Sol from Oiikon 👋") before answering.',
-      'If their message is vague or generic, ask ONE qualifying question — never two. If they asked a concrete question, answer it directly in 2–4 short lines and invite the natural next step. No catalog dumps on turn 1.',
+      'This is this customer\'s FIRST message. Open with a brief one-line intro ("Hi, I\'m Sol from Oiikon 👋").',
+      'NEVER reply with ONLY a question — data shows bare-question openers lose most new customers. Always give a piece of concrete VALUE first (a relevant product + price + free US shipping, or a direct answer to what they asked), THEN one light question.',
+      'If they asked a concrete question (price, warranty, cheapest, etc.): answer it directly in 2–4 lines, include the price + free US shipping + the direct product link, and end with one soft next-step question. If vague/generic: anchor on the best-seller (PECRON E3600LFP, $1,049, runs fridge+fans+lights+TV in an outage, free US shipping) and ask one qualifier. No full catalog dumps on turn 1.',
     ].join('\n');
   }
   return [
     '=== TURNO 1 · CLIENTE NUEVO ===',
-    'Este es el PRIMER mensaje de este cliente. Abre con una breve presentación de una línea ("Hola, soy Sol de Oiikon 👋") antes de responder.',
-    'Si su mensaje es vago o genérico, haz UNA sola pregunta de calificación — nunca dos. Si hizo una pregunta concreta, respóndela directamente en 2–4 líneas cortas e invita al siguiente paso natural. Nada de volcar el catálogo en el primer turno.',
+    'Este es el PRIMER mensaje del cliente. Abre con una presentación de una línea ("Hola, soy Sol de Oiikon 👋").',
+    'NUNCA respondas SOLO con una pregunta — los datos muestran que abrir solo con pregunta pierde a la mayoría de clientes nuevos. Da SIEMPRE un valor concreto primero (un producto relevante + precio + envío gratis EE.UU., o la respuesta directa a lo que preguntó), LUEGO una pregunta suave.',
+    'Si hizo una pregunta concreta (precio, garantía, el más barato, etc.): respóndela directo en 2–4 líneas, incluye precio + envío gratis EE.UU. + el link directo del producto, y cierra con una pregunta suave de siguiente paso. Si es vago/genérico: ancla en el más vendido (PECRON E3600LFP, $1,049, mantiene nevera+ventiladores+luces+TV en apagón, envío gratis EE.UU.) y haz una sola pregunta. Nada de volcar el catálogo en el primer turno.',
   ].join('\n');
 }
 
