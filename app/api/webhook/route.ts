@@ -32,6 +32,8 @@ import {
   upsertLeadScore,
   markConversationWon,
   getConversationByAnyPhone,
+  resolveProductFromUrl,
+  updateConversationFields,
   OPERATOR_REPLY_REASON,
 } from '@/lib/supabase';
 import {
@@ -492,6 +494,39 @@ async function processWebhookLocked(
       const built = buildFirstContactDirective(messageText, detectedLang);
       if (built) {
         firstContactDirective = built.directive;
+
+        // ── Click-to-WhatsApp ad: resolve the clicked PRODUCT ──────────────
+        // When the customer arrived from a FB/IG ad, Meta attaches a referral
+        // with the ad's destination URL (usually the product page). Resolve it
+        // to a SKU so Sol can open referencing the exact product they clicked
+        // ("I see you're looking at the E3600LFP…") instead of a blind
+        // "what do you want to power?". Persist to product_interest so later
+        // turns keep the context. Best-effort — falls back to generic opener.
+        const refUrl = parsed.referral?.sourceUrl ?? null;
+        if (refUrl) {
+          try {
+            const prod = await resolveProductFromUrl(refUrl);
+            if (prod) {
+              firstContactDirective +=
+                `\n\n=== PRODUCTO DEL ANUNCIO (contexto de llegada) ===\n` +
+                `El cliente hizo clic en un anuncio del producto **${prod.name}** (SKU ${prod.sku}). ` +
+                `Aunque su primer mensaje sea genérico ("more info on this"), YA SABES qué producto le interesa. ` +
+                `Abre reconociéndolo por nombre y haz UNA pregunta de calificación enfocada en ese producto ` +
+                `(ej. "Veo que le interesa el ${prod.name} — ¿es para su casa? Es nuestro favorito para respaldo de hogar."). ` +
+                `NO preguntes "¿qué quiere alimentar?" como si no supieras nada. Aún NO des precio en el turno 1 a menos que lo pida.`;
+              waitUntil(
+                updateConversationFields(conversation.id, { product_interest: prod.sku }).catch(
+                  (err) => console.warn(`[WEBHOOK] product_interest seed failed for ${senderPhone}:`, err)
+                )
+              );
+              console.log(`[WEBHOOK] CTWA ad → product ${prod.sku} for ${senderPhone} (url=${refUrl.slice(0, 80)})`);
+            } else {
+              console.log(`[WEBHOOK] CTWA referral url did not resolve to a SKU: ${refUrl.slice(0, 80)}`);
+            }
+          } catch (err) {
+            console.warn(`[WEBHOOK] CTWA product resolve failed for ${senderPhone}:`, err);
+          }
+        }
         console.log(
           `[WEBHOOK] Turn-1 directive for ${senderPhone}: ` +
             (built.adMatch
