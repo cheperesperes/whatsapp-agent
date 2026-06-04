@@ -26,10 +26,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
 import { createServerClient } from '@supabase/ssr';
+import { waitUntil } from '@vercel/functions';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION ?? 'v21.0';
 
@@ -157,8 +160,23 @@ export async function POST(req: NextRequest) {
       language: (l.language || 'es') as 'es' | 'en',
       name: l.display_name,
     }));
+
+    // Recipient hygiene: only message valid US (+1, 10-digit) WhatsApp numbers.
+    // Drops web:: chat-session pseudo-IDs (not phones) and non-US numbers
+    // (Oiikon is USA-only). Without this, offers were attempted to 44 web::
+    // rows and 12 international numbers — guaranteed failures + USA-only breach.
+    const beforeHygiene = recipList.length;
+    recipList = recipList.filter((r) => {
+      if (!r.phone || typeof r.phone !== 'string') return false;
+      if (r.phone.startsWith('web::')) return false; // chat-session id, not a phone
+      const digits = r.phone.replace(/\D/g, '');
+      const us = digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
+      return us;
+    });
+    const skippedInvalid = beforeHygiene - recipList.length;
+
     if (recipList.length === 0) {
-      return NextResponse.json({ error: 'No recipients matched audience filter.' }, { status: 400 });
+      return NextResponse.json({ error: 'No valid US recipients matched audience filter.', skippedInvalid }, { status: 400 });
     }
 
     // Dedupe: drop leads who already received an OUTBOUND_OFFER in the last
@@ -377,60 +395,53 @@ export async function POST(req: NextRequest) {
     /* fall through with default bodyParamCount=1 */
   }
 
-  // 5. Real send loop — sequential w/ 200ms gap (Meta rate limit ~5/sec safe)
+  // 5. Real send loop — sequential w/ 200ms gap (Meta rate limit ~5/sec safe).
+  // Each send logs an [OUTBOUND_OFFER] row, which both gives an audit trail AND
+  // powers the 24h dedupe above — so even a backgrounded run is re-run-safe.
   const META_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}/messages`;
-  const results: any[] = [];
-  for (const r of recipList) {
+
+  async function sendOne(r: { phone: string; language: 'es' | 'en'; name: string | null }) {
+    const lang = r.language;
+    const param1 = r.name || (lang === 'en' ? 'friend' : 'amigo/a');
+    const param2 = coupon?.code || '';
+    const param3 = discountText(coupon, lang);
+    const allParams = [
+      String(param1),
+      ...(param2 ? [String(param2)] : []),
+      ...(param3 ? [String(param3)] : []),
+    ];
+    const params = allParams.slice(0, bodyParamCount);
+    const langCode = templateLanguageCode || (lang === 'en' ? 'en_US' : 'es');
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: normalizePhone(r.phone),
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: langCode },
+        components:
+          params.length > 0
+            ? [{ type: 'body', parameters: params.map((text) => ({ type: 'text', text })) }]
+            : [],
+      },
+    };
+    let result: any;
     try {
-      const lang = r.language;
-      const param1 = r.name || (lang === 'en' ? 'friend' : 'amigo/a');
-      const param2 = coupon?.code || '';
-      const param3 = discountText(coupon, lang);
-      const allParams = [
-        String(param1),
-        ...(param2 ? [String(param2)] : []),
-        ...(param3 ? [String(param3)] : []),
-      ];
-      const params = allParams.slice(0, bodyParamCount);
-      const langCode = templateLanguageCode || (lang === 'en' ? 'en_US' : 'es');
-      const payload = {
-        messaging_product: 'whatsapp',
-        to: normalizePhone(r.phone),
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: langCode },
-          components:
-            params.length > 0
-              ? [
-                  {
-                    type: 'body',
-                    parameters: params.map((text) => ({ type: 'text', text })),
-                  },
-                ]
-              : [],
-        },
-      };
       const res = await fetch(META_URL, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) {
-        results.push({ phone: r.phone, language: lang, success: false, error: data });
-      } else {
-        results.push({
-          phone: r.phone,
-          language: lang,
-          success: true,
-          wa_message_id: data?.messages?.[0]?.id,
-        });
-      }
-      // Log to messages table for trail
+      result = res.ok
+        ? { phone: r.phone, language: lang, success: true, wa_message_id: data?.messages?.[0]?.id }
+        : { phone: r.phone, language: lang, success: false, error: data };
+    } catch (e: any) {
+      result = { phone: r.phone, success: false, error: e?.message ?? String(e) };
+    }
+    // Log only successful sends so the dedupe never skips someone who didn't
+    // actually receive it (a failed attempt should remain re-sendable).
+    if (result.success) {
       try {
         await sb.from('messages').insert({
           role: 'system',
@@ -438,11 +449,43 @@ export async function POST(req: NextRequest) {
           handoff_detected: false,
         });
       } catch {}
-    } catch (e: any) {
-      results.push({ phone: r.phone, success: false, error: e?.message ?? String(e) });
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    return result;
   }
+
+  async function runBatch(list: typeof recipList) {
+    const out: any[] = [];
+    for (const r of list) {
+      out.push(await sendOne(r));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return out;
+  }
+
+  // No-502 fix: a large blast (>20) takes longer than the function timeout if
+  // run inline (270 recipients × ~250ms ≈ 110s → Vercel kills it → 502, after
+  // partially sending). Run big batches in the BACKGROUND via waitUntil and
+  // return 202 immediately with the planned count. Small batches/tests run
+  // inline so the operator gets exact per-recipient results.
+  const BACKGROUND_THRESHOLD = 20;
+  if (recipList.length > BACKGROUND_THRESHOLD) {
+    waitUntil(runBatch(recipList));
+    return NextResponse.json(
+      {
+        ok: true,
+        queued: true,
+        queuedCount: recipList.length,
+        skippedRecentlyMessaged,
+        coupon: coupon
+          ? { code: coupon.code, discount: coupon.discount_value, type: coupon.discount_type }
+          : null,
+        note: `Enviando ${recipList.length} ofertas en segundo plano. Cada envío se registra; vuelve a ejecutar para alcanzar a quien falte (los ya enviados se omiten 24h).`,
+      },
+      { status: 202 },
+    );
+  }
+
+  const results = await runBatch(recipList);
 
   const sentCount = results.filter((r) => r.success).length;
   const totalCount = results.length;
