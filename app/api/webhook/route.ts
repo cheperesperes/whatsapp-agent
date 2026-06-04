@@ -192,6 +192,33 @@ export async function POST(request: NextRequest) {
     console.log('[WEBHOOK POST] SKIP_META_SIGNATURE=1 — verification bypassed');
   }
 
+  // ── Delivery-status events (sent / delivered / read / FAILED) ──
+  // Meta posts these to the same webhook under value.statuses[]. We were
+  // dropping them silently, so we had ZERO visibility into whether outbound
+  // template/offer messages actually delivered (observed: API returns a wamid
+  // but the message never arrives). Log them — especially failures with their
+  // error code — so delivery problems are diagnosable.
+  try {
+    const statuses =
+      (body as any)?.entry?.[0]?.changes?.[0]?.value?.statuses as any[] | undefined;
+    if (Array.isArray(statuses) && statuses.length > 0) {
+      for (const s of statuses) {
+        const st = s?.status; // sent | delivered | read | failed
+        const to = s?.recipient_id;
+        const wamid = s?.id;
+        if (st === 'failed') {
+          const errs = (s?.errors || []).map((e: any) => `${e.code}:${e.title || e.message}`).join(' | ');
+          console.warn(`[WEBHOOK STATUS] FAILED to=${to} wamid=${wamid} errors=[${errs}]`);
+        } else {
+          console.log(`[WEBHOOK STATUS] ${st} to=${to} wamid=${wamid}`);
+        }
+      }
+      return ok200();
+    }
+  } catch (e) {
+    console.warn('[WEBHOOK STATUS] status parse error:', e);
+  }
+
   // ── Parse + idempotency on the Meta wamid ──
   const parsed = parseIncomingMessage(body);
   if (!parsed) {
