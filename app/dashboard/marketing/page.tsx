@@ -1648,7 +1648,7 @@ function PayLinkPanel({ products }: { products: Product[] }) {
       </summary>
       <div className="px-4 pb-4 space-y-3 border-t border-surface-700 pt-3">
         <p className="text-[11px] text-gray-500">
-          Genera un link de pago con el total exacto (cantidad × precio + envío). El cliente lo toca y paga como invitado con tarjeta o PayPal — sin crear cuenta. Ideal para «mi tío solo sabe pagar por link».
+          Genera un link de pago con el total exacto (cantidad × precio + envío). El cliente lo toca y paga como invitado con tarjeta, PayPal o Apple Pay — sin crear cuenta. Ideal para «mi tío solo sabe pagar por link».
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
