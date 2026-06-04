@@ -630,6 +630,26 @@ async function processWebhookLocked(
     const sentSet = new Set(alreadySentSkus);
     const imageSkus = rawSkus.filter((s) => !sentSet.has(s.toUpperCase()));
 
+    // ── Auto-image fallback (guarantee: recommendation → photo) ──
+    // Sol frequently links a product but FORGETS the [SEND_IMAGE:SKU] tag
+    // (observed: 66 link replies / 7d, 0 images sent). When the reply contains
+    // a product link but produced no image SKUs, resolve the SKU from the link
+    // and dispatch its photo anyway — so a recommendation is always followed by
+    // an image, without depending on the LLM remembering the tag. Dedup still
+    // applies (skips SKUs already photographed in this conversation).
+    if (imageSkus.length === 0) {
+      const linkMatches = aiMessage.match(/https?:\/\/(?:www\.)?oiikon\.com\/product\/[^\s)\]]+/gi) || [];
+      for (const link of linkMatches) {
+        try {
+          const resolved = await resolveProductFromUrl(link);
+          const sku = resolved?.sku?.toUpperCase();
+          if (sku && !sentSet.has(sku) && !imageSkus.includes(sku)) {
+            imageSkus.push(sku);
+          }
+        } catch { /* best-effort */ }
+      }
+    }
+
     // ── Last-line-of-defense: normalize WhatsApp formatting ─────
     // Deterministic cleanup for the 3 patterns that render as literal broken
     // code when the prompt drifts (`**bold**` → `*bold*`, `~~strike~~` →
