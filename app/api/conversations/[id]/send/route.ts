@@ -5,7 +5,8 @@ import {
   storeMessage,
   OPERATOR_REPLY_REASON,
 } from '@/lib/supabase';
-import { sendMessage } from '@/lib/whatsapp';
+import { sendMessage, sendImage } from '@/lib/whatsapp';
+import { getProductImages } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,11 +27,13 @@ export async function POST(
   const body = (await req.json().catch(() => ({}))) as {
     text?: string;
     escalate?: boolean;
+    imageUrl?: string;   // optional: send a product image (free-form, 24h window)
+    imageSku?: string;   // optional: resolve the product image by SKU from the catalog
   };
 
   const text = (body.text ?? '').trim();
-  if (!text) {
-    return NextResponse.json({ error: 'text is required' }, { status: 400 });
+  if (!text && !body.imageUrl && !body.imageSku) {
+    return NextResponse.json({ error: 'text or image is required' }, { status: 400 });
   }
   if (text.length > MAX_BODY_CHARS) {
     return NextResponse.json(
@@ -54,11 +57,19 @@ export async function POST(
     );
   }
 
+  // Resolve an optional image: explicit imageUrl wins, else look up by SKU.
+  let imageUrl: string | null = body.imageUrl?.trim() || null;
+  if (!imageUrl && body.imageSku) {
+    const urls = await getProductImages(body.imageSku.trim(), 1);
+    imageUrl = urls[0] ?? null;
+  }
+
   // Send via Meta first — if it rejects, surface the error immediately.
   // Only persist the message after a successful send so the dashboard
   // never shows a "sent" message that didn't actually leave.
   try {
-    await sendMessage(conv.phone_number, text, 'whatsapp');
+    if (text) await sendMessage(conv.phone_number, text, 'whatsapp');
+    if (imageUrl) await sendImage(conv.phone_number, imageUrl, undefined, 'whatsapp');
   } catch (err) {
     console.error(
       '[send] WhatsApp send failed | conv=' + id + ':',
@@ -70,7 +81,7 @@ export async function POST(
     );
   }
 
-  await storeMessage(id, 'assistant', text, false);
+  await storeMessage(id, 'assistant', text || (imageUrl ? '[imagen del producto]' : ''), false);
 
   // Use the OPERATOR_REPLY_REASON sentinel — the webhook recognizes this and
   // auto-resumes Sol on the customer's next reply, so a one-off operator text
