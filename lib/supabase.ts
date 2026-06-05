@@ -857,6 +857,7 @@ export function formatOffersForPrompt(
     '• Si un equipo NO aparece en esta lista, no tiene oferta aplicable — cotiza el precio normal del catálogo, sin cupón.',
     '• Aunque la pregunta no sea de precio (garantía, specs, compatibilidad), responde primero lo que preguntó y luego añade UNA línea con la oferta del equipo.',
     '• El descuento se aplica en el checkout de oiikon.com (tú no lo aplicas). Presenta el ahorro como aproximado: "con el código *CÓDIGO* ahorras alrededor de $X".',
+    '• LINK CON CUPÓN AUTO-APLICADO (OBLIGATORIO cuando hay oferta): cuando presentes la oferta de un equipo, envía el link del producto CON el cupón ya incluido como `?promo=CÓDIGO` al final, p. ej. `https://oiikon.com/product/<slug>?promo=E3600SAVE`. Así el cliente toca el link → el descuento ya queda aplicado en el checkout, sin que él escriba el código. Usa el slug correcto del producto (el del catálogo) + `?promo=` + el código exacto de la oferta. Si NO hay oferta para ese equipo, envía el link normal sin `?promo=`.',
     '',
   ].join('\n');
 }
