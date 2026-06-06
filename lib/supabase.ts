@@ -872,8 +872,10 @@ export function selectBestOffer(
 /**
  * Build the per-SKU "best offer" block appended to Sol's catalog context.
  * For each in-stock product we compute the single best margin-safe offer and
- * list ONLY that one. Sol is told to present exactly the listed code for the
- * equipment in question and never to list multiple or invent codes. Returns
+ * list ONLY that one. Sol is told to present exactly the listed code per
+ * equipment — one per equipment, never multiple for the same item, never
+ * invented — though for a multi-item pay-link combo she passes each item's
+ * own code comma-separated in a single [[PAYLINK]] marker. Returns
  * '' when no product has any applicable offer (prompt unchanged).
  */
 export function formatOffersForPrompt(
@@ -905,7 +907,8 @@ export function formatOffersForPrompt(
     ...lines,
     '',
     'Reglas de oferta (OBLIGATORIAS):',
-    '• Presenta SOLO el código listado arriba para el equipo en cuestión. NUNCA listes varios cupones ni inventes otros códigos.',
+    '• UN código por equipo: para CADA equipo presenta SOLO su código listado arriba. NUNCA le ofrezcas a un mismo equipo varios cupones, ni inventes códigos, ni le pongas a un equipo el cupón de otro.',
+    '• COMBO (varios equipos en un mismo pago por link): en la etiqueta [[PAYLINK ... coupon=A,B]] incluye el código de CADA equipo separados por coma —el mismo que cotizaste para cada uno—. El sistema aplica a cada equipo el mejor cupón seguro de esa lista, así ninguno queda a precio completo. Esto NO contradice la regla anterior: sigue siendo UN código por equipo, solo combinados en una misma etiqueta.',
     '• Si un equipo NO aparece en esta lista, no tiene oferta aplicable — cotiza el precio normal del catálogo, sin cupón.',
     '• Aunque la pregunta no sea de precio (garantía, specs, compatibilidad), responde primero lo que preguntó y luego añade UNA línea con la oferta del equipo.',
     '• El descuento se aplica en el checkout de oiikon.com (tú no lo aplicas). Presenta el ahorro como aproximado: "con el código *CÓDIGO* ahorras alrededor de $X".',
