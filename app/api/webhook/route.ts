@@ -529,6 +529,25 @@ async function processWebhookLocked(
         // ("I see you're looking at the E3600LFP…") instead of a blind
         // "what do you want to power?". Persist to product_interest so later
         // turns keep the context. Best-effort — falls back to generic opener.
+        // Persist ad attribution (which ad/post drove this lead) the moment a
+        // referral arrives — independent of whether the URL maps to a SKU. This
+        // populates conversations.ad_source + ctwa_clid so we can later report
+        // "this lead came from the E3600 hurricane ad" and target accordingly.
+        if (parsed.referral) {
+          const r = parsed.referral;
+          const adSource = [r.sourceType, r.headline, r.sourceUrl]
+            .filter(Boolean).join(' | ').slice(0, 500) || null;
+          if (adSource || r.ctwaClid) {
+            waitUntil(
+              updateConversationFields(conversation.id, {
+                ad_source: adSource,
+                ctwa_clid: r.ctwaClid ?? null,
+              }).catch((err) => console.warn(`[WEBHOOK] ad attribution save failed for ${senderPhone}:`, err))
+            );
+            console.log(`[WEBHOOK] CTWA attribution saved for ${senderPhone}: ${adSource?.slice(0, 80)} clid=${r.ctwaClid ?? '—'}`);
+          }
+        }
+
         const refUrl = parsed.referral?.sourceUrl ?? null;
         if (refUrl) {
           try {

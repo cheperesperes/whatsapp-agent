@@ -70,14 +70,57 @@ export async function sendMetaWhatsAppImage(
   }
 }
 
+// ── Outbound: send a Meta-approved template ─────────────────
+// Required for business-initiated messages OUTSIDE the 24h customer-service
+// window (e.g. a review request sent days after delivery). Free-form text
+// would be rejected by WhatsApp policy there — only approved templates send.
+export async function sendMetaWhatsAppTemplate(
+  to: string,
+  templateName: string,
+  languageCode: string,
+  bodyParams: string[],
+  phoneNumberId: string,
+  accessToken: string,
+): Promise<{ wa_message_id?: string }> {
+  const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}/messages`;
+  const components =
+    bodyParams.length > 0
+      ? [{ type: 'body', parameters: bodyParams.map((text) => ({ type: 'text', text })) }]
+      : [];
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: to.replace(/^\+/, ''),
+    type: 'template',
+    template: { name: templateName, language: { code: languageCode }, components },
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    messages?: Array<{ id?: string }>;
+  };
+  if (!res.ok) {
+    throw new Error(`Meta WA template send failed ${res.status}: ${JSON.stringify(data)}`);
+  }
+  return { wa_message_id: data?.messages?.[0]?.id };
+}
+
 // ── Inbound: parse webhook payload ──────────────────────────
 /** Click-to-WhatsApp ad referral (present when the customer arrived from a
  *  Facebook/Instagram ad — Meta attaches it to the FIRST message only). */
 export interface AdReferral {
   sourceUrl: string | null;   // the ad's destination URL (often the product page)
   sourceType: string | null;  // 'ad' | 'post' | ...
+  sourceId: string | null;    // the FB ad/post id
   headline: string | null;    // ad headline text
   body: string | null;        // ad body text
+  ctwaClid: string | null;    // click-to-WhatsApp click id (attribution key)
 }
 
 export interface ParsedMetaIncoming {
@@ -116,8 +159,10 @@ export function parseMetaIncomingMessage(body: unknown): ParsedMetaIncoming | nu
       ? {
           sourceUrl: (rawRef.source_url as string) ?? null,
           sourceType: (rawRef.source_type as string) ?? null,
+          sourceId: (rawRef.source_id as string) ?? null,
           headline: (rawRef.headline as string) ?? null,
           body: (rawRef.body as string) ?? null,
+          ctwaClid: (rawRef.ctwa_clid as string) ?? null,
         }
       : null;
 
