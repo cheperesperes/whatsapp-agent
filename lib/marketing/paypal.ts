@@ -110,6 +110,11 @@ export async function createPayLink(
     ],
     application_context: {
       brand_name: 'Oiikon',
+      // Show the card / guest form first (not the PayPal-login wall) so buyers
+      // without a PayPal account can pay by card — the whole point of pay-links
+      // for diaspora/older buyers. Requires "PayPal Account Optional" ON in the
+      // PayPal account settings; otherwise PayPal falls back to login.
+      landing_page: 'BILLING',
       shipping_preference: 'GET_FROM_FILE', // let buyer enter shipping address
       user_action: 'PAY_NOW',
       return_url: `${appUrl}/?paid=1`,
