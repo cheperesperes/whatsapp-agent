@@ -749,6 +749,54 @@ export async function loadProductCosts(): Promise<Record<string, number>> {
   return map;
 }
 
+export interface StorefrontProduct {
+  sku: string;
+  name: string;
+  brand: string | null;
+  sell_price: number;
+  discount_percentage: number | null;
+  in_stock: boolean;
+}
+
+/**
+ * Pay-link fallback: load specific SKUs from the storefront `products` table
+ * (the full oiikon.com catalog). Used ONLY for SKUs NOT present in the curated
+ * agent_product_catalog, so Sol can pay-link any active, in-stock, publicly
+ * visible website product (e.g. accessories). This is a READ — it never writes
+ * a price; agent_product_catalog stays the source of truth for items it holds,
+ * preserving the intentional price difference between the two tables.
+ */
+export async function loadStorefrontProductsBySku(skus: string[]): Promise<StorefrontProduct[]> {
+  const clean = Array.from(new Set(skus.map((s) => (s || '').trim()).filter(Boolean)));
+  if (!clean.length) return [];
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('products')
+    .select('sku, name, name_paypal, brand, sell_price, price, discount_percentage, in_stock, is_active, is_publicly_visible')
+    .in('sku', clean)
+    .eq('is_active', true)
+    .eq('in_stock', true);
+  if (error || !data) {
+    if (error) console.warn('[loadStorefrontProductsBySku]', error.message);
+    return [];
+  }
+  const out: StorefrontProduct[] = [];
+  for (const r of data as Record<string, unknown>[]) {
+    if (r.is_publicly_visible === false) continue; // never pay-link hidden products
+    const price = Number((r.sell_price as number) ?? (r.price as number) ?? 0);
+    if (!(price > 0)) continue;
+    out.push({
+      sku: String(r.sku),
+      name: String((r.name_paypal as string) || (r.name as string) || r.sku),
+      brand: (r.brand as string) ?? null,
+      sell_price: price,
+      discount_percentage: r.discount_percentage != null ? Number(r.discount_percentage) : 0,
+      in_stock: Boolean(r.in_stock),
+    });
+  }
+  return out;
+}
+
 export interface SelectedOffer {
   code: string;
   /** Dollars off the effective (post product-discount) price. */
