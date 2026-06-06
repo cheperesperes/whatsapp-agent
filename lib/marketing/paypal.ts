@@ -16,6 +16,14 @@
 const PP_ENV = (process.env.PAYPAL_ENV ?? 'live').toLowerCase();
 const PP_BASE = PP_ENV === 'sandbox' ? 'https://api-m.sandbox.paypal.com' : 'https://api-m.paypal.com';
 
+/**
+ * Marker stamped into every pay-link order's custom_id. The storefront uses the
+ * SAME PayPal account, so our webhook also receives ITS order events — it must
+ * ONLY act on orders whose custom_id starts with this tag (i.e. orders WE
+ * created), and ignore storefront-checkout orders entirely.
+ */
+export const PAYLINK_TAG = 'WA pay-link';
+
 export interface PayLinkItem {
   name: string;
   sku?: string;
@@ -105,7 +113,12 @@ export async function createPayLink(
           quantity: String(it.qty),
           unit_amount: { currency_code: 'USD', value: money(it.unit_price) },
         })),
-        ...(opts.note ? { custom_id: opts.note.slice(0, 127) } : {}),
+        // Always stamp PAYLINK_TAG so the webhook can isolate our orders from
+        // the storefront's PayPal orders on the same account.
+        custom_id: (opts.note && opts.note.startsWith(PAYLINK_TAG)
+          ? opts.note
+          : `${PAYLINK_TAG}${opts.note ? ' · ' + opts.note : ''}`
+        ).slice(0, 127),
       },
     ],
     application_context: {
