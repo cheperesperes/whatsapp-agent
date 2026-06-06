@@ -18,6 +18,7 @@ import {
   loadAgentCatalog,
   loadActiveOffers,
   loadProductCosts,
+  loadStorefrontProductsBySku,
   selectBestOffer,
   type Offer,
 } from './supabase';
@@ -55,7 +56,31 @@ export async function buildPayLink(
     loadActiveOffers(),
     loadProductCosts(),
   ]);
-  const bySku = new Map(catalog.map((p) => [p.sku.toLowerCase(), p]));
+  // agent_product_catalog is the source of truth. For any requested SKU NOT in
+  // it, fall back to the storefront `products` table (read-only) so Sol can
+  // pay-link any active website product (e.g. accessories). Agent-catalog items
+  // keep their (intentionally different) price; we never write a price here.
+  type ResolvedProduct = {
+    sku: string; name: string; sell_price: number;
+    discount_percentage: number | null; in_stock: boolean; brand: string | null;
+  };
+  const bySku = new Map<string, ResolvedProduct>(
+    catalog.map((p) => [
+      p.sku.toLowerCase(),
+      { sku: p.sku, name: p.name, sell_price: p.sell_price, discount_percentage: p.discount_percentage, in_stock: p.in_stock, brand: p.brand },
+    ]),
+  );
+  const missingSkus = lines
+    .map((l) => (l.sku || '').trim())
+    .filter((s) => s && !bySku.has(s.toLowerCase()));
+  if (missingSkus.length) {
+    for (const fp of await loadStorefrontProductsBySku(missingSkus)) {
+      bySku.set(fp.sku.toLowerCase(), {
+        sku: fp.sku, name: fp.name, sell_price: fp.sell_price,
+        discount_percentage: fp.discount_percentage, in_stock: fp.in_stock, brand: fp.brand,
+      });
+    }
+  }
 
   // Restrict coupon validation to the exact code Sol quoted (if any).
   const couponOffers: Offer[] = couponCode
@@ -77,7 +102,7 @@ export async function buildPayLink(
     // (selectBestOffer enforces brand, min-order and the per-code margin floor).
     if (couponOffers.length) {
       const cost = costs[p.sku.toLowerCase()] ?? null;
-      const best = selectBestOffer(unit, p.brand, cost, couponOffers);
+      const best = selectBestOffer(unit, p.brand ?? '', cost, couponOffers);
       if (best) unit = best.finalPrice;
     }
 
