@@ -824,14 +824,18 @@ export interface SelectedOffer {
  */
 export function selectBestOffer(
   effectivePrice: number,
-  brand: string,
+  brand: string | null,
   cost: number | null,
   offers: Offer[],
 ): SelectedOffer | null {
   let best: SelectedOffer | null = null;
 
   for (const o of offers) {
-    if (o.eligible_brand && o.eligible_brand.toLowerCase() !== brand.toLowerCase()) continue;
+    // Null-safe: a catalog/accessory row may have no brand. A null brand can
+    // only match brand-agnostic offers (eligible_brand null), never a
+    // brand-specific one — and must never throw (a null brand once 500'd Sol's
+    // entire AI path for all conversations).
+    if (o.eligible_brand && o.eligible_brand.toLowerCase() !== (brand ?? '').toLowerCase()) continue;
     if (o.min_order_total != null && effectivePrice < Number(o.min_order_total)) continue;
 
     let savings =
