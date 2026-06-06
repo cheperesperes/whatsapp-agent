@@ -17,6 +17,7 @@
  * a warning and processes UNVERIFIED (so you can smoke-test), so set it promptly.
  */
 import { capturePayPalOrder, verifyPayPalWebhook, PAYLINK_TAG } from '@/lib/marketing/paypal';
+import { recordPayLinkOrder } from '@/lib/paylink';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -91,6 +92,16 @@ export async function POST(req: Request) {
         await pingOperator(
           `⚠️ PayPal: orden ${orderId} aprobada pero NO se pudo capturar el pago. Revísala. (${cap.error ?? ''})`,
         );
+      } else {
+        // Record the sale as an order (idempotent with the return path).
+        try {
+          const rec = await recordPayLinkOrder(orderId, cap);
+          console.log(
+            `[PAYPAL-WH] order-record ok=${rec.ok} order=${rec.orderNumber ?? ''} existed=${rec.alreadyExisted ?? false} err=${rec.error ?? ''}`,
+          );
+        } catch (e) {
+          console.error('[PAYPAL-WH] order-record error:', e);
+        }
       }
     } else if (type === 'PAYMENT.CAPTURE.COMPLETED' || type === 'CHECKOUT.ORDER.COMPLETED') {
       // "Money received." PayPal sends one of these depending on which event is

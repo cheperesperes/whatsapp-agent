@@ -11,6 +11,7 @@
  * their return_url here, so this only ever captures our own orders.
  */
 import { capturePayPalOrder } from '@/lib/marketing/paypal';
+import { recordPayLinkOrder } from '@/lib/paylink';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -32,14 +33,37 @@ export async function GET(req: Request): Promise<Response> {
     `[PAYPAL-RETURN] order=${token} ok=${cap.ok} status=${cap.status ?? ''} amount=${cap.amount ?? ''} already=${cap.alreadyCaptured ?? false} err=${cap.error ?? ''}`,
   );
 
-  if (cap.ok && !cap.alreadyCaptured) {
+  if (cap.ok) {
+    // Record the sale as an order → fires storefront triggers (admin EMAIL,
+    // order number, financials, order SMS). Best-effort + idempotent: never
+    // blocks the payment, never duplicates.
     try {
-      await sendWhatsAppMessage(
-        OPERATOR_PHONE,
-        `💰 Pago recibido: ${cap.amount ?? '?'} ${cap.currency ?? 'USD'} (PayPal ${cap.captureId ?? token}). ¡Venta cerrada!`,
+      const rec = await recordPayLinkOrder(token, cap);
+      console.log(
+        `[PAYPAL-RETURN] order-record ok=${rec.ok} order=${rec.orderNumber ?? ''} existed=${rec.alreadyExisted ?? false} err=${rec.error ?? ''}`,
       );
+      if (!rec.ok) {
+        try {
+          await sendWhatsAppMessage(
+            OPERATOR_PHONE,
+            `⚠️ Pago capturado (${cap.amount ?? '?'} ${cap.currency ?? 'USD'}) pero NO se creó la orden: ${rec.error ?? ''}. Crearla manual.`,
+          );
+        } catch { /* best effort */ }
+      }
     } catch (e) {
-      console.error('[PAYPAL-RETURN] operator ping failed:', e);
+      console.error('[PAYPAL-RETURN] order-record error:', e);
+    }
+
+    // Immediate operator ping (the admin email also fires via the order trigger).
+    if (!cap.alreadyCaptured) {
+      try {
+        await sendWhatsAppMessage(
+          OPERATOR_PHONE,
+          `💰 Pago recibido: ${cap.amount ?? '?'} ${cap.currency ?? 'USD'} (PayPal ${cap.captureId ?? token}). ¡Venta cerrada!`,
+        );
+      } catch (e) {
+        console.error('[PAYPAL-RETURN] operator ping failed:', e);
+      }
     }
   }
 

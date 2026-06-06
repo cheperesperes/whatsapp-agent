@@ -231,6 +231,83 @@ export async function capturePayPalOrder(orderId: string): Promise<CaptureResult
   };
 }
 
+// ── Order details (to record the sale as an order after capture) ───────────
+
+export interface PayPalOrderItem {
+  sku?: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+export interface PayPalOrderDetails {
+  ok: boolean;
+  payerName?: string;
+  payerEmail?: string;
+  shipping?: any; // raw PayPal shipping object { name, address }
+  items: PayPalOrderItem[];
+  itemTotal: number;
+  shippingTotal: number;
+  grandTotal: number;
+  currency: string;
+  customId?: string;
+  error?: string;
+}
+
+/**
+ * Fetch a PayPal order's details (items, shipping, payer, totals) so we can
+ * record a matching `orders` row after capturing. Read-only GET.
+ */
+export async function getPayPalOrder(orderId: string): Promise<PayPalOrderDetails> {
+  const empty = { items: [] as PayPalOrderItem[], itemTotal: 0, shippingTotal: 0, grandTotal: 0, currency: 'USD' };
+  if (!isPayPalConfigured()) return { ok: false, ...empty, error: 'PayPal not configured' };
+  if (!orderId) return { ok: false, ...empty, error: 'no order id' };
+
+  let token: string;
+  try {
+    token = await getAccessToken();
+  } catch (e: any) {
+    return { ok: false, ...empty, error: String(e?.message ?? e) };
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${PP_BASE}/v2/checkout/orders/${encodeURIComponent(orderId)}`, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (e: any) {
+    return { ok: false, ...empty, error: `get order failed: ${String(e?.message ?? e)}` };
+  }
+  if (!res.ok) return { ok: false, ...empty, error: `get order ${res.status}: ${(await res.text()).slice(0, 160)}` };
+
+  const d: any = await res.json();
+  const pu = d?.purchase_units?.[0] ?? {};
+  const payer = d?.payer ?? {};
+  const payerName =
+    [payer?.name?.given_name, payer?.name?.surname].filter(Boolean).join(' ') ||
+    pu?.shipping?.name?.full_name ||
+    undefined;
+  const items: PayPalOrderItem[] = (pu?.items ?? []).map((it: any) => ({
+    sku: it?.sku || undefined,
+    name: it?.name ?? 'Item',
+    quantity: Number(it?.quantity ?? 1) || 1,
+    unitPrice: Number(it?.unit_amount?.value ?? 0),
+  }));
+  const bd = pu?.amount?.breakdown ?? {};
+  return {
+    ok: true,
+    payerName,
+    payerEmail: payer?.email_address,
+    shipping: pu?.shipping ?? null,
+    items,
+    itemTotal: Number(bd?.item_total?.value ?? pu?.amount?.value ?? 0),
+    shippingTotal: Number(bd?.shipping?.value ?? 0),
+    grandTotal: Number(pu?.amount?.value ?? 0),
+    currency: pu?.amount?.currency_code ?? 'USD',
+    customId: pu?.custom_id,
+  };
+}
+
 // ── Webhook signature verification ─────────────────────────────────────────
 
 export interface PayPalWebhookHeaders {
