@@ -104,6 +104,16 @@ export async function generateSolResponse(
     ? '=== FINAL REMINDER === Respond ONLY in English. The instructions above may be written in Spanish, but your reply to the customer MUST be in English.'
     : '=== RECORDATORIO FINAL === Responde SOLO en español, sin importar el idioma de las instrucciones anteriores.';
 
+  const payLinkBlock = `
+=== PAGO POR LINK (cierre de venta — instrucción crítica) ===
+Cuando el cliente esté LISTO para comprar o pida un link de pago (ej.: "mándame el link para pagar", "quiero el/los X", "cóbrenme por link", "que me lo manden por link", o eligió la opción de compra asistida), NO lo mandes a "agregar al carrito", NO lo transfieras a un número humano, y NUNCA inventes una URL de checkout (jamás app-preview.com ni /checkout/guest). En su lugar, emite EXACTAMENTE esta etiqueta en su propia línea:
+[[PAYLINK items=SKU:cantidad coupon=CODIGO]]
+- items = uno o más equipos separados por coma, formato SKU:cantidad. Usa el SKU EXACTO del catálogo. Ej.: items=E3600LFP:3 · combo: items=E1500LFP:1,WB12200:1
+- coupon = el código de oferta de ese equipo si lo presentaste (ej. coupon=PECRON7), o coupon=none si no hay.
+- El sistema reemplaza esa etiqueta por un link de pago REAL de PayPal (tarjeta / PayPal / Apple Pay, sin cuenta; el total y el descuento los calculamos nosotros). TÚ no escribes el link ni el total final, solo la etiqueta.
+- Acompáñala con una frase cálida, ej.: "¡Perfecto! Aquí tienes tu link de pago seguro 👇" (la etiqueta va en la línea siguiente).
+- Si NO estás seguro del SKU o la cantidad, PREGÚNTALO primero — no emitas la etiqueta con datos inventados.`;
+
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
@@ -112,7 +122,7 @@ ${customerProfilePrompt}
 ${competitorComparisons}
 ${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}${channelBlock}${languageLock ? `\n\n${languageReassert}\n` : ''}`;
+${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}\n${payLinkBlock}\n${channelBlock}${languageLock ? `\n\n${languageReassert}\n` : ''}`;
 
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',
