@@ -886,7 +886,7 @@ export function formatOffersForPrompt(
  */
 export async function updateConversationFields(
   conversationId: string,
-  patch: { product_interest?: string | null },
+  patch: { product_interest?: string | null; ad_source?: string | null; ctwa_clid?: string | null },
 ): Promise<void> {
   const supabase = createServiceClient();
   await supabase
