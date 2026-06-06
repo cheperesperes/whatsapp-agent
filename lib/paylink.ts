@@ -46,6 +46,11 @@ export interface BuildPayLinkResult {
 
 const clampQty = (n: number) => Math.max(1, Math.min(20, Math.floor(Number(n) || 1)));
 
+// US sales tax. Oiikon collects only where it has nexus — FL (~7%, matching the
+// storefront). Sol asks a low-friction "¿envío a Florida?" yes/no and sets fl=si
+// in the marker; we tax ONLY Florida. Add states here if nexus ever expands.
+const FL_SALES_TAX_RATE = 0.07;
+
 /**
  * Build a PayPal pay-link for one or more catalog SKUs. Price + coupon are
  * resolved server-side; an unknown/OOS SKU or unconfigured PayPal returns
@@ -54,6 +59,7 @@ const clampQty = (n: number) => Math.max(1, Math.min(20, Math.floor(Number(n) ||
 export async function buildPayLink(
   lines: PayLinkLineRequest[],
   couponCode?: string | null,
+  isFlorida = false,
 ): Promise<BuildPayLinkResult> {
   if (!isPayPalConfigured()) return { ok: false, error: 'paypal_not_configured' };
   if (!lines.length) return { ok: false, error: 'no_items' };
@@ -120,8 +126,13 @@ export async function buildPayLink(
     summaryParts.push(`${qty}× ${p.name} ($${unit.toFixed(2)})`);
   }
 
+  // Sales tax: FL only (post-coupon subtotal). Non-FL → 0.
+  const taxableSubtotal = items.reduce((s, it) => s + it.unit_price * it.qty, 0);
+  const tax = isFlorida ? Math.round(taxableSubtotal * FL_SALES_TAX_RATE * 100) / 100 : 0;
+
   const res = await createPayLink(items, {
     shippingFlat: 0, // free shipping to lower-48 US
+    tax,
     appUrl: process.env.NEXT_PUBLIC_APP_URL ?? 'https://oiikon.com',
     note: couponCode ? `WA pay-link · ${couponCode}` : 'WA pay-link',
   });
@@ -131,7 +142,7 @@ export async function buildPayLink(
     ok: true,
     url: res.url,
     total: res.total,
-    summary: `${summaryParts.join(' + ')} — total $${(res.total ?? 0).toFixed(2)}`,
+    summary: `${summaryParts.join(' + ')}${tax > 0 ? ` + imp. FL $${tax.toFixed(2)}` : ''} — total $${(res.total ?? 0).toFixed(2)}`,
   };
 }
 
@@ -139,9 +150,10 @@ export async function buildPayLink(
 
 const PAYLINK_RE = /\[\[\s*PAYLINK\s+([^\]]+?)\s*\]\]/gi;
 
-function parseMarker(inner: string): { lines: PayLinkLineRequest[]; coupon: string | null } {
+function parseMarker(inner: string): { lines: PayLinkLineRequest[]; coupon: string | null; isFlorida: boolean } {
   const itemsMatch = inner.match(/items=([^\s]+)/i);
   const couponMatch = inner.match(/coupon=([^\s]+)/i);
+  const flMatch = inner.match(/fl=([^\s]+)/i);
   const lines: PayLinkLineRequest[] = [];
   if (itemsMatch) {
     for (const pair of itemsMatch[1].split(',')) {
@@ -151,7 +163,9 @@ function parseMarker(inner: string): { lines: PayLinkLineRequest[]; coupon: stri
   }
   const coupon =
     couponMatch && !/^(none|null|n\/a)$/i.test(couponMatch[1]) ? couponMatch[1].trim() : null;
-  return { lines, coupon };
+  // fl=si|yes|1|true|fl|florida → ship to Florida (apply FL sales tax). Default no.
+  const isFlorida = flMatch ? /^(s[ií]|si|yes|y|1|true|fl|florida)$/i.test(flMatch[1].trim()) : false;
+  return { lines, coupon, isFlorida };
 }
 
 export interface ApplyPayLinkResult {
@@ -186,8 +200,8 @@ export async function applyPayLinkMarkers(
   for (const m of markers) {
     let replacement = soft;
     try {
-      const { lines, coupon } = parseMarker(m[1]);
-      const r = await buildPayLink(lines, coupon);
+      const { lines, coupon, isFlorida } = parseMarker(m[1]);
+      const r = await buildPayLink(lines, coupon, isFlorida);
       if (r.ok && r.url) {
         built++;
         details.push(`ok ${r.summary}`);
@@ -280,9 +294,12 @@ export async function recordPayLinkOrder(
       source: 'whatsapp_paylink',
     };
 
-    const subtotal = Math.round(Number(details.itemTotal || capture.amount || 0) * 100) / 100;
     const shippingCost = Math.round(Number(details.shippingTotal || 0) * 100) / 100;
-    const total = Math.round((subtotal + shippingCost) * 100) / 100;
+    const tax = Math.round(Number(details.taxTotal || 0) * 100) / 100;
+    const grand = Number(details.grandTotal || capture.amount || 0);
+    // subtotal = pre-tax item total (NOT capture.amount, which includes tax+shipping).
+    const subtotal = Math.round(Math.max(0, details.itemTotal || grand - shippingCost - tax) * 100) / 100;
+    const total = Math.round((subtotal + shippingCost + tax) * 100) / 100; // satisfies validate_order_total
 
     const { data: inserted, error } = await sb
       .from('orders')
@@ -295,6 +312,7 @@ export async function recordPayLinkOrder(
         items,
         subtotal,
         shipping_cost: shippingCost,
+        tax,
         total,
         status: 'processing',
         payment_status: 'paid', // REQUIRED for the admin-alert trigger to fire

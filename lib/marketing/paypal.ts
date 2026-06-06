@@ -78,14 +78,15 @@ const money = (n: number) => n.toFixed(2);
  */
 export async function createPayLink(
   items: PayLinkItem[],
-  opts: { shippingFlat?: number; appUrl?: string; note?: string } = {},
+  opts: { shippingFlat?: number; appUrl?: string; note?: string; tax?: number } = {},
 ): Promise<PayLinkResult> {
   if (!isPayPalConfigured()) return { ok: false, error: 'PayPal not configured (PAYPAL_CLIENT_ID / PAYPAL_SECRET)' };
   if (!items.length) return { ok: false, error: 'no items' };
 
   const itemTotal = items.reduce((s, it) => s + it.unit_price * it.qty, 0);
   const shipping = Math.max(0, opts.shippingFlat ?? 0);
-  const grand = itemTotal + shipping;
+  const tax = Math.max(0, opts.tax ?? 0);
+  const grand = itemTotal + shipping + tax;
   const appUrl = opts.appUrl ?? process.env.NEXT_PUBLIC_APP_URL ?? 'https://oiikon.com';
   // Our own (agent) base URL. PayPal returns the buyer HERE after approval so we
   // capture the order synchronously (the async webhook proved unreliable), then
@@ -114,6 +115,7 @@ export async function createPayLink(
           breakdown: {
             item_total: { currency_code: 'USD', value: money(itemTotal) },
             shipping: { currency_code: 'USD', value: money(shipping) },
+            ...(tax > 0 ? { tax_total: { currency_code: 'USD', value: money(tax) } } : {}),
           },
         },
         items: items.map((it) => ({
@@ -248,6 +250,7 @@ export interface PayPalOrderDetails {
   items: PayPalOrderItem[];
   itemTotal: number;
   shippingTotal: number;
+  taxTotal: number;
   grandTotal: number;
   currency: string;
   customId?: string;
@@ -259,7 +262,7 @@ export interface PayPalOrderDetails {
  * record a matching `orders` row after capturing. Read-only GET.
  */
 export async function getPayPalOrder(orderId: string): Promise<PayPalOrderDetails> {
-  const empty = { items: [] as PayPalOrderItem[], itemTotal: 0, shippingTotal: 0, grandTotal: 0, currency: 'USD' };
+  const empty = { items: [] as PayPalOrderItem[], itemTotal: 0, shippingTotal: 0, taxTotal: 0, grandTotal: 0, currency: 'USD' };
   if (!isPayPalConfigured()) return { ok: false, ...empty, error: 'PayPal not configured' };
   if (!orderId) return { ok: false, ...empty, error: 'no order id' };
 
@@ -308,6 +311,7 @@ export async function getPayPalOrder(orderId: string): Promise<PayPalOrderDetail
     items,
     itemTotal: Number(bd?.item_total?.value ?? pu?.amount?.value ?? 0),
     shippingTotal: Number(bd?.shipping?.value ?? 0),
+    taxTotal: Number(bd?.tax_total?.value ?? 0),
     grandTotal: Number(pu?.amount?.value ?? 0),
     currency: pu?.amount?.currency_code ?? 'USD',
     customId: pu?.custom_id,
