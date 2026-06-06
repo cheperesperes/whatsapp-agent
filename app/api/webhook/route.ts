@@ -53,6 +53,7 @@ import {
 } from '@/lib/competitors';
 import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-extractor';
 import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
+import { applyPayLinkMarkers } from '@/lib/paylink';
 import {
   detectLanguageFromHistory,
   formatLanguageLockForPrompt,
@@ -701,12 +702,38 @@ async function processWebhookLocked(
     // code when the prompt drifts (`**bold**` → `*bold*`, `~~strike~~` →
     // `~strike~`) plus table detection for observability. Runs for every
     // outbound message so the customer never sees a visible `**`.
-    const { text: cleanMessage, fixes: formatFixes } =
+    const { text: normalizedMessage, fixes: formatFixes } =
       normalizeWhatsAppFormatting(extractedMessage);
     if (formatFixes.length > 0) {
       console.warn(
         `[WEBHOOK] Format fixes applied for ${senderPhone} conv=${conversation.id}: ${formatFixes.join(',')}`
       );
+    }
+
+    // ── Pay-by-link: turn [[PAYLINK items=SKU:qty coupon=CODE]] markers into a
+    // real PayPal tap-to-pay URL (price + coupon resolved server-side, margin-
+    // safe). A raw marker is never sent; on failure we alert the operator so a
+    // hot lead is contacted manually instead of silently dropped.
+    let cleanMessage = normalizedMessage;
+    {
+      const payLang: 'es' | 'en' = languageLock.includes('ENGLISH') ? 'en' : 'es';
+      const pl = await applyPayLinkMarkers(normalizedMessage, payLang);
+      cleanMessage = pl.text;
+      if (pl.built > 0 || pl.failed > 0) {
+        console.log(
+          `[PAYLINK] ${senderPhone} conv=${conversation.id} built=${pl.built} failed=${pl.failed} :: ${pl.details.join(' ; ')}`
+        );
+        if (pl.failed > 0) {
+          try {
+            await sendWhatsAppMessage(
+              OPERATOR_PHONE,
+              `⚠️ No se pudo generar el link de pago para ${senderPhone} (conv ${conversation.id}). Contáctalo manualmente. Detalle: ${pl.details.join(' ; ')}`
+            );
+          } catch {
+            /* best-effort operator alert */
+          }
+        }
+      }
     }
 
     // ── Handle HANDOFF ───────────────────────────────────
