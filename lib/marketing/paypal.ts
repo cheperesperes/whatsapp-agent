@@ -87,6 +87,15 @@ export async function createPayLink(
   const shipping = Math.max(0, opts.shippingFlat ?? 0);
   const grand = itemTotal + shipping;
   const appUrl = opts.appUrl ?? process.env.NEXT_PUBLIC_APP_URL ?? 'https://oiikon.com';
+  // Our own (agent) base URL. PayPal returns the buyer HERE after approval so we
+  // capture the order synchronously (the async webhook proved unreliable), then
+  // redirect the buyer on to the storefront. Falls back to the known prod alias.
+  const agentBase = (
+    process.env.AGENT_BASE_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : 'https://whatsapp-agent-ebon-nine.vercel.app')
+  ).replace(/\/+$/, '');
 
   let token: string;
   try {
@@ -130,7 +139,9 @@ export async function createPayLink(
       landing_page: 'BILLING',
       shipping_preference: 'GET_FROM_FILE', // let buyer enter shipping address
       user_action: 'PAY_NOW',
-      return_url: `${appUrl}/?paid=1`,
+      // Capture-on-return: route the post-approval redirect through our server,
+      // which captures the order, then bounces the buyer to the storefront.
+      return_url: `${agentBase}/api/paypal/return`,
       cancel_url: `${appUrl}/?cancelled=1`,
     },
   };
