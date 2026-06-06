@@ -16,7 +16,7 @@
  * Then add PAYPAL_WEBHOOK_ID to Vercel. Until that env is set the endpoint logs
  * a warning and processes UNVERIFIED (so you can smoke-test), so set it promptly.
  */
-import { capturePayPalOrder, verifyPayPalWebhook } from '@/lib/marketing/paypal';
+import { capturePayPalOrder, verifyPayPalWebhook, PAYLINK_TAG } from '@/lib/marketing/paypal';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
 export const dynamic = 'force-dynamic';
@@ -68,6 +68,17 @@ export async function POST(req: Request) {
   const type: string = event?.event_type ?? 'unknown';
   const resource = event?.resource ?? {};
   console.log(`[PAYPAL-WH] ${type} verified=${verified} resourceId=${resource?.id ?? '?'}`);
+
+  // ISOLATION GUARD: the storefront (oiikon.com) uses the SAME PayPal account,
+  // so this webhook also receives ITS order events. Only act on orders WE
+  // created — identified by PAYLINK_TAG in custom_id — and ignore everything
+  // else, so we can NEVER capture or interfere with a storefront-checkout order.
+  const customId: string =
+    resource?.purchase_units?.[0]?.custom_id ?? resource?.custom_id ?? '';
+  if (!customId.startsWith(PAYLINK_TAG)) {
+    console.log(`[PAYPAL-WH] ignoring non-pay-link order (custom_id="${customId.slice(0, 40)}") — not ours`);
+    return new Response('ignored: not a pay-link order', { status: 200 });
+  }
 
   try {
     if (type === 'CHECKOUT.ORDER.APPROVED') {
