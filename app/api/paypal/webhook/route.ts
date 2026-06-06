@@ -10,7 +10,9 @@
  *
  * SETUP — PayPal Developer Dashboard (LIVE app) → Webhooks:
  *   URL:    https://<prod-domain>/api/paypal/webhook
- *   Events: CHECKOUT.ORDER.APPROVED, PAYMENT.CAPTURE.COMPLETED
+ *   Events: CHECKOUT.ORDER.APPROVED (triggers capture) + one "completed" event for
+ *           the operator ping — we accept PAYMENT.CAPTURE.COMPLETED OR
+ *           CHECKOUT.ORDER.COMPLETED (whichever is subscribed).
  * Then add PAYPAL_WEBHOOK_ID to Vercel. Until that env is set the endpoint logs
  * a warning and processes UNVERIFIED (so you can smoke-test), so set it promptly.
  */
@@ -79,12 +81,25 @@ export async function POST(req: Request) {
           `⚠️ PayPal: orden ${orderId} aprobada pero NO se pudo capturar el pago. Revísala. (${cap.error ?? ''})`,
         );
       }
-    } else if (type === 'PAYMENT.CAPTURE.COMPLETED') {
-      const amount = resource?.amount?.value ?? '?';
-      const currency = resource?.amount?.currency_code ?? 'USD';
-      const capId = resource?.id ?? '?';
-      console.log(`[PAYPAL-WH] CAPTURE.COMPLETED ${capId} ${amount} ${currency}`);
-      await pingOperator(`💰 Pago recibido: ${amount} ${currency} (PayPal captura ${capId}). ¡Venta cerrada!`);
+    } else if (type === 'PAYMENT.CAPTURE.COMPLETED' || type === 'CHECKOUT.ORDER.COMPLETED') {
+      // "Money received." PayPal sends one of these depending on which event is
+      // subscribed — PAYMENT.CAPTURE.COMPLETED carries the capture directly,
+      // CHECKOUT.ORDER.COMPLETED carries the order (capture nested inside).
+      let amount = '?';
+      let currency = 'USD';
+      let refId: string = resource?.id ?? '?';
+      if (type === 'PAYMENT.CAPTURE.COMPLETED') {
+        amount = resource?.amount?.value ?? amount;
+        currency = resource?.amount?.currency_code ?? currency;
+      } else {
+        const cap = resource?.purchase_units?.[0]?.payments?.captures?.[0];
+        amount = cap?.amount?.value ?? resource?.purchase_units?.[0]?.amount?.value ?? amount;
+        currency =
+          cap?.amount?.currency_code ?? resource?.purchase_units?.[0]?.amount?.currency_code ?? currency;
+        refId = cap?.id ?? resource?.id ?? refId;
+      }
+      console.log(`[PAYPAL-WH] ${type} ref=${refId} ${amount} ${currency}`);
+      await pingOperator(`💰 Pago recibido: ${amount} ${currency} (PayPal ${refId}). ¡Venta cerrada!`);
     }
   } catch (e) {
     console.error('[PAYPAL-WH] handler error:', e);
