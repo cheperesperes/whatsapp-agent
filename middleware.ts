@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr';
 const PUBLIC_PATHS = [
   '/login',
   '/api/webhook',
+  '/api/paypal/',                   // PayPal webhook calls this directly — signature-verified, no user session
   '/api/marketing/heygen-webhook', // HeyGen calls this directly — no user session
   '/api/cron/',                     // Vercel cron calls with CRON_SECRET, not cookies
   '/api/chat',                      // Website chat endpoint — anonymous browser sessions
