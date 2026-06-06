@@ -49,6 +49,13 @@ export async function GET(req: Request): Promise<Response> {
             `⚠️ Pago capturado (${cap.amount ?? '?'} ${cap.currency ?? 'USD'}) pero NO se creó la orden: ${rec.error ?? ''}. Crearla manual.`,
           );
         } catch { /* best effort */ }
+      } else if (rec.shippingIncomplete) {
+        try {
+          await sendWhatsAppMessage(
+            OPERATOR_PHONE,
+            `⚠️ Orden ${rec.orderNumber ?? ''} creada, pero la DIRECCIÓN de envío está incompleta. Confírmala con el cliente antes de enviar.`,
+          );
+        } catch { /* best effort */ }
       }
     } catch (e) {
       console.error('[PAYPAL-RETURN] order-record error:', e);

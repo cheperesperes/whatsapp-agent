@@ -243,6 +243,7 @@ export interface PayPalOrderDetails {
   ok: boolean;
   payerName?: string;
   payerEmail?: string;
+  payerPhone?: string;
   shipping?: any; // raw PayPal shipping object { name, address }
   items: PayPalOrderItem[];
   itemTotal: number;
@@ -287,6 +288,10 @@ export async function getPayPalOrder(orderId: string): Promise<PayPalOrderDetail
     [payer?.name?.given_name, payer?.name?.surname].filter(Boolean).join(' ') ||
     pu?.shipping?.name?.full_name ||
     undefined;
+  const payerPhone =
+    payer?.phone?.phone_number?.national_number ||
+    pu?.shipping?.phone_number?.national_number ||
+    undefined;
   const items: PayPalOrderItem[] = (pu?.items ?? []).map((it: any) => ({
     sku: it?.sku || undefined,
     name: it?.name ?? 'Item',
@@ -298,6 +303,7 @@ export async function getPayPalOrder(orderId: string): Promise<PayPalOrderDetail
     ok: true,
     payerName,
     payerEmail: payer?.email_address,
+    payerPhone,
     shipping: pu?.shipping ?? null,
     items,
     itemTotal: Number(bd?.item_total?.value ?? pu?.amount?.value ?? 0),
