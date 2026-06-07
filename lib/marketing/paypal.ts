@@ -72,13 +72,34 @@ async function getAccessToken(): Promise<string> {
 const money = (n: number) => n.toFixed(2);
 
 /**
+ * Compose the PayPal `custom_id` (max 127 chars). PAYLINK_TAG goes FIRST so the
+ * shared-account webhook can tell our pay-link orders from storefront orders. We
+ * then carry the originating WhatsApp number (`wa=`) and language (`lang=`) —
+ * kept near the front so they survive truncation — so the capture step can link
+ * the order back to its chat and let Sol message the buyer. Any note/coupon
+ * trails last. With no wa/lang this matches the legacy `WA pay-link · note` form.
+ */
+function buildPayLinkCustomId(opts: { note?: string; waPhone?: string; lang?: string }): string {
+  const parts: string[] = [PAYLINK_TAG];
+  if (opts.waPhone) parts.push(`wa=${opts.waPhone}`);
+  if (opts.lang) parts.push(`lang=${opts.lang}`);
+  const note = opts.note
+    ? opts.note.startsWith(PAYLINK_TAG)
+      ? opts.note.slice(PAYLINK_TAG.length).replace(/^[\s·]+/, '')
+      : opts.note
+    : '';
+  if (note) parts.push(note);
+  return parts.join(' · ').slice(0, 127);
+}
+
+/**
  * Create a PayPal order and return the hosted approval URL.
  * @param shippingFlat optional flat shipping (USD); 0 = free.
  * @param appUrl       site base for return/cancel URLs (e.g. https://oiikon.com)
  */
 export async function createPayLink(
   items: PayLinkItem[],
-  opts: { shippingFlat?: number; appUrl?: string; note?: string; tax?: number } = {},
+  opts: { shippingFlat?: number; appUrl?: string; note?: string; tax?: number; waPhone?: string; lang?: 'es' | 'en' } = {},
 ): Promise<PayLinkResult> {
   if (!isPayPalConfigured()) return { ok: false, error: 'PayPal not configured (PAYPAL_CLIENT_ID / PAYPAL_SECRET)' };
   if (!items.length) return { ok: false, error: 'no items' };
@@ -124,12 +145,9 @@ export async function createPayLink(
           quantity: String(it.qty),
           unit_amount: { currency_code: 'USD', value: money(it.unit_price) },
         })),
-        // Always stamp PAYLINK_TAG so the webhook can isolate our orders from
-        // the storefront's PayPal orders on the same account.
-        custom_id: (opts.note && opts.note.startsWith(PAYLINK_TAG)
-          ? opts.note
-          : `${PAYLINK_TAG}${opts.note ? ' · ' + opts.note : ''}`
-        ).slice(0, 127),
+        // Stamp PAYLINK_TAG first (webhook isolation) and carry the originating
+        // WhatsApp number + language so capture can link the order to the chat.
+        custom_id: buildPayLinkCustomId(opts),
       },
     ],
     application_context: {

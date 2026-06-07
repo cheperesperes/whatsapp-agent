@@ -717,7 +717,7 @@ async function processWebhookLocked(
     let cleanMessage = normalizedMessage;
     {
       const payLang: 'es' | 'en' = languageLock.includes('ENGLISH') ? 'en' : 'es';
-      const pl = await applyPayLinkMarkers(normalizedMessage, payLang);
+      const pl = await applyPayLinkMarkers(normalizedMessage, payLang, senderPhone);
       cleanMessage = pl.text;
       if (pl.built > 0 || pl.failed > 0) {
         console.log(
