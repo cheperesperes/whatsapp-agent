@@ -43,6 +43,20 @@ function normalizePhone(phone: string): string {
   return digits;
 }
 
+// Canonicalize any input to US E.164 ("+1XXXXXXXXXX"), or null if it isn't a
+// valid US phone. Used to merge recipients across customer_profiles,
+// conversations and orders on one stable key. customer_profiles already store
+// "+1XXXXXXXXXX", so existing numbers (and their [OUTBOUND_OFFER] dedupe logs)
+// canonicalize to the exact same string — the 24h dedupe keeps matching.
+function toE164US(raw: string | null | undefined): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  if (raw.startsWith('web::')) return null; // chat-session id, not a phone
+  const d = raw.replace(/\D/g, '');
+  if (d.length === 10) return `+1${d}`;
+  if (d.length === 11 && d.startsWith('1')) return `+${d}`;
+  return null; // non-US / invalid → dropped (Oiikon is USA-only)
+}
+
 function discountText(coupon: any, lang: 'es' | 'en'): string {
   if (!coupon) return '';
   const isPercent = coupon.discount_type === 'percentage';
@@ -147,36 +161,64 @@ export async function POST(req: NextRequest) {
       },
     ];
   } else {
-    // 1. Resolve audience from customer_profiles
-    let q = sb.from('customer_profiles').select('phone_number, display_name, language');
-    if (audience === 'es') q = q.eq('language', 'es');
-    else if (audience === 'en') q = q.eq('language', 'en');
-    const { data: leads, error: leadsErr } = await q;
-    if (leadsErr) {
-      return NextResponse.json({ error: `Lead fetch error: ${leadsErr.message}` }, { status: 500 });
+    // 1. Resolve audience from a UNION of every WhatsApp contact we hold:
+    //    customer_profiles (authoritative name + language), conversations
+    //    (anyone who's chatted) and orders (buyers). Pulling from
+    //    customer_profiles alone missed ~45 US numbers that had chatted or
+    //    bought but never got a profile row. Merge on a canonical US-E.164
+    //    phone so each person appears exactly once.
+    const [profilesRes, convRes, ordersRes] = await Promise.all([
+      sb.from('customer_profiles').select('phone_number, display_name, language'),
+      sb.from('conversations').select('phone_number, customer_name, opted_out'),
+      sb.from('orders').select('customer_phone, customer_name'),
+    ]);
+    if (profilesRes.error) {
+      return NextResponse.json({ error: `Lead fetch error: ${profilesRes.error.message}` }, { status: 500 });
     }
-    recipList = (leads || []).map((l: any) => ({
-      phone: l.phone_number,
-      language: (l.language || 'es') as 'es' | 'en',
-      name: l.display_name,
-    }));
 
-    // Recipient hygiene: only message valid US (+1, 10-digit) WhatsApp numbers.
-    // Drops web:: chat-session pseudo-IDs (not phones) and non-US numbers
-    // (Oiikon is USA-only). Without this, offers were attempted to 44 web::
-    // rows and 12 international numbers — guaranteed failures + USA-only breach.
-    const beforeHygiene = recipList.length;
-    recipList = recipList.filter((r) => {
-      if (!r.phone || typeof r.phone !== 'string') return false;
-      if (r.phone.startsWith('web::')) return false; // chat-session id, not a phone
-      const digits = r.phone.replace(/\D/g, '');
-      const us = digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
-      return us;
-    });
-    const skippedInvalid = beforeHygiene - recipList.length;
+    // STOP/BAJA opt-out is tracked on conversations.opted_out — never message
+    // anyone who opted out, regardless of which source surfaced their number.
+    const optedOut = new Set<string>();
+    for (const c of convRes.data || []) {
+      if ((c as any).opted_out) {
+        const e = toE164US((c as any).phone_number);
+        if (e) optedOut.add(e);
+      }
+    }
+
+    // Merge lowest-precedence first (orders → conversations → profiles) so a
+    // profile's real language/name wins; a name only upgrades (a later null
+    // never clobbers an earlier real name). Contacts with no stored language
+    // (conversations/orders) default to 'es' — the dominant market; the Meta
+    // template ships es + en variants either way.
+    const byPhone = new Map<string, { phone: string; language: 'es' | 'en'; name: string | null }>();
+    const upsert = (e164: string, language: 'es' | 'en', name: string | null) => {
+      const prev = byPhone.get(e164);
+      byPhone.set(e164, { phone: e164, language, name: name ?? prev?.name ?? null });
+    };
+    for (const o of ordersRes.data || []) {
+      const e = toE164US((o as any).customer_phone);
+      if (e) upsert(e, 'es', (o as any).customer_name ?? null);
+    }
+    for (const c of convRes.data || []) {
+      const e = toE164US((c as any).phone_number);
+      if (e) upsert(e, 'es', (c as any).customer_name ?? null);
+    }
+    for (const p of profilesRes.data || []) {
+      const e = toE164US((p as any).phone_number);
+      if (e) upsert(e, ((p as any).language === 'en' ? 'en' : 'es'), (p as any).display_name ?? null);
+    }
+    for (const e of optedOut) byPhone.delete(e);
+
+    recipList = Array.from(byPhone.values());
+
+    // Audience filter on the resolved per-recipient language (STRICT: never
+    // send a Spanish template to an EN-preferring lead, or vice versa).
+    if (audience === 'es') recipList = recipList.filter((r) => r.language === 'es');
+    else if (audience === 'en') recipList = recipList.filter((r) => r.language === 'en');
 
     if (recipList.length === 0) {
-      return NextResponse.json({ error: 'No valid US recipients matched audience filter.', skippedInvalid }, { status: 400 });
+      return NextResponse.json({ error: 'No valid US recipients matched audience filter.' }, { status: 400 });
     }
 
     // Dedupe: drop leads who already received an OUTBOUND_OFFER in the last
