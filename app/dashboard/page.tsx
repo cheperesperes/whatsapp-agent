@@ -115,7 +115,6 @@ function ChatThread({
   onAddToKB: (msg: Message, suggestedAnswer: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const prevConvId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -123,11 +122,14 @@ function ChatThread({
     if (!container) return;
 
     // Switching to a different conversation: jump straight to the latest
-    // message so the admin opens on the newest exchange.
+    // message so the admin opens on the newest exchange. Scroll the messages
+    // box itself rather than calling scrollIntoView() — the latter bubbles up
+    // and scrolls EVERY scrollable ancestor, so on mobile it can drag the
+    // whole page (header, back button, list) out of view.
     const switchedConversation = prevConvId.current !== conversationId;
     prevConvId.current = conversationId;
     if (switchedConversation) {
-      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+      container.scrollTop = container.scrollHeight;
       return;
     }
 
@@ -137,7 +139,7 @@ function ChatThread({
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight;
     if (distanceFromBottom < 120) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
     }
   }, [messages, conversationId]);
 
@@ -160,7 +162,7 @@ function ChatThread({
   }
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+    <div ref={containerRef} className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3">
       {messages.map((msg) => {
         if (msg.role === 'system') {
           return (
@@ -211,7 +213,6 @@ function ChatThread({
           </div>
         );
       })}
-      <div ref={bottomRef} />
     </div>
   );
 }
@@ -705,9 +706,18 @@ export default function DashboardPage() {
       const { conversations: convs } = (await res.json()) as { conversations: ConvWithLast[] };
       setConversations(convs ?? []);
 
-      // Auto-select first escalated, or first overall — only on initial load
+      // Auto-select first escalated, or first overall — only on initial load.
+      // On phones the list and the open thread are mutually exclusive, so
+      // auto-selecting would drop the admin straight into one chat (scrolled
+      // to its last message) and hide the full conversation list. Only
+      // auto-open on md+ where both panes are visible side by side; on mobile
+      // leave the list showing so the admin can see every chat first.
       setSelectedId((current) => {
         if (current) return current;
+        const isDesktop =
+          typeof window !== 'undefined' &&
+          window.matchMedia('(min-width: 768px)').matches;
+        if (!isDesktop) return null;
         const firstEscalated = convs?.find((c) => c.escalated);
         if (firstEscalated) return firstEscalated.id;
         if (convs && convs.length > 0) return convs[0].id;
