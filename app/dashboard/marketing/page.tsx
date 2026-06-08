@@ -1731,6 +1731,10 @@ function SendOfferPanel() {
   const [templateName, setTemplateName] = useState('oiikon_offer_v1');
   const [couponCode, setCouponCode] = useState('');
   const [audience, setAudience] = useState<'all' | 'es' | 'en'>('all');
+  // When ON, re-send even to leads who already got an offer in the last 24h
+  // (sends includeRecentlyMessaged=true → server skips the 24h dedupe). OFF by
+  // default so a normal blast still can't double-message today's batch.
+  const [includeRecentlyMessaged, setIncludeRecentlyMessaged] = useState(false);
   const [plan, setPlan] = useState<SendOfferPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -1760,6 +1764,7 @@ function SendOfferPanel() {
         templateName: templateName.trim(),
         couponCode: couponCode || undefined,
         audience,
+        includeRecentlyMessaged,
         dryRun: true,
       }),
     });
@@ -1784,6 +1789,7 @@ function SendOfferPanel() {
         templateName: templateName.trim(),
         couponCode: couponCode || undefined,
         audience,
+        includeRecentlyMessaged,
       }),
     });
     const data = await res.json();
@@ -1853,6 +1859,21 @@ function SendOfferPanel() {
               </label>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={includeRecentlyMessaged}
+              onChange={(e) => setIncludeRecentlyMessaged(e.target.checked)}
+            />
+            Reenviar a quienes ya recibieron una oferta en las últimas 24h
+          </label>
+          <p className="text-[11px] text-gray-500 mt-1">
+            Por defecto se omiten para no duplicar envíos. Actívalo para volver a
+            enviar a toda la audiencia el mismo día.
+          </p>
         </div>
 
         {plan && (
