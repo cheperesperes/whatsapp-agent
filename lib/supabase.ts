@@ -835,6 +835,29 @@ export async function applyLivePricing<
   return out;
 }
 
+/**
+ * Upload a generated marketing image (e.g. a composited product ad) to the
+ * shared public Storage bucket and return its public URL — so previews + Meta
+ * publishing have a stable hosted URL. Returns null on failure (caller falls
+ * back to the stock product photo).
+ */
+export async function uploadMarketingImage(
+  name: string,
+  buf: Buffer,
+  contentType = 'image/jpeg',
+): Promise<string | null> {
+  const supabase = createServiceClient();
+  const bucket = process.env.MARKETING_IMAGE_BUCKET || 'media-content';
+  const key = `marketing-composites/${name}`;
+  const { error } = await supabase.storage.from(bucket).upload(key, buf, { contentType, upsert: true });
+  if (error) {
+    console.warn('[uploadMarketingImage]', error.message);
+    return null;
+  }
+  const { data } = supabase.storage.from(bucket).getPublicUrl(key);
+  return data?.publicUrl ?? null;
+}
+
 export interface SelectedOffer {
   code: string;
   /** Dollars off the effective (post product-discount) price. */
