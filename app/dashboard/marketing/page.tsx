@@ -481,6 +481,20 @@ export default function MarketingPage() {
     }
   }
 
+  // Remove ONLY the image or video from a post — keeps the text intact.
+  async function clearMedia(campaignId: string, kind: 'image' | 'video') {
+    if (!campaignId) return;
+    if (!confirm(kind === 'image' ? '¿Quitar la imagen de este post? (el texto se conserva)' : '¿Quitar el video de este post? (el texto se conserva)')) return;
+    setBusyId(campaignId);
+    await fetch('/api/marketing/clear-media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_id: campaignId, kind }),
+    }).catch(() => {});
+    setBusyId(null);
+    reload();
+  }
+
   async function deletePublished(campaignId: string) {
     if (!confirm('¿Eliminar este post de Facebook e Instagram? Esta acción no se puede deshacer.')) return;
     await fetch('/api/marketing/delete-post', {
@@ -596,6 +610,7 @@ export default function MarketingPage() {
             onEdit={(fields) => editCampaign(c.id, fields)}
             onUploadImage={(file) => uploadImage(c.id, file)}
             onUploadVideo={(file) => uploadVideo(c.id, file)}
+            onClearMedia={(kind) => clearMedia(c.id, kind)}
           />
         ))}
 
@@ -668,6 +683,7 @@ function CampaignHero({
   onEdit,
   onUploadImage,
   onUploadVideo,
+  onClearMedia,
 }: {
   campaign: Campaign;
   products: Product[];
@@ -682,6 +698,7 @@ function CampaignHero({
   onEdit: (fields: Record<string, string>) => void;
   onUploadImage: (file: File) => void;
   onUploadVideo: (file: File) => void;
+  onClearMedia: (kind: 'image' | 'video') => void;
 }) {
   const [productSku, setProductSku] = useState<string>(campaign.product_sku ?? '');
   const [guidance, setGuidance] = useState<string>('');
@@ -754,8 +771,8 @@ function CampaignHero({
           </div>
         </div>
 
-        {/* Per-card actions: Upload image + Edit text + Delete. */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Per-card actions: upload/clear media + edit text + delete. */}
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           <input
             ref={fileRef}
             type="file"
@@ -796,6 +813,28 @@ function CampaignHero({
           >
             {busy ? '…' : '🎬 Subir video'}
           </button>
+          {content?.image_url && (
+            <button
+              type="button"
+              onClick={() => onClearMedia('image')}
+              disabled={busy}
+              className="px-2.5 py-1.5 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 text-gray-400 text-xs transition-colors disabled:opacity-50"
+              title="Quitar SOLO la imagen (el texto del post se conserva)"
+            >
+              🗑️ Quitar imagen
+            </button>
+          )}
+          {content?.video_url && (
+            <button
+              type="button"
+              onClick={() => onClearMedia('video')}
+              disabled={busy}
+              className="px-2.5 py-1.5 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 text-gray-400 text-xs transition-colors disabled:opacity-50"
+              title="Quitar SOLO el video (el texto del post se conserva)"
+            >
+              🗑️ Quitar video
+            </button>
+          )}
           {content && !inFlight && (
             <button
               type="button"
