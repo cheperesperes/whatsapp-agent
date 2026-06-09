@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { selectBestOffer, type Offer } from '@/lib/supabase';
 
 export interface GeneratedContent {
   daily_theme: string;
@@ -17,6 +18,7 @@ interface Product {
   sku: string;
   name: string;
   category: string;
+  brand?: string | null;
   battery_capacity_wh?: number | null;
   battery_capacity_ah?: number | null;
   output_watts?: number | null;
@@ -66,6 +68,10 @@ export async function generateMarketingContent(
     // Learn-before-generate: recent posts to AVOID repeating, top posts to emulate.
     recent?: Array<{ theme: string; hook: string; category: string | null }>;
     top?: Array<{ theme: string; hook: string; score: number }>;
+    // Margin-safe coupon validation: presentable offers + per-SKU cost (cost is
+    // used ONLY server-side to gate margin — never goes into the prompt).
+    offers?: Offer[];
+    costBySku?: Record<string, number>;
   }
 ): Promise<GeneratedContent> {
   const language: ContentLanguage = options?.language ?? 'es';
@@ -136,6 +142,37 @@ REGLAS POR FORMATO:
   }
   const pricesBlock = priceLines.length > 0 ? priceLines.join('\n') : '  • Precio: consultar en tienda';
 
+  // ── Margin-safe coupon (server-validated) ────────────────────────────────
+  // Compute the SINGLE applicable, margin-safe coupon for THIS product — same
+  // logic Sol uses. sellPrice is the LIVE net price, so it doubles as the
+  // effective price. cost gates margin server-side and NEVER enters the prompt.
+  // If nothing qualifies, the model is told to mention NO coupon at all (this is
+  // what stops it surfacing an unusable code like SUMMER100 from research/memory).
+  const offers = options?.offers ?? [];
+  const cost = options?.costBySku?.[product.sku.toLowerCase()] ?? null;
+  const validatedOffer =
+    offers.length > 0 && sellPrice > 0
+      ? selectBestOffer(sellPrice, product.brand ?? null, cost, offers)
+      : null;
+  const couponBlock = validatedOffer
+    ? `\n═══════════════════════════════════════════════════════════════════════════════
+CUPÓN — YA VALIDADO (margen + pedido mínimo + marca)
+═══════════════════════════════════════════════════════════════════════════════
+El ÚNICO cupón que puedes mencionar para el ${product.sku} es:
+  • Código: ${validatedOffer.code} — ${validatedOffer.label} (queda ~$${validatedOffer.finalPrice.toFixed(2)})
+Reglas DURAS:
+• Menciónalo SOLO si hoy es un post de OFERTA; en un post de engagement, ni lo menciones.
+• Usa EXACTAMENTE ese código. PROHIBIDO inventar o mencionar CUALQUIER otro código de
+  cupón, aunque aparezca en la investigación, la memoria o cualquier otra parte.
+`
+    : `\n═══════════════════════════════════════════════════════════════════════════════
+CUPÓN — NINGUNO APLICABLE
+═══════════════════════════════════════════════════════════════════════════════
+No hay cupón aplicable para el ${product.sku} a su precio actual (no cumple pedido mínimo
+o margen). PROHIBIDO mencionar NINGÚN código de cupón en este post — ni "SUMMER100" ni
+ningún otro, vengan de donde vengan. Solo precio + envío gratis a los 48 estados.
+`;
+
   const anthropic = new Anthropic();
 
   const prompt = `Eres el Director de Ventas y Marketing de Oiikon (oiikon.com): un ejecutivo senior con más de 20 años de experiencia en energía renovable, soluciones de energía limpia y mercados tecnológicos. Lideras la estrategia go-to-market, la adquisición de clientes y el crecimiento de sistemas de energía off-grid y de respaldo. Piensas y escribes con ese criterio estratégico de ventas: enfocado en valor, conversión y construcción de marca. (Esta es tu MENTALIDAD interna para crear el contenido — NO afirmes credenciales personales, títulos ni una identidad inventada en las publicaciones al cliente.) Oiikon es una tienda estadounidense especializada en estaciones solares portátiles, baterías LiFePO4, paneles e inversores. Envía gratis a los 48 estados continentales y sirve a hogares en EE.UU. preparados para huracanes y apagones, comunidades hispanohablantes en EE.UU., RVeros, sistemas off-grid y pequeños negocios.
@@ -150,7 +187,7 @@ ${pricesBlock}
 
 INVESTIGACIÓN DE HOY:
 ${researchBrief}
-${categoryBrief}${guidanceBrief}${learningBlock}${formatBlock}
+${categoryBrief}${guidanceBrief}${learningBlock}${formatBlock}${couponBlock}
 AUDIENCIA — Oiikon sirve cuatro pilares de uso, todos dentro de EE.UU.:
 1. **Hurricane backup** — homeowners en FL, TX, LA, NC, GA, costa CA. Estacional: ramp May, peak jun-nov.
 2. **Home emergency power** — compradores blackout/grid-down en USA. Año redondo, surge tras outages regionales (ice storms, wildfires, heat waves).
