@@ -19,14 +19,20 @@ import {
   upsertFacebookGroups,
   getContentLearningSignals,
 } from '@/lib/marketing/db';
-import { buildSceneImagePrompt } from '@/lib/marketing/scene';
-import { createProductImage } from '@/lib/marketing/higgsfield';
 import { loadMemory, consolidateMemory, formatMemoryForPrompt } from '@/lib/marketing/memory';
 import { createServiceClient, getProductImages, loadActiveOffers, loadProductCosts, applyLivePricing } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
+
+// Pick a pre-vetted scene background (in /public/marketing-scenes) by content
+// angle. Studio for product/battery spotlights; outage/home/general rotate
+// blackout↔RV for variety. The real product is always composited on top.
+function pickSceneForCategory(category: string | null): 'blackout' | 'rv' | 'studio' {
+  if (category === 'producto' || category === 'baterias') return 'studio';
+  return Math.floor(Date.now() / 86400000) % 3 === 0 ? 'rv' : 'blackout';
+}
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
   // Path 1: Vercel cron — Bearer CRON_SECRET
@@ -240,42 +246,54 @@ export async function GET(req: NextRequest) {
       video_status: 'pending',
     });
 
-    // ── Step 6a: AI scene image (Higgsfield Soul) — non-blocking ───────────
-    // Reference-condition on the REAL product photo so the product stays
-    // accurate (rulebook §Product integrity: scene/lighting only, never the
-    // product). A finalizer poll resolves the job; degrades to the stock photo
-    // if anything fails, so it can NEVER regress the existing image preview.
+    // ── Step 6a: Composite product ad (REAL product photo + scene) ─────────
+    // Pixel-perfect by construction: the PRODUCT is the real catalog photo (cut
+    // out), composited onto a pre-vetted scene background — AI never redraws the
+    // product (that's what garbled it). Fully deterministic + synchronous.
+    // Degrades to the stock product photo on any failure.
     if (makeImage && content.product_sku) {
       try {
         const refImgs = await getProductImages(content.product_sku, 1);
-        if (refImgs.length > 0) {
-          const chosen = products.find(
-            (p) => String((p as { sku: string }).sku).toUpperCase() === content.product_sku!.toUpperCase(),
-          );
-          const prompt = buildSceneImagePrompt({
-            category,
-            productName: (chosen as { name?: string } | undefined)?.name ?? null,
-            sku: content.product_sku,
-            themeHint: content.daily_theme,
-          });
-          const job = await createProductImage(prompt, campaignId, refImgs, { aspectRatio: '3:4' });
-          await updateContent(campaignId, { image_request_id: job.image_id, image_status: 'processing' });
-          console.log(`[marketing-daily] ${runId} — Soul image job ${job.image_id}`);
-        } else {
+        if (refImgs.length === 0) {
           await updateContent(campaignId, { image_status: 'skipped' });
+        } else {
+          const { cutoutWhiteBg, composeProductOnScene, makeGradientScene } = await import('@/lib/marketing/compose');
+          const { uploadMarketingImage } = await import('@/lib/supabase');
+          const prodBuf = Buffer.from(await (await fetch(refImgs[0])).arrayBuffer());
+          const cutout = await cutoutWhiteBg(prodBuf);
+          // Pre-vetted scene background from /public/marketing-scenes, picked by
+          // angle; fetched from this app's own deployment URL. Gradient fallback.
+          const sceneName = pickSceneForCategory(category);
+          let sceneBuf: Buffer | null = null;
+          const appUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
+          if (appUrl) {
+            try {
+              const sr = await fetch(`${appUrl}/marketing-scenes/${sceneName}.jpg`);
+              if (sr.ok) sceneBuf = Buffer.from(await sr.arrayBuffer());
+            } catch { /* fall back to gradient */ }
+          }
+          if (!sceneBuf) sceneBuf = await makeGradientScene();
+          const composed = await composeProductOnScene(sceneBuf, cutout, {
+            brightness: sceneName === 'studio' ? 1.0 : 0.88,
+          });
+          const url = await uploadMarketingImage(`${campaignId}.jpg`, composed);
+          if (url) {
+            await updateContent(campaignId, { image_url: url, image_status: 'ready' });
+            console.log(`[marketing-daily] ${runId} — composite image ready (scene=${sceneName})`);
+          } else {
+            await updateContent(campaignId, { image_status: 'failed' });
+          }
         }
       } catch (imgErr) {
-        // Non-fatal: preview falls back to the stock photo. PERSIST the error to
-        // the campaign so a failed image is self-diagnosing from the dashboard/DB
-        // (Vercel logs aren't always reachable) — tells us the exact model/param
-        // to fix without guessing. Preserve any compliance warnings already set.
+        // Non-fatal → preview falls back to the stock photo. Persist the error so
+        // a failed image is self-diagnosing from the dashboard/DB.
         const imgMsg = imgErr instanceof Error ? imgErr.message : String(imgErr);
-        console.warn(`[marketing-daily] ${runId} — image gen failed (falls back to stock photo): ${imgMsg}`);
+        console.warn(`[marketing-daily] ${runId} — composite failed (falls back to stock photo): ${imgMsg}`);
         await updateContent(campaignId, { image_status: 'failed' });
         await updateCampaign(campaignId, {
           error_message: [
             warnings.length ? `⚠️ ${warnings.join(' · ')}` : null,
-            `🖼️ Imagen IA falló: ${imgMsg}`,
+            `🖼️ Imagen falló: ${imgMsg}`,
           ].filter(Boolean).join(' | ').slice(0, 2000),
         });
       }
