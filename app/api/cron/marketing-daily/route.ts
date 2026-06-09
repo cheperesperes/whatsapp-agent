@@ -26,12 +26,14 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-// Pick a pre-vetted scene background (in /public/marketing-scenes) by content
-// angle. Studio for product/battery spotlights; outage/home/general rotate
-// blackout↔RV for variety. The real product is always composited on top.
-function pickSceneForCategory(category: string | null): 'blackout' | 'rv' | 'studio' {
-  if (category === 'producto' || category === 'baterias') return 'studio';
-  return Math.floor(Date.now() / 86400000) % 3 === 0 ? 'rv' : 'blackout';
+// Pick the background by content angle. 'gradient' = clean premium studio
+// gradient (deterministic, with floor reflection) — the default + safest look;
+// 'blackout'/'rv' = pre-vetted AI lifestyle scenes in /public/marketing-scenes.
+// The real product is always composited on top (pixel-perfect).
+function pickSceneForCategory(category: string | null): 'gradient' | 'blackout' | 'rv' {
+  if (category === 'apagones' || category === 'familia') return 'blackout';
+  if (category === 'instalacion') return 'rv';
+  return 'gradient'; // producto, baterias, educacion, tips, null
 }
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
@@ -261,20 +263,28 @@ export async function GET(req: NextRequest) {
           const { uploadMarketingImage } = await import('@/lib/supabase');
           const prodBuf = Buffer.from(await (await fetch(refImgs[0])).arrayBuffer());
           const cutout = await cutoutWhiteBg(prodBuf);
-          // Pre-vetted scene background from /public/marketing-scenes, picked by
-          // angle; fetched from this app's own deployment URL. Gradient fallback.
+          // Background by angle: 'gradient' = clean premium studio gradient (with
+          // floor reflection); 'blackout'/'rv' = pre-vetted AI lifestyle scenes
+          // from /public/marketing-scenes, fetched from this app's deployment URL.
           const sceneName = pickSceneForCategory(category);
           let sceneBuf: Buffer | null = null;
-          const appUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
-          if (appUrl) {
-            try {
-              const sr = await fetch(`${appUrl}/marketing-scenes/${sceneName}.jpg`);
-              if (sr.ok) sceneBuf = Buffer.from(await sr.arrayBuffer());
-            } catch { /* fall back to gradient */ }
+          let reflect = false;
+          if (sceneName === 'gradient') {
+            sceneBuf = await makeGradientScene();
+            reflect = true;
+          } else {
+            const appUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
+            if (appUrl) {
+              try {
+                const sr = await fetch(`${appUrl}/marketing-scenes/${sceneName}.jpg`);
+                if (sr.ok) sceneBuf = Buffer.from(await sr.arrayBuffer());
+              } catch { /* fall back below */ }
+            }
+            if (!sceneBuf) { sceneBuf = await makeGradientScene(); reflect = true; }
           }
-          if (!sceneBuf) sceneBuf = await makeGradientScene();
           const composed = await composeProductOnScene(sceneBuf, cutout, {
-            brightness: sceneName === 'studio' ? 1.0 : 0.88,
+            brightness: reflect ? 1.0 : 0.86,
+            reflect,
           });
           const url = await uploadMarketingImage(`${campaignId}.jpg`, composed);
           if (url) {
