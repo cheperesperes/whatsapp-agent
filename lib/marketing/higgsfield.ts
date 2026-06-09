@@ -24,9 +24,13 @@
  */
 const HIGGSFIELD_BASE = process.env.HIGGSFIELD_BASE_URL ?? 'https://platform.higgsfield.ai';
 const HIGGSFIELD_MODEL = process.env.HIGGSFIELD_VIDEO_MODEL ?? 'higgsfield-ai/dop/standard';
-// Soul = realistic image-to-image (reference-driven). Env-overridable because
-// the exact platform model id can change; if a run 422/404s, set this var.
-const HIGGSFIELD_IMAGE_MODEL = process.env.HIGGSFIELD_IMAGE_MODEL ?? 'higgsfield-ai/soul';
+// Soul Standard = Higgsfield's image model, reference-driven (image-to-image).
+// Path mirrors the video model `higgsfield-ai/dop/standard`. Env-overridable —
+// if a run 422/404s, the exact id/params are logged to the campaign so we can
+// switch this without guessing. NOTE: Soul is character/UGC-tuned; for the
+// highest product-detail fidelity the MCP `marketing_studio_image` is better,
+// but that isn't reachable from the deployed app (REST only).
+const HIGGSFIELD_IMAGE_MODEL = process.env.HIGGSFIELD_IMAGE_MODEL ?? 'higgsfield-ai/soul/standard';
 
 export interface HiggsfieldVideoJob {
   video_id: string; // the Higgsfield request_id
@@ -152,7 +156,9 @@ export async function getVideoStatus(requestId: string): Promise<HiggsfieldVideo
  * the background matches the post's angle. campaignId rides the webhook URL so
  * the webhook can correlate the result; the finalizers also poll as a backstop.
  *
- * Body uses the Soul nested `input` shape (input_images carries the reference).
+ * Body uses the FLAT shape (image_url + prompt) that the working video model
+ * uses — verified against the platform REST API. Soul supports 1:1/4:3/3:4 etc.
+ * but NOT 4:5, so the default is 3:4 (closest portrait for feed).
  */
 export async function createProductImage(
   prompt: string,
@@ -173,13 +179,13 @@ export async function createProductImage(
       }`
     : undefined;
 
-  const input: Record<string, unknown> = {
+  const body: Record<string, unknown> = {
+    image_url: toJpeg(ref), // reference product photo (image-to-image)
     prompt,
-    aspect_ratio: opts.aspectRatio ?? '4:5',
-    input_images: [{ type: 'image_url', image_url: toJpeg(ref) }],
+    aspect_ratio: opts.aspectRatio ?? '3:4',
+    num_images: 1,
   };
-  const body: Record<string, unknown> = { input };
-  if (webhookUrl) body.webhook = { url: webhookUrl, secret: secret ?? '' };
+  if (webhookUrl) body.webhook_url = webhookUrl;
 
   const res = await fetch(`${HIGGSFIELD_BASE}/${HIGGSFIELD_IMAGE_MODEL}`, {
     method: 'POST',
