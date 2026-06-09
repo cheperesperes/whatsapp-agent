@@ -239,18 +239,26 @@ export async function GET(req: NextRequest) {
             sku: content.product_sku,
             themeHint: content.daily_theme,
           });
-          const job = await createProductImage(prompt, campaignId, refImgs, { aspectRatio: '4:5' });
+          const job = await createProductImage(prompt, campaignId, refImgs, { aspectRatio: '3:4' });
           await updateContent(campaignId, { image_request_id: job.image_id, image_status: 'processing' });
           console.log(`[marketing-daily] ${runId} — Soul image job ${job.image_id}`);
         } else {
           await updateContent(campaignId, { image_status: 'skipped' });
         }
       } catch (imgErr) {
-        console.warn(
-          `[marketing-daily] ${runId} — image gen failed (falls back to stock photo):`,
-          imgErr instanceof Error ? imgErr.message : imgErr,
-        );
+        // Non-fatal: preview falls back to the stock photo. PERSIST the error to
+        // the campaign so a failed image is self-diagnosing from the dashboard/DB
+        // (Vercel logs aren't always reachable) — tells us the exact model/param
+        // to fix without guessing. Preserve any compliance warnings already set.
+        const imgMsg = imgErr instanceof Error ? imgErr.message : String(imgErr);
+        console.warn(`[marketing-daily] ${runId} — image gen failed (falls back to stock photo): ${imgMsg}`);
         await updateContent(campaignId, { image_status: 'failed' });
+        await updateCampaign(campaignId, {
+          error_message: [
+            warnings.length ? `⚠️ ${warnings.join(' · ')}` : null,
+            `🖼️ Imagen IA falló: ${imgMsg}`,
+          ].filter(Boolean).join(' | ').slice(0, 2000),
+        });
       }
     } else {
       await updateContent(campaignId, { image_status: 'skipped' });
