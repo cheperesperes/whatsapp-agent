@@ -173,14 +173,48 @@ export async function GET(req: NextRequest) {
 
     // ── Step 4: Load products ──────────────────────────────────────────────
     const sb = createServiceClient();
-    const { data: products } = await sb
+    const { data: catalogProducts } = await sb
       .from('agent_product_catalog')
       .select('sku, name, category, battery_capacity_wh, battery_capacity_ah, output_watts, sell_price, original_price, discount_percentage, cuba_total_price, ideal_for')
       .eq('in_stock', true)
       .order('sku');
 
-    if (!products || products.length === 0) {
+    if (!catalogProducts || catalogProducts.length === 0) {
       throw new Error('No in-stock products found in catalog');
+    }
+
+    // Offer LIVE prices. The catalog is the agent's product list (specs,
+    // selection) but its price can lag; the real selling price lives on the
+    // storefront `products` table. Read it READ-ONLY (never write price columns
+    // — the two tables differ on purpose) and quote the live net price:
+    //   net = products.sell_price (anchor) × (1 − discount%)
+    // keeping the anchor as the strike-through "antes". Also drop anything the
+    // storefront currently marks out of stock. Falls back to the catalog price
+    // for any SKU with no live row.
+    const skus = catalogProducts.map((p) => (p as { sku: string }).sku);
+    const { data: liveRows } = await sb
+      .from('products')
+      .select('sku, sell_price, discount_percentage, in_stock')
+      .in('sku', skus);
+    const liveBySku = new Map<string, { sell_price: number | null; discount_percentage: number | null; in_stock: boolean | null }>();
+    for (const r of liveRows ?? []) {
+      liveBySku.set(String((r as { sku: string }).sku).toUpperCase(), r as { sell_price: number | null; discount_percentage: number | null; in_stock: boolean | null });
+    }
+    const products = catalogProducts
+      .filter((p) => liveBySku.get(String((p as { sku: string }).sku).toUpperCase())?.in_stock !== false)
+      .map((p) => {
+        const live = liveBySku.get(String((p as { sku: string }).sku).toUpperCase());
+        const anchor = live ? Number(live.sell_price ?? 0) : 0;
+        if (live && anchor > 0) {
+          const disc = Number(live.discount_percentage ?? 0);
+          const net = Math.round(anchor * (1 - disc / 100) * 100) / 100;
+          return { ...p, sell_price: net, original_price: anchor, discount_percentage: disc };
+        }
+        return p; // no live row → keep catalog price as fallback
+      });
+
+    if (products.length === 0) {
+      throw new Error('No live in-stock products found');
     }
 
     // ── Step 5: Generate content + compliance check ────────────────────────
