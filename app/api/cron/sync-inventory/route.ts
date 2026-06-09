@@ -7,7 +7,13 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Inventory sync — oiikon.com (`products`) → agent (`agent_product_catalog`)
+// Inventory (STOCK) sync — oiikon.com (`products`) → agent (`agent_product_catalog`)
+//
+// STOCK ONLY. Prices are deliberately NOT synced: the two tables hold different
+// prices on purpose (anchor vs real selling price), so copying prices across
+// would reconcile them — a HARD-RULE violation. Marketing reads the live
+// storefront price directly at post time. This route only keeps `in_stock` /
+// `stock_quantity` current so the agent never recommends a sold-out product.
 //
 // Both apps share this Supabase project, so this is a database-internal
 // upsert, not a network call to a separate platform. Vercel Cron hits this
@@ -20,11 +26,6 @@ export const runtime = 'nodejs';
 //   • Mass-flip guard: if more than INVENTORY_SYNC_MAX_FLIP_PCT (default 30)
 //     percent of rows would change in_stock state in this single run, abort
 //     and alert the operator. Catches accidental bulk-deletes on the website.
-//   • Discount-spike guard: if any SKU's discount jumps by more than
-//     INVENTORY_SYNC_MAX_DISCOUNT_JUMP points in a single sync (default 30),
-//     OR the incoming value exceeds INVENTORY_SYNC_MAX_DISCOUNT_ABS (default
-//     50%), abort. A typo turning 5% into 50% could torch margin instantly,
-//     so we stop and ask for a human to confirm.
 //   • Override TTL: rows with `manually_overridden_at` newer than
 //     INVENTORY_SYNC_OVERRIDE_TTL_HOURS (default 24) are skipped, so a
 //     deliberate operator change isn't silently reverted.
@@ -32,10 +33,13 @@ export const runtime = 'nodejs';
 //     writing anything.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// STOCK ONLY — never sync price columns. The storefront `products` and the
+// agent `agent_product_catalog` hold DIFFERENT prices ON PURPOSE (anchor vs
+// real selling price); syncing prices would reconcile them, which is a HARD-RULE
+// violation (see memory feedback_never_change_store_prices). Marketing reads the
+// live storefront price directly at post time instead. Removing price fields
+// here also means the discount-spike guard never fires, so no more spike alerts.
 const SYNCED_FIELDS = [
-  'sell_price',
-  'original_price',
-  'discount_percentage',
   'in_stock',
   'stock_quantity',
 ] as const;
@@ -121,8 +125,6 @@ export async function GET(req: NextRequest) {
 
   const overrideTtlHours = envNumber('INVENTORY_SYNC_OVERRIDE_TTL_HOURS', 24);
   const maxFlipPct = envNumber('INVENTORY_SYNC_MAX_FLIP_PCT', 30);
-  const maxDiscountJump = envNumber('INVENTORY_SYNC_MAX_DISCOUNT_JUMP', 30);
-  const maxDiscountAbs = envNumber('INVENTORY_SYNC_MAX_DISCOUNT_ABS', 50);
 
   const supabase = createServiceClient();
   const runId = randomUUID();
@@ -230,42 +232,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(summary, { status: 409 });
   }
 
-  // ── Discount-spike safety guard ──
-  // Collect any discount_percentage change whose jump exceeds maxDiscountJump
-  // or whose target value is above maxDiscountAbs. Either is suspicious enough
-  // to stop the entire run. This is the price-safety twin of the mass-flip
-  // guard: the website (or a human typo) can't silently blow up margin by
-  // bumping a product from 5% to 50% off.
-  const discountSpikes: Array<{ sku: string; oldPct: number; newPct: number; reason: string }> = [];
-  for (const [sku, cs] of changesBySku.entries()) {
-    const disc = cs.find((c) => c.field === 'discount_percentage');
-    if (!disc) continue;
-    const oldPct = normalizeNumeric(disc.oldValue) ?? 0;
-    const newPct = normalizeNumeric(disc.newValue) ?? 0;
-    const jump = Math.abs(newPct - oldPct);
-    if (newPct > maxDiscountAbs) {
-      discountSpikes.push({ sku, oldPct, newPct, reason: `target ${newPct}% > max ${maxDiscountAbs}%` });
-    } else if (jump > maxDiscountJump) {
-      discountSpikes.push({ sku, oldPct, newPct, reason: `jump ${jump.toFixed(1)} pts > max ${maxDiscountJump} pts` });
-    }
-  }
-
-  if (discountSpikes.length > 0) {
-    summary.aborted = true;
-    const head = discountSpikes.slice(0, 5);
-    const preview = head.map((d) => `${d.sku}: ${d.oldPct}% → ${d.newPct}% (${d.reason})`).join('; ');
-    const more = discountSpikes.length > 5 ? ` …+${discountSpikes.length - 5} más` : '';
-    summary.abort_reason = `discount spike on ${discountSpikes.length} SKU(s): ${preview}${more}`;
-    const operatorPhone = process.env.OPERATOR_PHONE;
-    if (operatorPhone && !dryRun) {
-      sendWhatsAppMessage(
-        operatorPhone,
-        `⚠️ *Inventory sync ABORTED — discount spike*\n${discountSpikes.length} SKU(s) tried to jump past safety caps (max ${maxDiscountAbs}% absolute, ${maxDiscountJump} pt jump). Revísalos en oiikon.com antes de re-ejecutar:\n${head.map((d) => `• ${d.sku}: ${d.oldPct}% → ${d.newPct}%`).join('\n')}${more}`
-      ).catch((e) => console.warn('[sync-inventory] discount-spike alert failed:', e));
-    }
-    summary.duration_ms = Date.now() - startedAt;
-    return NextResponse.json(summary, { status: 409 });
-  }
+  // (Discount-spike guard removed — prices are no longer synced; the agent
+  // reads live storefront prices directly at post time. See SYNCED_FIELDS note.)
 
   // ── Dry-run: return the diff without writing ──
   if (dryRun) {
