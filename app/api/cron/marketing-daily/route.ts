@@ -17,6 +17,7 @@ import {
   getCampaignByDate,
   getCampaignById,
   upsertFacebookGroups,
+  getContentLearningSignals,
 } from '@/lib/marketing/db';
 import { buildSceneImagePrompt } from '@/lib/marketing/scene';
 import { createProductImage } from '@/lib/marketing/higgsfield';
@@ -183,11 +184,16 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Step 5: Generate content + compliance check ────────────────────────
+    // Learn before generating: feed recent posts (avoid repeats) + our best
+    // performers (emulate what engaged). Degrades to empty on no history.
     console.log(`[marketing-daily] ${runId} — generating content`);
+    const learning = await getContentLearningSignals().catch(() => ({ recent: [], top: [] }));
     const content = await generateMarketingContent(fullBrief, products, category, {
       productSku,
       guidance,
       language,
+      recent: learning.recent,
+      top: learning.top,
     });
 
     const warnings = validateContent(content);
@@ -231,6 +237,7 @@ export async function GET(req: NextRequest) {
             category,
             productName: (chosen as { name?: string } | undefined)?.name ?? null,
             sku: content.product_sku,
+            themeHint: content.daily_theme,
           });
           const job = await createProductImage(prompt, campaignId, refImgs, { aspectRatio: '4:5' });
           await updateContent(campaignId, { image_request_id: job.image_id, image_status: 'processing' });

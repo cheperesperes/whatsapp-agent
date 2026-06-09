@@ -59,7 +59,14 @@ export async function generateMarketingContent(
   researchBrief: string,
   products: Product[],
   category?: MarketingCategory | null,
-  options?: { productSku?: string | null; guidance?: string | null; language?: ContentLanguage }
+  options?: {
+    productSku?: string | null;
+    guidance?: string | null;
+    language?: ContentLanguage;
+    // Learn-before-generate: recent posts to AVOID repeating, top posts to emulate.
+    recent?: Array<{ theme: string; hook: string; category: string | null }>;
+    top?: Array<{ theme: string; hook: string; score: number }>;
+  }
 ): Promise<GeneratedContent> {
   const language: ContentLanguage = options?.language ?? 'es';
   const requestedSku = options?.productSku?.toUpperCase() ?? null;
@@ -75,6 +82,44 @@ export async function generateMarketingContent(
   const guidanceBrief = guidanceText
     ? `\nGUÍA ADICIONAL DEL OPERADOR (alta prioridad — respétala salvo que choque con el código de conducta):\n"""${guidanceText}"""\n`
     : '';
+
+  // ── Learn-before-generate ────────────────────────────────────────────────
+  // Show the model our recent posts (so it does NOT repeat them) and our
+  // best-performing posts (so it emulates what actually engaged our audience).
+  const recent = options?.recent ?? [];
+  const top = options?.top ?? [];
+  const learningBlock = recent.length
+    ? `\n═══════════════════════════════════════════════════════════════════════════════
+APRENDE DE NUESTRO HISTORIAL
+═══════════════════════════════════════════════════════════════════════════════
+HISTORIAL RECIENTE — NO repitas estos temas ni estos ganchos. Usa un ÁNGULO y un
+GANCHO claramente distintos a TODOS los de abajo (varía también el formato):
+${recent.map((r) => `• [${r.category ?? '—'}] ${r.theme}${r.hook ? ` — "${r.hook}"` : ''}`).join('\n')}
+${top.length ? `\nLO QUE MÁS ENGAGEMENT GENERÓ CON NUESTRA AUDIENCIA (emula el ESTILO y el FORMATO, no las palabras):\n${top.map((t) => `• ${t.theme}${t.hook ? ` — "${t.hook}"` : ''}`).join('\n')}\n` : ''}`
+    : '';
+
+  // ── Engagement-first format menu (70/30) ─────────────────────────────────
+  const formatBlock = `\n═══════════════════════════════════════════════════════════════════════════════
+ENFOQUE DE HOY — ENGAGEMENT PRIMERO (mezcla 70/30)
+═══════════════════════════════════════════════════════════════════════════════
+La MAYORÍA de los posts deben CONSTRUIR COMUNIDAD (comentarios, compartidos,
+guardados), NO vender duro. Solo ~30% son ofertas. Elige UN formato para hoy,
+DISTINTO al de los posts recientes de arriba:
+• Pregunta / encuesta — pide opinión ("¿Qué mantendrías encendido en un apagón de 3 días?")
+• Mito vs realidad — desmonta una creencia común sobre baterías / energía solar
+• Checklist — p.ej. "qué encender primero cuando se va la luz"
+• Explicación simple — cómo funciona o cómo dimensionar, en lenguaje llano
+• Historia / caso de uso real (NUNCA inventes testimonios ni reseñas)
+• Oferta / producto (solo ~30% de las veces) — precio + CTA fuerte
+GANCHOS (rota — NO uses el de los posts recientes): pregunta directa · dato
+sorprendente · escena cotidiana · "esto es lo que nadie te dice" · mini-historia · checklist.
+REGLAS POR FORMATO:
+• ENGAGEMENT (no-oferta): NO lideres con precio; el objetivo es comentarios y
+  compartidos; CTA suave (solo el link, o "cuéntanos en los comentarios"). Está
+  PERFECTAMENTE BIEN no mencionar precio en estos posts.
+• OFERTA: incluye el precio (SOLO el de PRODUCTO DEL DÍA) + un CTA claro.
+`;
+
   const sellPrice = Number(product.sell_price ?? 0);
   const originalPrice = Number(product.original_price ?? 0);
   const discount = Number(product.discount_percentage ?? 0);
@@ -105,7 +150,7 @@ ${pricesBlock}
 
 INVESTIGACIÓN DE HOY:
 ${researchBrief}
-${categoryBrief}${guidanceBrief}
+${categoryBrief}${guidanceBrief}${learningBlock}${formatBlock}
 AUDIENCIA — Oiikon sirve cuatro pilares de uso, todos dentro de EE.UU.:
 1. **Hurricane backup** — homeowners en FL, TX, LA, NC, GA, costa CA. Estacional: ramp May, peak jun-nov.
 2. **Home emergency power** — compradores blackout/grid-down en USA. Año redondo, surge tras outages regionales (ice storms, wildfires, heat waves).
@@ -223,10 +268,10 @@ ${language === 'en' ? `
 Genera el siguiente contenido de marketing en formato JSON válido. ${language === 'en' ? 'ALL fields in ENGLISH per the override above.' : language === 'bilingual' ? 'BILINGÜE per the override above.' : 'TODO en español.'} Sin explicaciones, solo el JSON:
 
 {
-  "daily_theme": "frase corta que capture el tema emocional de hoy (ej: 'Listo antes del próximo huracán', 'Tu casa siempre con luz', 'Energía limpia para tu RV')",
+  "daily_theme": "frase corta que capture el ÁNGULO de hoy (engagement u oferta), distinta a las recientes. Ej engagement: '¿Qué encenderías primero en un apagón?', 'Mito: el litio es peligroso', 'Checklist para temporada de huracanes'. Ej oferta: 'Tu casa siempre con luz'",
   "product_sku": "${product.sku}",
-  "facebook_post": "publicación de Facebook de 150-200 palabras, emocional, con emojis, menciona el problema (apagón / huracán / RV / off-grid según brief), la solución, el precio y el link https://oiikon.com/product/${product.sku.toLowerCase()} — termina con llamada a la acción clara",
-  "instagram_caption": "caption de Instagram de 80-120 palabras, emocional pero conciso, con 15-20 hashtags relevantes al final (#HurricanePrep #SolarGenerator #PortablePower #BlackoutReady #PECRON #HispanosUSA #LatinosUSA #SolarPortatil #EstacionSolar #RespaldoDeEnergia #EnergyBackup #RVLife #OffGrid #EmergencyPower #OiikonSolar #EnergiaLimpia #SolarPower #FloridaPrep)",
+  "facebook_post": "publicación de Facebook de 150-200 palabras, con emojis, en el FORMATO elegido arriba y con un gancho distinto a los posts recientes. Si es ENGAGEMENT: abre con el gancho, aporta valor o haz una pregunta concreta, e invita a comentar/compartir — NO lideres con precio (puedes omitirlo). Si es OFERTA: problema → solución → precio (SOLO el de PRODUCTO DEL DÍA) → CTA. Incluye el link https://oiikon.com/product/${product.sku.toLowerCase()} y cierra con una llamada a la acción acorde al formato",
+  "instagram_caption": "caption de Instagram de 80-120 palabras en el MISMO formato que el facebook_post (engagement vs oferta). Si es engagement, cierra con una pregunta que invite a comentar. 15-20 hashtags relevantes al final (#HurricanePrep #SolarGenerator #PortablePower #BlackoutReady #PECRON #HispanosUSA #LatinosUSA #SolarPortatil #EstacionSolar #RespaldoDeEnergia #EnergyBackup #RVLife #OffGrid #EmergencyPower #OiikonSolar #EnergiaLimpia #SolarPower #FloridaPrep)",
   "google_ad_headlines": [
     "headline 1 — máx 30 caracteres",
     "headline 2 — máx 30 caracteres",
