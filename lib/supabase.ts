@@ -797,6 +797,44 @@ export async function loadStorefrontProductsBySku(skus: string[]): Promise<Store
   return out;
 }
 
+/**
+ * Overlay LIVE storefront prices onto catalog rows. READ-ONLY — never writes a
+ * price column (the two tables differ on purpose; we only READ `products` to
+ * show the current price). For each row, replaces `sell_price` with the live
+ * net = storefront `sell_price` (anchor) × (1 − discount%), keeping the anchor
+ * as `original_price` and the live `discount_percentage`. Rows with no live
+ * match keep their catalog price. Single source of truth so the dashboard
+ * picker, pay-link panel, and marketing posts all quote the SAME live price.
+ */
+export async function applyLivePricing<
+  T extends { sku: string; sell_price?: number | null; original_price?: number | null; discount_percentage?: number | null },
+>(rows: T[], opts: { dropOutOfStock?: boolean } = {}): Promise<T[]> {
+  if (!rows.length) return rows;
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from('products')
+    .select('sku, sell_price, discount_percentage, in_stock')
+    .in('sku', rows.map((r) => r.sku));
+  const bySku = new Map<string, { sell_price: number | null; discount_percentage: number | null; in_stock: boolean | null }>();
+  for (const r of data ?? []) {
+    bySku.set(String((r as { sku: string }).sku).toUpperCase(), r as { sell_price: number | null; discount_percentage: number | null; in_stock: boolean | null });
+  }
+  const out: T[] = [];
+  for (const r of rows) {
+    const live = bySku.get(r.sku.toUpperCase());
+    if (opts.dropOutOfStock && live && live.in_stock === false) continue;
+    const anchor = live ? Number(live.sell_price ?? 0) : 0;
+    if (live && anchor > 0) {
+      const disc = Number(live.discount_percentage ?? 0);
+      const net = Math.round(anchor * (1 - disc / 100) * 100) / 100;
+      out.push({ ...r, sell_price: net, original_price: anchor, discount_percentage: disc });
+    } else {
+      out.push(r);
+    }
+  }
+  return out;
+}
+
 export interface SelectedOffer {
   code: string;
   /** Dollars off the effective (post product-discount) price. */
