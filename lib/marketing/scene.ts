@@ -58,16 +58,22 @@ export function buildSceneImagePrompt(opts: {
   category: SceneCategory;
   productName?: string | null;
   sku?: string | null;
+  themeHint?: string | null; // the post's daily_theme — leans the scene's mood
   month?: number; // 0-indexed; injectable for tests
 }): string {
-  const { category, productName, sku } = opts;
+  const { category, productName, sku, themeHint } = opts;
   const month = opts.month ?? new Date().getMonth();
   const product = productName?.trim() || sku?.trim() || 'PECRON power station';
   const scene =
     (category && SCENE_BY_CATEGORY[category]) || seasonalDefaultScene(month);
+  // Soft nudge so the image matches the post's angle — as setting/mood ONLY,
+  // never rendered as text in the image.
+  const themeLine = themeHint?.trim()
+    ? `Subtly reflect the post's angle ("${themeHint.trim()}") through setting and mood only — never as text in the image. `
+    : '';
 
   return [
-    `Professional e-commerce marketing photo of the ${product} (match the reference`,
+    `${themeLine}Professional e-commerce marketing photo of the ${product} (match the reference`,
     `image EXACTLY: same shape, color, screen, ports, labels, logo and proportions;`,
     `the product is the hero, facing camera). Scene: ${scene}. Style: high-end`,
     `commercial product photography, photorealistic, cinematic soft natural light,`,

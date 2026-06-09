@@ -179,6 +179,63 @@ export async function getContent(campaignId: string): Promise<MarketingContent |
   return data as MarketingContent | null;
 }
 
+/**
+ * Learning signals for the content generator: recent posts to AVOID repeating,
+ * and our top-engagement posts to emulate. Pure read; degrades to empty arrays
+ * when there's no history/performance yet (the generator then just behaves as
+ * before, minus the anti-repeat context).
+ */
+export async function getContentLearningSignals(limit = 12): Promise<{
+  recent: Array<{ theme: string; hook: string; category: string | null }>;
+  top: Array<{ theme: string; hook: string; score: number }>;
+}> {
+  const sb = createServiceClient();
+  const { data: camps } = await sb
+    .from('marketing_campaigns')
+    .select('id, daily_theme, category, created_at')
+    .not('daily_theme', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  const ids = (camps ?? []).map((c) => (c as { id: string }).id);
+  if (ids.length === 0) return { recent: [], top: [] };
+
+  const [{ data: contentRows }, { data: perfRows }] = await Promise.all([
+    sb.from('marketing_content').select('campaign_id, facebook_post').in('campaign_id', ids),
+    sb
+      .from('marketing_performance')
+      .select('campaign_id, facebook_likes, facebook_comments, facebook_shares, instagram_likes')
+      .in('campaign_id', ids),
+  ]);
+
+  const postBy = new Map<string, string>();
+  for (const r of contentRows ?? []) {
+    postBy.set((r as { campaign_id: string }).campaign_id, (r as { facebook_post: string | null }).facebook_post ?? '');
+  }
+  const scoreBy = new Map<string, number>();
+  for (const p of perfRows ?? []) {
+    const row = p as { campaign_id: string; facebook_likes: number; facebook_comments: number; facebook_shares: number; instagram_likes: number };
+    scoreBy.set(row.campaign_id, row.facebook_likes + row.facebook_comments * 3 + row.facebook_shares * 5 + row.instagram_likes);
+  }
+  const firstLine = (txt: string): string =>
+    (txt || '').split('\n').map((s) => s.trim()).filter(Boolean)[0]?.slice(0, 120) ?? '';
+
+  const recent = (camps ?? []).map((c) => {
+    const row = c as { id: string; daily_theme: string; category: string | null };
+    return { theme: row.daily_theme, hook: firstLine(postBy.get(row.id) ?? ''), category: row.category };
+  });
+  const top = (camps ?? [])
+    .map((c) => {
+      const row = c as { id: string; daily_theme: string };
+      return { theme: row.daily_theme, hook: firstLine(postBy.get(row.id) ?? ''), score: scoreBy.get(row.id) ?? 0 };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  return { recent, top };
+}
+
 // ── Facebook Groups ────────────────────────────────────────────────────────────
 
 export async function upsertFacebookGroups(
