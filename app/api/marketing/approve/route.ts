@@ -14,6 +14,7 @@ import {
   publishToYouTube,
 } from '@/lib/marketing/publisher';
 import { getVideoStatus } from '@/lib/marketing/heygen';
+import { getImageStatus } from '@/lib/marketing/higgsfield';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { getProductImages } from '@/lib/supabase';
 
@@ -123,16 +124,37 @@ export async function POST(req: NextRequest) {
   }
 
   // Effective video URL — null in text-only mode so FB posts as text and IG
-  // falls back to the image-only path.
+  // falls back to the image path.
   const publishVideoUrl = textOnly ? null : (content.video_url ?? null);
 
-  // For IG image-only fallback (text-only mode), pull the product photo so
-  // we have something to attach — IG can't accept a caption without media.
-  let igFallbackImage: string | null = null;
-  if (textOnly && campaign.product_sku) {
-    const imgs = await getProductImages(campaign.product_sku, 1);
-    igFallbackImage = imgs[0] ?? null;
+  // Resolve a still-processing AI scene image right before publishing (the
+  // webhook/finalizer may not have landed yet). Best-effort — on any failure we
+  // fall back to the stock product photo so the post still carries an image.
+  if (content.image_status !== 'ready' && content.image_request_id) {
+    try {
+      const imgSt = await getImageStatus(content.image_request_id);
+      if (imgSt.status === 'completed' && imgSt.image_url) {
+        content.image_url = imgSt.image_url;
+        await updateContent(campaign.id, { image_url: imgSt.image_url, image_status: 'ready' });
+      }
+    } catch (err) {
+      console.warn('[marketing/approve] image status resolve failed:', err instanceof Error ? err.message : err);
+    }
   }
+
+  // The image that actually ships: AI scene image (preferred) → stock product
+  // photo fallback. Fetch the stock photo only when we might need it.
+  const aiImage = content.image_url ?? null;
+  let stockPhoto: string | null = null;
+  if (!aiImage && campaign.product_sku && (textOnly || !publishVideoUrl)) {
+    const imgs = await getProductImages(campaign.product_sku, 1);
+    stockPhoto = imgs[0] ?? null;
+  }
+  // IG needs media for a caption — give it the best image when there's no video.
+  const igImage: string | null = publishVideoUrl ? null : (aiImage ?? stockPhoto);
+  // FB photo post for image campaigns. Suppressed in text-only mode (operator
+  // explicitly chose FB text-only) and when a video is going out.
+  const fbImage: string | null = !textOnly && !publishVideoUrl ? (aiImage ?? stockPhoto) : null;
 
   const results: Record<string, string | null> = {
     facebook: null,
@@ -143,7 +165,7 @@ export async function POST(req: NextRequest) {
 
   // ── Facebook ───────────────────────────────────────────────────────────────
   try {
-    const fb = await publishToFacebook(content.facebook_post ?? '', publishVideoUrl);
+    const fb = await publishToFacebook(content.facebook_post ?? '', publishVideoUrl, fbImage);
     if (fb?.post_id) {
       results.facebook = fb.post_id;
     } else {
@@ -167,7 +189,7 @@ export async function POST(req: NextRequest) {
   // "Publicado" with no IG id.
   const igConfigured = Boolean(process.env.META_IG_ACCOUNT_ID);
   try {
-    const ig = await publishToInstagram(content.instagram_caption ?? '', publishVideoUrl, igFallbackImage);
+    const ig = await publishToInstagram(content.instagram_caption ?? '', publishVideoUrl, igImage);
     if (ig?.post_id) {
       results.instagram = ig.post_id;
     } else if (igConfigured) {

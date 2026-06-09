@@ -24,6 +24,9 @@
  */
 const HIGGSFIELD_BASE = process.env.HIGGSFIELD_BASE_URL ?? 'https://platform.higgsfield.ai';
 const HIGGSFIELD_MODEL = process.env.HIGGSFIELD_VIDEO_MODEL ?? 'higgsfield-ai/dop/standard';
+// Soul = realistic image-to-image (reference-driven). Env-overridable because
+// the exact platform model id can change; if a run 422/404s, set this var.
+const HIGGSFIELD_IMAGE_MODEL = process.env.HIGGSFIELD_IMAGE_MODEL ?? 'higgsfield-ai/soul';
 
 export interface HiggsfieldVideoJob {
   video_id: string; // the Higgsfield request_id
@@ -33,6 +36,17 @@ export interface HiggsfieldVideoStatus {
   video_id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   video_url?: string;
+  error?: string;
+}
+
+export interface HiggsfieldImageJob {
+  image_id: string; // the Higgsfield request_id
+}
+
+export interface HiggsfieldImageStatus {
+  image_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  image_url?: string;
   error?: string;
 }
 
@@ -128,6 +142,86 @@ export async function getVideoStatus(requestId: string): Promise<HiggsfieldVideo
     video_id: requestId,
     status: mapStatus(String(data.status ?? '')),
     video_url: data.video?.url ?? data.images?.[0]?.url ?? undefined,
+    error: data.error ?? data.message,
+  };
+}
+
+/**
+ * Submit an image-to-image job (Soul): restyle the SCENE around the real
+ * product photo passed as the reference, so the product stays accurate while
+ * the background matches the post's angle. campaignId rides the webhook URL so
+ * the webhook can correlate the result; the finalizers also poll as a backstop.
+ *
+ * Body uses the Soul nested `input` shape (input_images carries the reference).
+ */
+export async function createProductImage(
+  prompt: string,
+  campaignId: string,
+  referenceImages: string[] = [],
+  opts: { aspectRatio?: string } = {},
+): Promise<HiggsfieldImageJob> {
+  const ref = referenceImages.find((u) => typeof u === 'string' && u.startsWith('https://'));
+  if (!ref) throw new Error('Higgsfield image needs a reference product photo (rulebook: no synthetic product)');
+
+  const appUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NEXT_PUBLIC_APP_URL ?? '';
+  const secret = process.env.MARKETING_WEBHOOK_SECRET;
+  const webhookUrl = appUrl
+    ? `${appUrl}/api/marketing/higgsfield-webhook?campaign=${encodeURIComponent(campaignId)}&kind=image${
+        secret ? `&key=${encodeURIComponent(secret)}` : ''
+      }`
+    : undefined;
+
+  const input: Record<string, unknown> = {
+    prompt,
+    aspect_ratio: opts.aspectRatio ?? '4:5',
+    input_images: [{ type: 'image_url', image_url: toJpeg(ref) }],
+  };
+  const body: Record<string, unknown> = { input };
+  if (webhookUrl) body.webhook = { url: webhookUrl, secret: secret ?? '' };
+
+  const res = await fetch(`${HIGGSFIELD_BASE}/${HIGGSFIELD_IMAGE_MODEL}`, {
+    method: 'POST',
+    headers: {
+      Authorization: authHeader(),
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Higgsfield create image failed (${res.status}): ${err}`);
+  }
+  const data = (await res.json()) as { request_id?: string; id?: string };
+  const id = data.request_id ?? data.id;
+  if (!id) {
+    throw new Error(`Higgsfield image response missing request_id: ${JSON.stringify(data).slice(0, 200)}`);
+  }
+  return { image_id: id };
+}
+
+export async function getImageStatus(requestId: string): Promise<HiggsfieldImageStatus> {
+  const res = await fetch(`${HIGGSFIELD_BASE}/requests/${encodeURIComponent(requestId)}/status`, {
+    headers: { Authorization: authHeader(), Accept: 'application/json' },
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!res.ok) throw new Error(`Higgsfield image status check failed (${res.status})`);
+
+  const data = (await res.json()) as {
+    status?: string;
+    images?: Array<{ url?: string }>;
+    image?: { url?: string };
+    error?: string;
+    message?: string;
+  };
+
+  return {
+    image_id: requestId,
+    status: mapStatus(String(data.status ?? '')),
+    image_url: data.images?.[0]?.url ?? data.image?.url ?? undefined,
     error: data.error ?? data.message,
   };
 }

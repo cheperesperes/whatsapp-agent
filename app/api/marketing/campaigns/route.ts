@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       .limit(30),
     sb
       .from('marketing_content')
-      .select('campaign_id, facebook_post_id, instagram_post_id, youtube_video_id, video_url, video_status, facebook_post, instagram_caption, youtube_title, youtube_description, youtube_script, youtube_tags, google_ad_headlines, google_ad_descriptions, published_at'),
+      .select('campaign_id, facebook_post_id, instagram_post_id, youtube_video_id, video_url, video_status, image_url, image_status, facebook_post, instagram_caption, youtube_title, youtube_description, youtube_script, youtube_tags, google_ad_headlines, google_ad_descriptions, published_at'),
     sb
       .from('marketing_performance')
       .select('campaign_id, facebook_likes, facebook_comments, facebook_shares, facebook_reach, instagram_likes, instagram_comments, youtube_views, youtube_likes'),
