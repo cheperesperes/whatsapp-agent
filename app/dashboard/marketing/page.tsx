@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 interface Campaign {
   id: string;
@@ -436,6 +436,19 @@ export default function MarketingPage() {
     reload();
   }
 
+  // Upload your OWN image for a campaign (e.g. a polished Nano Banana / Flow
+  // render) — overrides the auto-composite. Sets image_url server-side.
+  async function uploadImage(campaignId: string, file: File) {
+    if (!campaignId || !file) return;
+    setBusyId(campaignId);
+    const fd = new FormData();
+    fd.append('campaign_id', campaignId);
+    fd.append('file', file);
+    await fetch('/api/marketing/upload-image', { method: 'POST', body: fd }).catch(() => {});
+    setBusyId(null);
+    reload();
+  }
+
   async function deletePublished(campaignId: string) {
     if (!confirm('¿Eliminar este post de Facebook e Instagram? Esta acción no se puede deshacer.')) return;
     await fetch('/api/marketing/delete-post', {
@@ -549,6 +562,7 @@ export default function MarketingPage() {
             onDeletePublished={() => deletePublished(c.id)}
             onDelete={() => deleteCampaign(c.id)}
             onEdit={(fields) => editCampaign(c.id, fields)}
+            onUploadImage={(file) => uploadImage(c.id, file)}
           />
         ))}
 
@@ -619,6 +633,7 @@ function CampaignHero({
   onDeletePublished,
   onDelete,
   onEdit,
+  onUploadImage,
 }: {
   campaign: Campaign;
   products: Product[];
@@ -631,6 +646,7 @@ function CampaignHero({
   onDeletePublished: () => void;
   onDelete: () => void;
   onEdit: (fields: Record<string, string>) => void;
+  onUploadImage: (file: File) => void;
 }) {
   const [productSku, setProductSku] = useState<string>(campaign.product_sku ?? '');
   const [guidance, setGuidance] = useState<string>('');
@@ -639,6 +655,7 @@ function CampaignHero({
   );
   const [regenMedia, setRegenMedia] = useState<'image' | 'video' | 'both'>('image');
   const [editing, setEditing] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const content = campaign.marketing_content?.[0];
   const [draftFb, setDraftFb] = useState<string>(content?.facebook_post ?? '');
   const [draftIg, setDraftIg] = useState<string>(content?.instagram_caption ?? '');
@@ -701,8 +718,28 @@ function CampaignHero({
           </div>
         </div>
 
-        {/* Per-card actions: Edit text + Delete. Available on every card. */}
+        {/* Per-card actions: Upload image + Edit text + Delete. */}
         <div className="flex items-center gap-1.5 shrink-0">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onUploadImage(f);
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            className="px-2.5 py-1.5 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs transition-colors disabled:opacity-50"
+            title="Sube tu propia imagen (p.ej. un render de Nano Banana / Flow) — reemplaza la imagen generada"
+          >
+            {busy ? '…' : '📤 Subir imagen'}
+          </button>
           {content && !inFlight && (
             <button
               type="button"
