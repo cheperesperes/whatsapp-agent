@@ -22,7 +22,7 @@ import {
 import { buildSceneImagePrompt } from '@/lib/marketing/scene';
 import { createProductImage } from '@/lib/marketing/higgsfield';
 import { loadMemory, consolidateMemory, formatMemoryForPrompt } from '@/lib/marketing/memory';
-import { createServiceClient, getProductImages } from '@/lib/supabase';
+import { createServiceClient, getProductImages, loadActiveOffers, loadProductCosts } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -175,7 +175,7 @@ export async function GET(req: NextRequest) {
     const sb = createServiceClient();
     const { data: catalogProducts } = await sb
       .from('agent_product_catalog')
-      .select('sku, name, category, battery_capacity_wh, battery_capacity_ah, output_watts, sell_price, original_price, discount_percentage, cuba_total_price, ideal_for')
+      .select('sku, name, category, brand, battery_capacity_wh, battery_capacity_ah, output_watts, sell_price, original_price, discount_percentage, cuba_total_price, ideal_for')
       .eq('in_stock', true)
       .order('sku');
 
@@ -222,12 +222,21 @@ export async function GET(req: NextRequest) {
     // performers (emulate what engaged). Degrades to empty on no history.
     console.log(`[marketing-daily] ${runId} — generating content`);
     const learning = await getContentLearningSignals().catch(() => ({ recent: [], top: [] }));
+    // Validate coupons margin-safely (same logic Sol uses): the generator may
+    // only mention the ONE applicable, margin-safe code per product — or none.
+    // Cost is used solely to gate margin and never enters the prompt.
+    const [offers, costBySku] = await Promise.all([
+      loadActiveOffers().catch(() => []),
+      loadProductCosts().catch(() => ({})),
+    ]);
     const content = await generateMarketingContent(fullBrief, products, category, {
       productSku,
       guidance,
       language,
       recent: learning.recent,
       top: learning.top,
+      offers,
+      costBySku,
     });
 
     const warnings = validateContent(content);
