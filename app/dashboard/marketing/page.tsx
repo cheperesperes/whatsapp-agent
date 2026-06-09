@@ -449,6 +449,38 @@ export default function MarketingPage() {
     reload();
   }
 
+  // Upload your OWN video — too big to proxy, so: get a signed Storage URL, PUT
+  // the file straight to Storage, then confirm so it becomes the post's video.
+  async function uploadVideo(campaignId: string, file: File) {
+    if (!campaignId || !file) return;
+    setBusyId(campaignId);
+    try {
+      const signRes = await fetch('/api/marketing/upload-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaign_id: campaignId, filename: file.name }),
+      });
+      const sign = await signRes.json();
+      if (!sign?.signedUrl) throw new Error(sign?.error || 'could not start upload');
+      const put = await fetch(sign.signedUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'content-type': file.type || 'video/mp4', 'x-upsert': 'true' },
+      });
+      if (!put.ok) throw new Error(`upload failed (${put.status})`);
+      await fetch('/api/marketing/upload-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaign_id: campaignId, confirm_url: sign.publicUrl }),
+      });
+    } catch (e) {
+      alert(`No se pudo subir el video: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusyId(null);
+      reload();
+    }
+  }
+
   async function deletePublished(campaignId: string) {
     if (!confirm('¿Eliminar este post de Facebook e Instagram? Esta acción no se puede deshacer.')) return;
     await fetch('/api/marketing/delete-post', {
@@ -563,6 +595,7 @@ export default function MarketingPage() {
             onDelete={() => deleteCampaign(c.id)}
             onEdit={(fields) => editCampaign(c.id, fields)}
             onUploadImage={(file) => uploadImage(c.id, file)}
+            onUploadVideo={(file) => uploadVideo(c.id, file)}
           />
         ))}
 
@@ -634,6 +667,7 @@ function CampaignHero({
   onDelete,
   onEdit,
   onUploadImage,
+  onUploadVideo,
 }: {
   campaign: Campaign;
   products: Product[];
@@ -647,6 +681,7 @@ function CampaignHero({
   onDelete: () => void;
   onEdit: (fields: Record<string, string>) => void;
   onUploadImage: (file: File) => void;
+  onUploadVideo: (file: File) => void;
 }) {
   const [productSku, setProductSku] = useState<string>(campaign.product_sku ?? '');
   const [guidance, setGuidance] = useState<string>('');
@@ -656,6 +691,7 @@ function CampaignHero({
   const [regenMedia, setRegenMedia] = useState<'image' | 'video' | 'both'>('image');
   const [editing, setEditing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
   const content = campaign.marketing_content?.[0];
   const [draftFb, setDraftFb] = useState<string>(content?.facebook_post ?? '');
   const [draftIg, setDraftIg] = useState<string>(content?.instagram_caption ?? '');
@@ -739,6 +775,26 @@ function CampaignHero({
             title="Sube tu propia imagen (p.ej. un render de Nano Banana / Flow) — reemplaza la imagen generada"
           >
             {busy ? '…' : '📤 Subir imagen'}
+          </button>
+          <input
+            ref={videoRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onUploadVideo(f);
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => videoRef.current?.click()}
+            disabled={busy}
+            className="px-2.5 py-1.5 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs transition-colors disabled:opacity-50"
+            title="Sube tu propio video — se publicará en Facebook/Instagram/YouTube en vez del generado"
+          >
+            {busy ? '…' : '🎬 Subir video'}
           </button>
           {content && !inFlight && (
             <button
