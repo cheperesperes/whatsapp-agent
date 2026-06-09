@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateCampaign, updateContent } from '@/lib/marketing/db';
 import { sendMarketingPreview } from '@/lib/marketing/notify';
-import { getVideoStatus } from '@/lib/marketing/higgsfield';
+import { getVideoStatus, getImageStatus } from '@/lib/marketing/higgsfield';
 import { checkWebhookSecret } from '@/lib/marketing/webhook-auth';
 
 export const dynamic = 'force-dynamic';
@@ -27,8 +27,35 @@ export async function POST(req: NextRequest) {
     /* some webhooks send empty/non-JSON bodies — tolerate it */
   }
 
-  const videoId =
+  const jobId =
     body.request_id ?? body.id ?? body.data?.request_id ?? body.video_id ?? null;
+
+  // kind=image → resolve the Soul scene-image job (non-blocking; never touches
+  // campaign status). Default (no kind) = video, unchanged.
+  const kind = req.nextUrl.searchParams.get('kind');
+  if (kind === 'image') {
+    console.log(`[higgsfield-webhook] campaign=${campaignId} image_id=${jobId}`);
+    if (!campaignId || !jobId) {
+      return NextResponse.json({ ok: true, note: 'missing campaign or id — ignoring' });
+    }
+    try {
+      const imgSt = await getImageStatus(String(jobId));
+      if (imgSt.status === 'completed' && imgSt.image_url) {
+        await updateContent(campaignId, { image_url: imgSt.image_url, image_status: 'ready' });
+        return NextResponse.json({ ok: true, image: 'ready' });
+      }
+      if (imgSt.status === 'failed') {
+        await updateContent(campaignId, { image_status: 'failed' });
+        return NextResponse.json({ ok: true, image: 'failed' });
+      }
+      return NextResponse.json({ ok: true, image: imgSt.status });
+    } catch (err) {
+      console.warn(`[higgsfield-webhook] image status fetch failed for ${jobId}:`, err);
+      return NextResponse.json({ ok: true, note: 'image status fetch failed — finalizer will retry' });
+    }
+  }
+
+  const videoId = jobId;
 
   console.log(`[higgsfield-webhook] campaign=${campaignId} video_id=${videoId}`);
 

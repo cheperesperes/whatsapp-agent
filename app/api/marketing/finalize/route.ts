@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { createServiceClient } from '@/lib/supabase';
 import { updateCampaign, updateContent } from '@/lib/marketing/db';
 import { sendMarketingPreview } from '@/lib/marketing/notify';
+import { resolvePendingImages } from '@/lib/marketing/image-finalize';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -110,5 +111,14 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, provider: PROVIDER, checked: rows?.length ?? 0, results });
+  // Resolve any pending AI scene images (orthogonal to video / campaign status).
+  const imageResults = await resolvePendingImages(sb);
+
+  return NextResponse.json({
+    ok: true,
+    provider: PROVIDER,
+    checked: rows?.length ?? 0,
+    results,
+    images: imageResults,
+  });
 }

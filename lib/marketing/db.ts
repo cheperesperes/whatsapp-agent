@@ -28,6 +28,11 @@ export interface MarketingContent {
   heygen_video_id: string | null;
   video_url: string | null;
   video_status: string;
+  // AI scene image (Higgsfield Soul, reference-conditioned on the real product
+  // photo). Preferred over the stock catalog photo in preview + publish.
+  image_url: string | null;
+  image_status: string;
+  image_request_id: string | null;
   facebook_post_id: string | null;
   instagram_post_id: string | null;
   youtube_video_id: string | null;

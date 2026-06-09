@@ -18,6 +18,8 @@ interface Campaign {
   marketing_content?: Array<{
     video_url: string | null;
     video_status: string;
+    image_url: string | null;
+    image_status: string | null;
     facebook_post: string | null;
     facebook_post_id: string | null;
     instagram_caption: string | null;
@@ -194,19 +196,30 @@ function VideoStatusChip({ content, className = '' }: { content: ContentRow; cla
 function ContentPreview({ content }: { content: ContentRow }) {
   const blocks: Array<{ label: string; body: React.ReactNode }> = [];
 
-  if (content.video_url && content.video_status !== 'failed') {
+  const hasPlayableVideo = !!content.video_url && content.video_status !== 'failed';
+  if (hasPlayableVideo) {
     blocks.push({
       label: '🎬 Video',
       body: (
         <video
           controls
-          src={content.video_url}
+          src={content.video_url!}
           className="w-full max-h-64 rounded bg-black"
         />
       ),
     });
   } else if (content.video_status && content.video_status !== 'ready') {
     blocks.push({ label: '🎬 Video', body: <VideoStatusChip content={content} /> });
+  }
+
+  if (content.image_url && !hasPlayableVideo) {
+    blocks.push({
+      label: '🖼️ Imagen IA',
+      body: (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={content.image_url} alt="Imagen generada con IA" className="w-full max-h-64 object-contain rounded bg-black/20" />
+      ),
+    });
   }
 
   if (content.facebook_post) {
@@ -367,6 +380,21 @@ export default function MarketingPage() {
     const id = setInterval(finalize, 20000);
     return () => clearInterval(id);
   }, [creatingVideo, reload]);
+
+  // Drive AI scene-image finalization from the dashboard — same self-heal as
+  // video. Image jobs are fast, so poll quicker. Fires while ANY of today's
+  // campaigns has an image still generating; /finalize resolves both.
+  const imageProcessing = todays.some((c) => c.marketing_content?.[0]?.image_status === 'processing');
+  useEffect(() => {
+    if (imageProcessing === false) return;
+    const finalize = () =>
+      fetch('/api/marketing/finalize', { method: 'POST', cache: 'no-store' })
+        .then(() => reload())
+        .catch(() => {});
+    finalize();
+    const id = setInterval(finalize, 8000);
+    return () => clearInterval(id);
+  }, [imageProcessing, reload]);
   const history = data?.campaigns.filter((c) => c.status === 'published').slice(0, 10) ?? [];
 
   async function approve(campaignId: string, approved: boolean, options: { text_only?: boolean } = {}) {
@@ -1189,19 +1217,25 @@ function FacebookPreview({ content, productSku }: { content: ContentRow; product
   const body = content.facebook_post ?? content.instagram_caption ?? '';
   const lines = body.split('\n');
   const hasVideo = !!content.video_url && content.video_status !== 'failed';
+  // Prefer the AI scene image (Higgsfield Soul) over the stock catalog photo.
+  const aiImage = content.image_url ?? null;
+  const imageGenerating =
+    !hasVideo && !aiImage && (content.image_status === 'processing' || content.image_status === 'pending');
 
-  // Fetch the publish-ready product image so the operator sees the actual
-  // visual for an image/text post (no video). Matches what the publisher sends.
-  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  // Stock product photo — fallback shown when there's no AI image and no video.
+  // Matches what the publisher sends. Skipped once an AI image exists.
+  const [stockImg, setStockImg] = useState<string | null>(null);
   useEffect(() => {
-    if (hasVideo || !productSku) { setImgUrl(null); return; }
+    if (hasVideo || aiImage || !productSku) { setStockImg(null); return; }
     let alive = true;
     fetch(`/api/marketing/product-image?sku=${encodeURIComponent(productSku)}`, { cache: 'no-store' })
       .then((r) => r.json())
-      .then((d) => { if (alive) setImgUrl(d?.image_url ?? null); })
+      .then((d) => { if (alive) setStockImg(d?.image_url ?? null); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [productSku, hasVideo]);
+  }, [productSku, hasVideo, aiImage]);
+
+  const shownImg = aiImage ?? stockImg;
 
   return (
     <div className="bg-surface-800/50 px-5 py-4 border-b border-surface-700">
@@ -1226,10 +1260,22 @@ function FacebookPreview({ content, productSku }: { content: ContentRow; product
         </div>
         {hasVideo ? (
           <video controls src={content.video_url!} className="mt-3 w-full rounded" />
-        ) : imgUrl ? (
+        ) : shownImg ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imgUrl} alt="Imagen del producto" className="mt-3 w-full rounded border border-gray-200" />
+          <img src={shownImg} alt="Imagen del producto" className="mt-3 w-full rounded border border-gray-200" />
         ) : null}
+        {aiImage && !hasVideo && (
+          <p className="mt-1.5 text-[11px] text-gray-500">✨ Imagen generada con IA (escena sobre la foto real del producto)</p>
+        )}
+        {imageGenerating && (
+          <p className="mt-2 text-[11px] text-brand-600 flex items-center gap-1.5">
+            <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            🎨 Generando imagen con IA… se actualiza sola.
+          </p>
+        )}
       </div>
       <VideoStatusChip content={content} className="mt-3" />
 

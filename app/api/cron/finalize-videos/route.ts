@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
 import { updateCampaign, updateContent } from '@/lib/marketing/db';
 import { sendMarketingPreview } from '@/lib/marketing/notify';
+import { resolvePendingImages } from '@/lib/marketing/image-finalize';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -164,5 +165,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, provider: PROVIDER, checked: rows?.length ?? 0, results });
+  // Self-heal pending AI scene images too (orthogonal to the video lifecycle).
+  const imageResults = await resolvePendingImages(sb);
+
+  return NextResponse.json({
+    ok: true,
+    provider: PROVIDER,
+    checked: rows?.length ?? 0,
+    results,
+    images: imageResults,
+  });
 }

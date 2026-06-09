@@ -13,10 +13,13 @@ import {
   createCampaign,
   updateCampaign,
   createContent,
+  updateContent,
   getCampaignByDate,
   getCampaignById,
   upsertFacebookGroups,
 } from '@/lib/marketing/db';
+import { buildSceneImagePrompt } from '@/lib/marketing/scene';
+import { createProductImage } from '@/lib/marketing/higgsfield';
 import { loadMemory, consolidateMemory, formatMemoryForPrompt } from '@/lib/marketing/memory';
 import { createServiceClient, getProductImages } from '@/lib/supabase';
 
@@ -87,6 +90,9 @@ export async function GET(req: NextRequest) {
   const media: 'image' | 'video' | 'both' =
     mediaParam === 'image' || mediaParam === 'both' ? mediaParam : 'video';
   const makeVideo = (media === 'video' || media === 'both') && language === PRIMARY_LANGUAGE;
+  // AI scene image (Higgsfield Soul) for image/both campaigns. Language-agnostic
+  // (a visual), generated for ES + EN. Non-blocking: it never gates the campaign.
+  const makeImage = media === 'image' || media === 'both';
 
   // Multi-campaign-per-day: the dashboard can launch unlimited posts.
   //  • new=true        → ALWAYS create a fresh campaign (operator "Run new campaign")
@@ -209,12 +215,45 @@ export async function GET(req: NextRequest) {
       video_status: 'pending',
     });
 
+    // ── Step 6a: AI scene image (Higgsfield Soul) — non-blocking ───────────
+    // Reference-condition on the REAL product photo so the product stays
+    // accurate (rulebook §Product integrity: scene/lighting only, never the
+    // product). A finalizer poll resolves the job; degrades to the stock photo
+    // if anything fails, so it can NEVER regress the existing image preview.
+    if (makeImage && content.product_sku) {
+      try {
+        const refImgs = await getProductImages(content.product_sku, 1);
+        if (refImgs.length > 0) {
+          const chosen = products.find(
+            (p) => String((p as { sku: string }).sku).toUpperCase() === content.product_sku!.toUpperCase(),
+          );
+          const prompt = buildSceneImagePrompt({
+            category,
+            productName: (chosen as { name?: string } | undefined)?.name ?? null,
+            sku: content.product_sku,
+          });
+          const job = await createProductImage(prompt, campaignId, refImgs, { aspectRatio: '4:5' });
+          await updateContent(campaignId, { image_request_id: job.image_id, image_status: 'processing' });
+          console.log(`[marketing-daily] ${runId} — Soul image job ${job.image_id}`);
+        } else {
+          await updateContent(campaignId, { image_status: 'skipped' });
+        }
+      } catch (imgErr) {
+        console.warn(
+          `[marketing-daily] ${runId} — image gen failed (falls back to stock photo):`,
+          imgErr instanceof Error ? imgErr.message : imgErr,
+        );
+        await updateContent(campaignId, { image_status: 'failed' });
+      }
+    } else {
+      await updateContent(campaignId, { image_status: 'skipped' });
+    }
+
     // ── Step 6b: Non-primary language → skip video (one video/day) ─────────
     // The English variant ships as text-only so we don't pay for a second
     // HeyGen render. It goes straight to approval; the operator can attach a
     // video manually if a topic warrants it.
     if (!makeVideo) {
-      const { updateContent } = await import('@/lib/marketing/db');
       await updateContent(campaignId, { video_status: 'skipped' });
       await updateCampaign(campaignId, { status: 'pending_approval' });
       const { sendMarketingPreview } = await import('@/lib/marketing/notify');
@@ -260,7 +299,6 @@ export async function GET(req: NextRequest) {
       } else {
         videoJob = await createProductReviewVideo(content.youtube_script, campaignId, productImages);
       }
-      const { updateContent } = await import('@/lib/marketing/db');
       await updateContent(campaignId, {
         heygen_video_id: videoJob.video_id, // column reused as the video job id regardless of provider
         video_status: 'processing',

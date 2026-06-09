@@ -15,7 +15,8 @@ const META_API = 'https://graph.facebook.com/v21.0';
 
 export async function publishToFacebook(
   postText: string,
-  videoUrl: string | null
+  videoUrl: string | null,
+  imageUrl: string | null = null
 ): Promise<{ post_id: string }> {
   const pageId = process.env.META_PAGE_ID;
   const token = process.env.META_PAGE_ACCESS_TOKEN;
@@ -38,6 +39,27 @@ export async function publishToFacebook(
     }
     const data = (await res.json()) as { id: string };
     return { post_id: data.id };
+  }
+
+  if (imageUrl) {
+    // Photo post (image + caption) — far more reach than plain text. Used for
+    // image campaigns: the AI scene image (or stock product photo fallback).
+    const res = await fetch(`${META_API}/${pageId}/photos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: imageUrl,
+        caption: postText,
+        access_token: token,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Facebook photo post failed (${res.status}): ${err}`);
+    }
+    // /photos returns { id, post_id } — post_id is the feed story; prefer it.
+    const data = (await res.json()) as { id: string; post_id?: string };
+    return { post_id: data.post_id ?? data.id };
   }
 
   // Text/link post fallback
