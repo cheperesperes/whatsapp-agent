@@ -4,7 +4,9 @@
  * Send a Meta-approved WhatsApp template offer to leads in customer_profiles.
  *
  * Reads coupon from SHARED Oiikon discount_codes table (single source of truth).
- * Respects per-recipient language. STRICT: never sends Spanish template to EN-preferring lead.
+ * Respects per-recipient language. STRICT: each lead gets the template variant
+ * matching their language; leads whose language has no approved variant are
+ * skipped — never sent wrong-language content.
  *
  * Body:
  *   {
@@ -399,43 +401,76 @@ export async function POST(req: NextRequest) {
         name: r.name,
       })),
       templatePreviews,
+      // Strict-language plan: which languages the template exists in and how
+      // many recipients would be skipped for lacking a variant. null when the
+      // template lookup failed (the send path then best-guesses per lead
+      // instead of skipping).
+      availableTemplateLanguages: templatePreviews.map((p) => p.language),
+      willSkipLanguageMismatch:
+        templatePreviews.length > 0
+          ? {
+              es: templatePreviews.some((p) => p.language.toLowerCase().startsWith('es'))
+                ? 0
+                : recipList.filter((r) => r.language === 'es').length,
+              en: templatePreviews.some((p) => p.language.toLowerCase().startsWith('en'))
+                ? 0
+                : recipList.filter((r) => r.language === 'en').length,
+            }
+          : null,
       previewDebug,
     });
   }
 
-  // 4. Discover the template's actual body-param count + language so the
+  // 4. Discover the template's language variants + body-param counts so the
   // payload matches what Meta expects. The oiikon_offer_* templates
   // currently only accept ONE param ({{1}} = recipient name); coupon code
   // and discount are hardcoded in the template body. Sending more params
   // than the template defines returns Meta error 132000.
-  let bodyParamCount = 1;
-  let templateLanguageCode: string | null = null;
+  //
+  // A template name can exist in several language variants (es + en_US…) and
+  // each recipient must get the variant matching their language. Resolving a
+  // single global language code here used to deliver whichever variant Meta
+  // listed first to EVERYONE — Spanish to EN-preferring leads. variantFor()
+  // picks per recipient; sendOne skips leads with no matching variant. Only
+  // if the lookup fails entirely (variants empty) does sendOne fall back to a
+  // best-guess language code per lead.
+  type TplVariant = { language: string; bodyParamCount: number };
+  const variants: TplVariant[] = [];
   try {
-    const wabaResolveRes = await fetch(
-      `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}?fields=whatsapp_business_account`,
-      { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
-    );
-    const wabaResolveData = await wabaResolveRes.json();
-    const wabaId = wabaResolveData?.whatsapp_business_account?.id;
+    // WABA id: env first, phone-number lookup as fallback — phone lookup
+    // alone was unreliable in prod (see the dry-run preview block above).
+    let wabaId: string | null =
+      process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ??
+      process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ??
+      null;
+    if (!wabaId) {
+      const wabaResolveRes = await fetch(
+        `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneId}?fields=whatsapp_business_account`,
+        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
+      );
+      const wabaResolveData = await wabaResolveRes.json();
+      wabaId = wabaResolveData?.whatsapp_business_account?.id ?? null;
+    }
     if (wabaId) {
       const tRes = await fetch(
         `https://graph.facebook.com/${META_GRAPH_VERSION}/${wabaId}/message_templates?fields=name,language,components&name=${encodeURIComponent(templateName)}&limit=10`,
         { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
       );
       const tData = await tRes.json();
-      const tpl = (tData.data || []).find((x: any) => x.name === templateName);
-      if (tpl) {
-        templateLanguageCode = tpl.language || null;
+      for (const tpl of tData.data || []) {
+        if (tpl.name !== templateName) continue;
         const bodyComp = (tpl.components || []).find(
           (c: any) => (c.type || '').toUpperCase() === 'BODY',
         );
         const m = (bodyComp?.text || '').match(/\{\{\s*\d+\s*\}\}/g);
-        bodyParamCount = m ? m.length : 0;
+        variants.push({ language: tpl.language || 'es', bodyParamCount: m ? m.length : 0 });
       }
     }
   } catch {
-    /* fall through with default bodyParamCount=1 */
+    /* fall through with no variants — sendOne best-guesses per lead */
   }
+  const variantFor = (lang: 'es' | 'en'): TplVariant | null =>
+    variants.find((v) => v.language.toLowerCase().startsWith(lang)) ?? null;
 
   // 5. Real send loop — sequential w/ 200ms gap (Meta rate limit ~5/sec safe).
   // Each send logs an [OUTBOUND_OFFER] row, which both gives an audit trail AND
@@ -444,6 +479,19 @@ export async function POST(req: NextRequest) {
 
   async function sendOne(r: { phone: string; language: 'es' | 'en'; name: string | null }) {
     const lang = r.language;
+    const variant = variantFor(lang);
+    if (!variant && variants.length > 0) {
+      // Strict-language rule: the template exists, but not in this lead's
+      // language. Skip — never deliver wrong-language content. Skips are not
+      // logged as [OUTBOUND_OFFER], so the lead stays reachable the moment a
+      // template with their language variant is used.
+      return {
+        phone: r.phone,
+        language: lang,
+        success: false,
+        skipped: 'no_template_variant_for_language',
+      };
+    }
     const param1 = r.name || (lang === 'en' ? 'friend' : 'amigo/a');
     const param2 = coupon?.code || '';
     const param3 = discountText(coupon, lang);
@@ -452,8 +500,8 @@ export async function POST(req: NextRequest) {
       ...(param2 ? [String(param2)] : []),
       ...(param3 ? [String(param3)] : []),
     ];
-    const params = allParams.slice(0, bodyParamCount);
-    const langCode = templateLanguageCode || (lang === 'en' ? 'en_US' : 'es');
+    const params = allParams.slice(0, variant?.bodyParamCount ?? 1);
+    const langCode = variant?.language ?? (lang === 'en' ? 'en_US' : 'es');
     const payload = {
       messaging_product: 'whatsapp',
       to: normalizePhone(r.phone),
@@ -530,12 +578,16 @@ export async function POST(req: NextRequest) {
   const results = await runBatch(recipList);
 
   const sentCount = results.filter((r) => r.success).length;
+  const skippedLanguageMismatch = results.filter(
+    (r) => r.skipped === 'no_template_variant_for_language',
+  ).length;
   const totalCount = results.length;
   return NextResponse.json(
     {
       ok: sentCount > 0,
       sentCount,
       totalCount,
+      skippedLanguageMismatch,
       coupon: coupon
         ? { code: coupon.code, discount: coupon.discount_value, type: coupon.discount_type }
         : null,
