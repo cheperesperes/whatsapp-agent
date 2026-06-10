@@ -66,7 +66,12 @@ export async function generateSolResponse(
   languageLock = '',
   firstContactDirective = '',
   dynamicDirectives = '',
-  channelHint: 'whatsapp' | 'web' = 'whatsapp'
+  channelHint: 'whatsapp' | 'web' = 'whatsapp',
+  // Distilled coaching from the daily interaction-review loop
+  // (lib/learning.ts). Mid-prompt placement on purpose: it shapes style and
+  // salesmanship but must never override the tail hard rules (language lock,
+  // pay-link flow, dynamic directives).
+  learnedBehaviors = ''
 ): Promise<SolResponse> {
   const basePrompt = getAgentPrompt();
 
@@ -121,7 +126,7 @@ ${productCatalog}
 ${knowledgeBase}
 ${customerProfilePrompt}
 ${competitorComparisons}
-${intentHint ? `\n${intentHint}\n` : ''}
+${learnedBehaviors ? `\n${learnedBehaviors}\n` : ''}${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}\n${payLinkBlock}\n${channelBlock}${languageLock ? `\n\n${languageReassert}\n` : ''}`;
 

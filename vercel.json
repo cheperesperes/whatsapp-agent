@@ -31,6 +31,9 @@
     },
     "app/api/cron/finalize-videos/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/sol-learning/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -61,6 +64,10 @@
     {
       "path": "/api/cron/finalize-videos",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/sol-learning",
+      "schedule": "0 9 * * *"
     }
   ],
   "headers": [
