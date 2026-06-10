@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
+import { getLearnedBehaviorsBlock } from '@/lib/learning';
 
 // Always process webhook requests dynamically — never cache
 export const dynamic = 'force-dynamic';
@@ -651,6 +652,10 @@ async function processWebhookLocked(
       );
     }
 
+    // Learned coaching from the daily interaction-review loop (cached 10 min
+    // in-module; fails soft to '' so it can never block a reply).
+    const learnedBehaviors = await getLearnedBehaviorsBlock();
+
     const { message: aiMessage, handoffReason, metrics } = await generateSolResponse(
       historyWithoutLast,
       messageText,
@@ -661,7 +666,9 @@ async function processWebhookLocked(
       competitorPrompt,
       languageLock,
       firstContactDirective,
-      dynamicDirectives
+      dynamicDirectives,
+      'whatsapp',
+      learnedBehaviors
     );
 
     // ── Funnel metrics — log for analytics (not sent to customer) ──

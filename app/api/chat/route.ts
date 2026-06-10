@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
+import { getLearnedBehaviorsBlock } from '@/lib/learning';
 
 export const dynamic = 'force-dynamic';
 
@@ -198,6 +199,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       lastUserText: message,
     });
 
+    // Learned coaching from the daily interaction-review loop (cached 10 min
+    // in-module; fails soft to '' so it can never block a reply).
+    const learnedBehaviors = await getLearnedBehaviorsBlock();
+
     const { message: aiMessage, handoffReason } = await generateSolResponse(
       historyWithoutLast,
       message,
@@ -210,6 +215,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       firstContactDirective,
       dynamicDirectives,
       'web', // channelHint
+      learnedBehaviors
     );
 
     // Extract `[SEND_IMAGE:SKU]` tags into a structured image list the
