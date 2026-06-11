@@ -61,8 +61,18 @@ export async function POST(req: Request) {
       return new Response('invalid signature', { status: 401 });
     }
   } else {
+    // FAIL CLOSED in production: without a webhook id we cannot verify
+    // authenticity, and processing unverified events would let anyone POST
+    // forged payloads at this public endpoint. Outside production we continue
+    // (smoke tests) with a loud warning.
+    if (process.env.VERCEL_ENV === 'production') {
+      console.error(
+        '[PAYPAL-WH] PAYPAL_WEBHOOK_ID not set in production — REJECTING event (fail closed). Set it in Vercel.',
+      );
+      return new Response('webhook verification not configured', { status: 503 });
+    }
     console.warn(
-      '[PAYPAL-WH] PAYPAL_WEBHOOK_ID not set — processing UNVERIFIED (set it in Vercel to secure this endpoint)',
+      '[PAYPAL-WH] PAYPAL_WEBHOOK_ID not set — processing UNVERIFIED (non-production only)',
     );
   }
 

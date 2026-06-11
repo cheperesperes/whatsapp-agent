@@ -10,7 +10,7 @@
  * Public (middleware allowlist `/api/paypal/`). Only OUR pay-link orders set
  * their return_url here, so this only ever captures our own orders.
  */
-import { capturePayPalOrder } from '@/lib/marketing/paypal';
+import { capturePayPalOrder, getPayPalOrder, PAYLINK_TAG } from '@/lib/marketing/paypal';
 import { recordPayLinkOrder } from '@/lib/paylink';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 
@@ -23,9 +23,25 @@ const STORE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://oiikon.com').repl
 export async function GET(req: Request): Promise<Response> {
   const token = new URL(req.url).searchParams.get('token'); // PayPal order id
 
-  if (!token) {
-    console.warn('[PAYPAL-RETURN] no token on return — landing buyer without capture');
+  if (!token || !/^[A-Z0-9-]{8,32}$/i.test(token)) {
+    console.warn('[PAYPAL-RETURN] missing/malformed token on return — landing buyer without capture');
     return Response.redirect(`${STORE_URL}/?paid=1`, 302);
+  }
+
+  // TAMPER GUARD: this endpoint is public and `token` is caller-controlled.
+  // Capture ONLY orders WE created (PAYLINK_TAG stamped into custom_id at
+  // build time). Without this check, anyone with a valid PayPal order id from
+  // the SAME merchant account (e.g. a storefront buyer with their own order)
+  // could trigger a premature capture here plus a duplicate WhatsApp order
+  // row — i.e. a double shipment. If PayPal is briefly unreachable we skip the
+  // capture; the signature-verified webhook remains the idempotent backup.
+  const details = await getPayPalOrder(token);
+  if (!details.ok || !(details.customId ?? '').startsWith(PAYLINK_TAG)) {
+    console.warn(
+      `[PAYPAL-RETURN] refusing capture for order ${token}: ` +
+        (details.ok ? `not a pay-link order (custom_id="${(details.customId ?? '').slice(0, 40)}")` : `order lookup failed (${details.error ?? '?'})`),
+    );
+    return Response.redirect(`${STORE_URL}/?pay=error`, 302);
   }
 
   const cap = await capturePayPalOrder(token);
