@@ -34,6 +34,7 @@ import {
   markConversationWon,
   getConversationByAnyPhone,
   resolveProductFromUrl,
+  resolveAdProductFromUrlHistory,
   updateConversationFields,
   OPERATOR_REPLY_REASON,
 } from '@/lib/supabase';
@@ -652,6 +653,17 @@ async function processWebhookLocked(
         if (sku) {
           adProductSku = sku;
           adProductName = r.headline.trim();
+        }
+      }
+      // Rare case: Meta sent only the ad short-link, no headline (e.g. Geo,
+      // fb.me/6LqKWPscm). Recover the product from our own history of the SAME
+      // ad URL — it almost always arrived WITH the product name on other leads.
+      if (!adProductName && refUrl) {
+        const hist = await resolveAdProductFromUrlHistory(refUrl).catch(() => null);
+        if (hist) {
+          adProductName = hist.name;
+          adProductSku = hist.sku;
+          console.log(`[WEBHOOK] ad product recovered from URL history for ${senderPhone}: ${hist.sku ?? hist.name}`);
         }
       }
       if (adProductName) {

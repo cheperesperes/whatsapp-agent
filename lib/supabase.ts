@@ -1070,6 +1070,35 @@ export async function resolveProductFromUrl(
   return null;
 }
 
+/**
+ * Recover the ad's product when Meta's CTWA referral arrives with only a
+ * source URL and NO headline (rare — ~1 in 40 ad leads). The SAME ad short-link
+ * (e.g. fb.me/6LqKWPscm) almost always arrived WITH the product name on other
+ * leads, so we look it up in our own `conversations.ad_source` history:
+ *   "ad | PECRON F5000LFP… | https://fb.me/6LqKWPscm"
+ * Returns the product name + extracted model SKU, or null if this URL was never
+ * seen with a product. Best-effort; only called on the headline-less path.
+ */
+export async function resolveAdProductFromUrlHistory(
+  sourceUrl: string | null | undefined,
+): Promise<{ name: string; sku: string | null } | null> {
+  if (!sourceUrl || typeof sourceUrl !== 'string') return null;
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from('conversations')
+    .select('ad_source')
+    .ilike('ad_source', `%${sourceUrl}%`)
+    .like('ad_source', '% | %') // only rows that carry a product name
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const adSource = ((data ?? [])[0] as { ad_source?: string } | undefined)?.ad_source;
+  if (!adSource) return null;
+  const name = adSource.split(' | ')[1]?.trim();
+  if (!name) return null;
+  const sku = name.match(/\b([EF]\d{3,4}[A-Z]{0,5})\b/)?.[1]?.toUpperCase() ?? null;
+  return { name, sku };
+}
+
 export async function getProductImages(sku: string, max = 2): Promise<string[]> {
   if (!sku?.trim() || max <= 0) return [];
 
