@@ -792,14 +792,30 @@ export async function loadStorefrontProductsBySku(skus: string[]): Promise<Store
   const out: StorefrontProduct[] = [];
   for (const r of data as Record<string, unknown>[]) {
     if (r.is_publicly_visible === false) continue; // never pay-link hidden products
-    const price = Number((r.sell_price as number) ?? (r.price as number) ?? 0);
-    if (!(price > 0)) continue;
+    // In `products`, `sell_price` is the marketing ANCHOR and
+    // `discount_percentage` is the anchor→real conversion: sell × (1−disc)
+    // equals `price`, the REAL charged price (verified 2026-06-10 — the
+    // identity holds on every row, e.g. E1500LFP $1,299 × (1−63.9%) = $469).
+    // Return the REAL price with discount 0. Passing the raw anchor+discount
+    // through hit buildPayLink's 0-50% corruption clamp, silently OVERCHARGING
+    // any fallback SKU whose anchor-discount exceeds 50% (e.g. BUNDLE-HR3600:
+    // 57.7% → clamped to 50% → $1,499 charged vs $1,268 real).
+    const direct = Number((r.price as number) ?? 0);
+    const anchor = Number((r.sell_price as number) ?? 0);
+    const disc = Number((r.discount_percentage as number) ?? 0);
+    const real =
+      direct > 0
+        ? direct
+        : anchor > 0
+          ? Math.round(anchor * (1 - Math.max(0, Math.min(100, disc)) / 100) * 100) / 100
+          : 0;
+    if (!(real > 0)) continue;
     out.push({
       sku: String(r.sku),
       name: String((r.name_paypal as string) || (r.name as string) || r.sku),
       brand: (r.brand as string) ?? null,
-      sell_price: price,
-      discount_percentage: r.discount_percentage != null ? Number(r.discount_percentage) : 0,
+      sell_price: real,
+      discount_percentage: 0,
       in_stock: Boolean(r.in_stock),
     });
   }
