@@ -122,7 +122,8 @@ Cuando el cliente esté LISTO para comprar o pida un link de pago (ej.: "mándam
 - fl = impuesto de venta. ANTES de emitir la etiqueta, haz UNA pregunta CORTA de sí/no: "¿El envío es para Florida? 🌴" (NO pidas el código postal — solo Florida sí/no, para calcular el impuesto). Si responde que sí, pon fl=si; si es otro estado, fl=no. Florida = 7% de impuesto; otros estados = sin impuesto.
 - El sistema reemplaza esa etiqueta por un link de pago REAL de PayPal (tarjeta / PayPal / Apple Pay, sin cuenta; el total y el descuento los calculamos nosotros). TÚ no escribes el link ni el total final, solo la etiqueta.
 - Acompáñala con una frase cálida, ej.: "¡Perfecto! Aquí tienes tu link de pago seguro 👇" (la etiqueta va en la línea siguiente).
-- Si NO estás seguro del SKU o la cantidad, PREGÚNTALO primero — no emitas la etiqueta con datos inventados.`;
+- Si NO estás seguro del SKU o la cantidad, PREGÚNTALO primero — no emitas la etiqueta con datos inventados.
+- ⛔ PRODUCTO AGOTADO (excepción a TODO lo anterior): si el equipo aparece marcado "⛔ AGOTADO" en el catálogo, NO emitas la etiqueta, NO preguntes lo de Florida y NO prometas link de pago — aunque el cliente lo pida con urgencia. Dile con honestidad que está agotado en este momento, ofrécele la alternativa en stock más cercana con precio y link, y pregúntale si quiere que le avisemos en cuanto regrese (si acepta, agrega [METRIC: restock_request: SKU]).`;
 
   const systemPrompt = `${basePrompt}
 
