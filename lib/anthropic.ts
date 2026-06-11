@@ -859,11 +859,23 @@ export function deriveKnownProductHint(args: {
   for (let i = recent.length - 1; i >= 0; i--) {
     const m = recent[i];
     if (m.role !== 'assistant') continue;
+    // A product LINK is the deliberate recommendation — prefer its SKU over
+    // loose body tokens (the body may name another model in passing, e.g.
+    // "a diferencia del E1000, el E3600 …" while linking only the E3600).
+    const linkSkus = Array.from(
+      new Set(
+        Array.from(
+          m.content.matchAll(/oiikon\.com\/product\/([a-z0-9-]+)/gi),
+          (x) => x[1].toUpperCase().match(/\b([EF]\d{3,4}[A-Z]{0,5})\b/)?.[1]
+        ).filter((s): s is string => Boolean(s))
+      )
+    );
+    if (linkSkus.length === 1) return linkSkus[0];
     const uniq = Array.from(
       new Set(Array.from(m.content.matchAll(MODEL_SKU_RE), (x) => x[1].toUpperCase()))
     );
     if (uniq.length === 1) return uniq[0]; // a single, clear recommendation
-    if (uniq.length > 1) break; // a menu — no single rec yet, fall to arrival
+    if (linkSkus.length > 1 || uniq.length > 1) break; // a menu — no single rec yet, fall to arrival
   }
   if (args.adSource) {
     const name = (args.adSource.split(' | ')[1] ?? '').trim();

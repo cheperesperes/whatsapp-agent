@@ -51,6 +51,7 @@ import {
   scoreLeadQuality,
   buildDynamicDirectives,
   deriveKnownProductHint,
+  mergeReading,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import {
@@ -352,11 +353,18 @@ async function runBackgroundLearning(
   ]);
 
   if (facts) {
+    // Re-read + re-merge at write time so a concurrent reading write isn't
+    // clobbered by this stale-snapshot object — same race-proofing as the
+    // webhook's learning path (null-preserves-existing keeps seeded fields).
+    const latest = facts.reading ? await loadCustomerProfile(identifier) : existingProfile;
+    const reading = facts.reading
+      ? mergeReading(latest?.reading ?? null, facts.reading, new Date().toISOString())
+      : null;
     await upsertCustomerProfile(identifier, {
       display_name: facts.display_name ?? null,
       summary: facts.summary ?? null,
       facts: facts.facts ?? [],
-      reading: facts.reading ?? null,
+      reading,
     });
   }
 
