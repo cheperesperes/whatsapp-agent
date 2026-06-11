@@ -55,7 +55,7 @@ export default function AdsPage() {
       <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-white">Anuncios</h1>
+            <h1 className="text-xl font-semibold text-gray-100">Anuncios</h1>
             <p className="text-sm text-gray-500">
               De qué anuncio de Facebook/Instagram llega cada lead de WhatsApp — calidad,
               conversión y si el producto del anuncio está en stock. Últimos {data?.window_days ?? 30} días.
@@ -85,15 +85,15 @@ export default function AdsPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
                 <p className="text-xs text-gray-500">Leads de anuncios</p>
-                <p className="text-2xl font-semibold text-white mt-1">{t?.ad_leads ?? 0}</p>
+                <p className="text-2xl font-semibold text-gray-100 mt-1">{t?.ad_leads ?? 0}</p>
               </div>
               <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
                 <p className="text-xs text-gray-500">% del total</p>
-                <p className="text-2xl font-semibold text-white mt-1">{t?.ad_share_pct ?? 0}%</p>
+                <p className="text-2xl font-semibold text-gray-100 mt-1">{t?.ad_share_pct ?? 0}%</p>
               </div>
               <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
                 <p className="text-xs text-gray-500">Leads orgánicos</p>
-                <p className="text-2xl font-semibold text-white mt-1">{t?.organic_leads ?? 0}</p>
+                <p className="text-2xl font-semibold text-gray-100 mt-1">{t?.organic_leads ?? 0}</p>
               </div>
               <div
                 className={`rounded-xl p-4 border ${
@@ -105,7 +105,7 @@ export default function AdsPage() {
                 <p className="text-xs text-gray-500">Leads → producto AGOTADO</p>
                 <p
                   className={`text-2xl font-semibold mt-1 ${
-                    (t?.ads_to_oos ?? 0) > 0 ? 'text-red-400' : 'text-white'
+                    (t?.ads_to_oos ?? 0) > 0 ? 'text-red-400' : 'text-gray-100'
                   }`}
                 >
                   {t?.ads_to_oos ?? 0}

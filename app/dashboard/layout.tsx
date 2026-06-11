@@ -211,7 +211,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </svg>
           </div>
           <div>
-            <p className="text-sm font-semibold text-white leading-tight">Oiikon Sol</p>
+            <p className="text-sm font-semibold text-gray-100 leading-tight">Oiikon Sol</p>
             <p className="text-xs text-gray-500">WhatsApp Agent</p>
           </div>
         </div>

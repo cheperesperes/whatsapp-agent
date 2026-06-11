@@ -173,7 +173,7 @@ export default function LearningPage() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-white">Aprendizaje de Sol</h1>
+            <h1 className="text-xl font-semibold text-gray-100">Aprendizaje de Sol</h1>
             <p className="text-sm text-gray-500">
               Evaluación diaria de conversaciones con mentalidad de top seller de Amazon — Sol
               aprende y adapta su trato humano.
@@ -221,31 +221,31 @@ export default function LearningPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
                 <p className="text-xs text-gray-500">Nota promedio (7d)</p>
-                <p className="text-2xl font-semibold text-white mt-1">
+                <p className="text-2xl font-semibold text-gray-100 mt-1">
                   {data.stats.avg_score_7d ?? '—'}
                   <span className="text-sm text-gray-500">/10</span>
                 </p>
               </div>
               <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
                 <p className="text-xs text-gray-500">Evaluadas (7d)</p>
-                <p className="text-2xl font-semibold text-white mt-1">{data.stats.reviewed_7d}</p>
+                <p className="text-2xl font-semibold text-gray-100 mt-1">{data.stats.reviewed_7d}</p>
               </div>
               <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
                 <p className="text-xs text-gray-500">Clientes contentos (7d)</p>
-                <p className="text-2xl font-semibold text-white mt-1">
+                <p className="text-2xl font-semibold text-gray-100 mt-1">
                   {sentimentTotal ? Math.round(((sc.contento ?? 0) / sentimentTotal) * 100) : '—'}
                   <span className="text-sm text-gray-500">%</span>
                 </p>
               </div>
               <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
                 <p className="text-xs text-gray-500">Coaching activo</p>
-                <p className="text-2xl font-semibold text-white mt-1">{active.length}</p>
+                <p className="text-2xl font-semibold text-gray-100 mt-1">{active.length}</p>
               </div>
             </div>
 
             {/* Dimension bars */}
             <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-white mb-3">
+              <h2 className="text-sm font-semibold text-gray-100 mb-3">
                 Dimensiones (promedio 7 días, escala 1–5)
               </h2>
               <div className="space-y-2">
@@ -273,7 +273,7 @@ export default function LearningPage() {
             {/* Active learnings */}
             <div className="bg-surface-800 border border-surface-600 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-white">
+                <h2 className="text-sm font-semibold text-gray-100">
                   Coaching inyectado en el prompt de Sol
                 </h2>
                 {retired.length > 0 && (
@@ -382,7 +382,7 @@ export default function LearningPage() {
 
             {/* Recent reviews */}
             <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-white mb-3">Últimas evaluaciones</h2>
+              <h2 className="text-sm font-semibold text-gray-100 mb-3">Últimas evaluaciones</h2>
               {data.reviews.length === 0 && (
                 <p className="text-sm text-gray-500">Sin evaluaciones todavía.</p>
               )}
