@@ -192,8 +192,8 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
     console.warn('[sol] cuba leak detected in reply, replacing with USA-only template. Original (truncated):', customerMessage.slice(0, 200));
     const looksEnglish = /\b(I|the|you|your|we|ship|address|states|please)\b/i.test(customerMessage);
     customerMessage = looksEnglish
-      ? "Thanks for reaching out! We only ship within the USA — free to all 48 contiguous states. If you have a US address, I'm happy to help you find the right power station."
-      : "¡Gracias por escribir! Solo enviamos dentro de EE.UU. — gratis a los 48 estados continentales. Si tiene una dirección aquí en EE.UU., con gusto le ayudo a encontrar el equipo correcto.";
+      ? "Thanks for telling me! 🙏 We ship free to any address in the 48 contiguous US states — yours or a relative's here. What state would it ship to? Happy to confirm the right unit for you."
+      : "¡Gracias por contarme! 🙏 Enviamos gratis a cualquier dirección dentro de los 48 estados de EE.UU. — la suya o la de un familiar aquí. ¿A qué estado lo enviaríamos? Con gusto le confirmo el equipo.";
     metrics.push('cuba_leak_filtered');
   }
 
