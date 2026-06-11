@@ -135,6 +135,11 @@ export async function GET(req: NextRequest) {
   const { data: convRows, error: convErr } = await supabase
     .from('conversations')
     .select('id, phone_number, customer_name, updated_at')
+    // WhatsApp-only with a real phone — web-widget conversations have
+    // channel='web' and phone_number=NULL, and would otherwise reach
+    // sendWhatsAppMessage(null) and throw every hourly run.
+    .eq('channel', 'whatsapp')
+    .not('phone_number', 'is', null)
     .eq('opted_out', false)
     .eq('escalated', false)
     .neq('status', 'closed')

@@ -48,20 +48,28 @@ export async function GET(req: NextRequest) {
   }
   const convs = (convData ?? []) as ConvRow[];
 
-  // Phones that placed an order ever (conversion signal beyond converted_at).
+  // Orders by phone → the EARLIEST order date for that phone. A lead only
+  // counts as a conversion if an order happened AT/AFTER the lead arrived —
+  // otherwise a repeat buyer who purchased months before an ad existed would
+  // wrongly inflate that ad's conversion rate.
   const { data: orderData } = await sb
     .from('orders')
-    .select('customer_phone')
+    .select('customer_phone, created_at')
     .not('customer_phone', 'is', null);
-  const paidKeys = new Set(
-    (orderData ?? []).map((o) => phoneKey((o as { customer_phone: string }).customer_phone)).filter(Boolean)
-  );
+  const firstOrderByKey = new Map<string, string>();
+  for (const o of (orderData ?? []) as Array<{ customer_phone: string; created_at: string }>) {
+    const k = phoneKey(o.customer_phone);
+    if (!k || !o.created_at) continue;
+    const prev = firstOrderByKey.get(k);
+    if (!prev || o.created_at > prev) firstOrderByKey.set(k, o.created_at); // keep latest order date
+  }
 
-  // Current stock for SKUs the ads point at.
+  // Current stock for SKUs the ads point at. Guard null sku (the column is
+  // nullable — a single null-sku row would otherwise crash the whole page).
   const { data: stockData } = await sb.from('agent_product_catalog').select('sku, in_stock');
   const stockBySku = new Map<string, boolean>();
-  for (const r of (stockData ?? []) as Array<{ sku: string; in_stock: boolean }>) {
-    stockBySku.set(r.sku.toUpperCase(), r.in_stock);
+  for (const r of (stockData ?? []) as Array<{ sku: string | null; in_stock: boolean }>) {
+    if (r.sku) stockBySku.set(r.sku.toUpperCase(), r.in_stock);
   }
 
   // Aggregate by ad creative (ad_source = "ad | <product> | <url>").
@@ -81,9 +89,11 @@ export async function GET(req: NextRequest) {
   const ads: AdRow[] = [];
   for (const [product, { url, rows }] of byProduct.entries()) {
     const sku = product.match(SKU_RE)?.[1]?.toUpperCase() ?? null;
-    const converted = rows.filter(
-      (r) => r.converted_at != null || paidKeys.has(phoneKey(r.phone_number))
-    ).length;
+    const converted = rows.filter((r) => {
+      if (r.converted_at != null) return true;
+      const orderAt = firstOrderByKey.get(phoneKey(r.phone_number));
+      return orderAt != null && orderAt >= r.created_at; // order placed at/after the lead arrived
+    }).length;
     ads.push({
       product,
       url,

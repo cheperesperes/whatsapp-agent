@@ -115,7 +115,11 @@ export function violatesHardRules(directive: string): boolean {
     /\b(cuba|cubano|cubana|la isla)\b/i.test(d) ||
     /\$\s?\d/.test(d) ||
     /\b\d+\s*%/.test(d) ||
-    /\b\d+\s*(d[ií]as?|days?|semanas?|weeks?|horas h[áa]biles)\b/i.test(d) ||
+    // Spelled-out money: "1000 dolares", "mil dólares", "USD 900", "900 usd"
+    /\b\d[\d.,]*\s*(d[oó]lar(es)?|dollars?|usd|eur|pesos?)\b/i.test(d) ||
+    /\busd\s*\$?\d/i.test(d) ||
+    // Delivery time: N days/weeks/hours (incl. bare "48 horas", "72h")
+    /\b\d+\s*(d[ií]as?|days?|semanas?|weeks?|h|hrs?|horas?)\b/i.test(d) ||
     /\b(cup[oó]n|coupon|c[oó]digo)\s+[A-Z0-9]{4,}\b/.test(d)
   );
 }
