@@ -27,6 +27,7 @@ import {
   createPayLink,
   isPayPalConfigured,
   getPayPalOrder,
+  PAYLINK_TAG,
   type PayLinkItem,
   type CaptureResult,
 } from './marketing/paypal';
@@ -300,6 +301,14 @@ export async function recordPayLinkOrder(
 
     const details = await getPayPalOrder(paypalOrderId);
     if (!details.ok) return { ok: false, error: details.error ?? 'order_details_unavailable' };
+
+    // CHOKEPOINT GUARD (defense in depth with the webhook/return checks):
+    // never record an order we didn't create. The tag comes from PayPal's own
+    // API response — not from any caller-supplied payload — so it can't be
+    // forged by whoever invoked this path.
+    if (!(details.customId ?? '').startsWith(PAYLINK_TAG)) {
+      return { ok: false, error: 'not_paylink_order' };
+    }
 
     // Link the order back to the WhatsApp chat it came from. Sol stamps the
     // buyer's number (wa=) and language (lang=) into the PayPal custom_id when it

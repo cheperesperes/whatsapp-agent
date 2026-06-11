@@ -54,6 +54,8 @@ interface WebsiteRow {
   discount_percentage: number | null;
   in_stock: boolean | null;
   stock_quantity: number | null;
+  is_active?: boolean | null;
+  is_publicly_visible?: boolean | null;
 }
 
 interface AgentRow extends WebsiteRow {
@@ -131,10 +133,14 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
 
   // ── Load both sides (only the columns we actually sync, plus join key) ──
+  // NO is_active filter: we need inactive/hidden products too, so Sol stops
+  // selling a product the moment Ed deactivates or hides it on the website.
+  // (Previously inactive products vanished from this read and their agent rows
+  // were "left alone" — i.e. they kept selling in Sol forever. Found 2026-06-10:
+  // 5 deactivated products still marked sellable in the agent catalog.)
   const { data: websiteRows, error: webErr } = await supabase
     .from('products')
-    .select('sku, sell_price, original_price, discount_percentage, in_stock, stock_quantity')
-    .eq('is_active', true)
+    .select('sku, sell_price, original_price, discount_percentage, in_stock, stock_quantity, is_active, is_publicly_visible')
     .not('sku', 'is', null);
 
   if (webErr) {
@@ -149,13 +155,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `agent read failed: ${agentErr.message}` }, { status: 500 });
   }
 
+  // Keyed case-insensitively — a SKU casing drift between the two tables must
+  // never silently break the match.
   const websiteBySku = new Map<string, WebsiteRow>();
   for (const r of (websiteRows ?? []) as WebsiteRow[]) {
-    if (r.sku) websiteBySku.set(r.sku, r);
+    if (r.sku) websiteBySku.set(r.sku.toUpperCase(), r);
   }
   const agentBySku = new Map<string, AgentRow>();
   for (const r of (agentRows ?? []) as AgentRow[]) {
-    if (r.sku) agentBySku.set(r.sku, r);
+    if (r.sku) agentBySku.set(r.sku.toUpperCase(), r);
   }
 
   // ── Compute diffs (skipping protected rows) ──
@@ -174,14 +182,24 @@ export async function GET(req: NextRequest) {
     }
 
     const web = websiteBySku.get(sku);
-    if (!web) continue; // SKU not active on website → leave agent row alone (don't auto-deactivate)
+
+    // Effective availability: Sol may only sell a product whose website row
+    // EXISTS, is active, publicly visible AND in stock. Deleted, deactivated
+    // or hidden products count as out of stock. The mass-flip guard below
+    // still protects against an accidental bulk delete/deactivation upstream.
+    const sellable =
+      !!web && !!web.in_stock && web.is_active !== false && web.is_publicly_visible !== false;
+    const effective: Record<SyncedField, unknown> = {
+      in_stock: sellable,
+      stock_quantity: sellable ? web?.stock_quantity ?? 0 : 0,
+    };
 
     const fieldChanges: FieldChange[] = [];
     for (const field of SYNCED_FIELDS) {
       const oldV = (agent as unknown as Record<string, unknown>)[field];
-      const newV = (web as unknown as Record<string, unknown>)[field];
+      const newV = effective[field];
       if (valuesDiffer(field, oldV, newV)) {
-        fieldChanges.push({ sku, field, oldValue: oldV ?? null, newValue: newV ?? null });
+        fieldChanges.push({ sku: agent.sku ?? sku, field, oldValue: oldV ?? null, newValue: newV ?? null });
       }
     }
 
@@ -191,6 +209,21 @@ export async function GET(req: NextRequest) {
       if (stockChange && stockChange.oldValue === true && stockChange.newValue === false) {
         oosTransitions.push({ sku, name: agent.name });
       }
+    }
+  }
+
+  // ── Catalog parity: sellable website products Sol doesn't know about ──
+  // We never auto-insert them (a new agent row needs Ed's price decision —
+  // automation NEVER writes prices), so we report + alert instead.
+  const missingInAgent: string[] = [];
+  for (const [key, web] of websiteBySku.entries()) {
+    if (
+      web.in_stock &&
+      web.is_active !== false &&
+      web.is_publicly_visible !== false &&
+      !agentBySku.has(key)
+    ) {
+      missingInAgent.push(web.sku);
     }
   }
 
@@ -213,6 +246,8 @@ export async function GET(req: NextRequest) {
     stock_flips: flipCount,
     stock_flip_pct: Math.round(flipPct * 10) / 10,
     oos_transitions: oosTransitions.length,
+    missing_in_agent: missingInAgent.length,
+    missing_in_agent_skus: missingInAgent.slice(0, 20),
     aborted: false as boolean,
     abort_reason: null as string | null,
   };
@@ -253,8 +288,11 @@ export async function GET(req: NextRequest) {
   // ── Apply changes (one upsert per SKU + one log batch) ──
   if (changesBySku.size > 0) {
     const upsertRows: Array<Record<string, unknown>> = [];
-    for (const [sku, cs] of changesBySku.entries()) {
-      const row: Record<string, unknown> = { sku };
+    for (const cs of changesBySku.values()) {
+      // cs[0].sku carries the agent row's ORIGINAL casing (the map key is
+      // uppercased for matching) — required so the upsert hits the existing
+      // row instead of inserting a duplicate.
+      const row: Record<string, unknown> = { sku: cs[0].sku };
       for (const c of cs) row[c.field] = c.newValue;
       row.updated_at = new Date().toISOString();
       upsertRows.push(row);
@@ -300,6 +338,21 @@ export async function GET(req: NextRequest) {
       operatorPhone,
       `📉 *Inventario:* productos marcados como AGOTADOS en el sitio web (Sol ya no los va a recomendar):\n${list}${more}`
     ).catch((e) => console.warn('[sync-inventory] OOS alert failed:', e));
+  }
+
+  // ── Missing-SKU alert — once a day (the 12:0x UTC run of this */10 cron) ──
+  const nowUtc = new Date();
+  if (
+    operatorPhone &&
+    missingInAgent.length > 0 &&
+    nowUtc.getUTCHours() === 12 &&
+    nowUtc.getUTCMinutes() < 10
+  ) {
+    const list = missingInAgent.slice(0, 12).map((s) => `• ${s}`).join('\n');
+    sendWhatsAppMessage(
+      operatorPhone,
+      `🛒 *Catálogo de Sol:* ${missingInAgent.length} producto(s) vendibles en oiikon.com que Sol NO tiene (no los puede ofrecer ni cobrar):\n${list}\n\nAgrégalos a agent_product_catalog con su precio para que Sol los venda.`
+    ).catch((e) => console.warn('[sync-inventory] missing-sku alert failed:', e));
   }
 
   summary.duration_ms = Date.now() - startedAt;
