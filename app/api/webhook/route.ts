@@ -58,6 +58,7 @@ import {
 import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-extractor';
 import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
 import { applyPayLinkMarkers } from '@/lib/paylink';
+import { validateSolReply, extractCheckoutUrls } from '@/lib/validate-reply';
 import {
   detectLanguageFromHistory,
   formatLanguageLockForPrompt,
@@ -842,6 +843,32 @@ async function processWebhookLocked(
       .replace(/\[\[?\s*(SEND_IMAGE|PAYLINK)\b[^\]]*\]\]?/gi, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+
+    // ── Pre-send validation gate (lib/validate-reply.ts) ─────────────
+    // Deterministic enforcement of the non-negotiables: no out-of-stock /
+    // discontinued product pitched with price+link, no model-invented PayPal
+    // URL (only URLs the pay-link builder just produced may survive), no
+    // marker leakage. Checkout URLs present BEFORE applyPayLinkMarkers ran
+    // were written by the model itself — always fake.
+    {
+      const v = validateSolReply(cleanMessage, products, {
+        hallucinatedPaymentUrls: extractCheckoutUrls(normalizedMessage),
+        language: detectedLang === 'en' || detectedLang === 'fr' || detectedLang === 'ht' ? detectedLang : 'es',
+      });
+      if (v.violations.length > 0) {
+        console.warn(
+          `[VALIDATOR] ${senderPhone} conv=${conversation.id} :: ${v.violations.map((x) => `${x.rule}(${x.detail})`).join(' ; ')}`
+        );
+        cleanMessage = v.text;
+        if (v.blockedSkus.length > 0) {
+          // Don't send the photo of a product whose pitch we just blocked.
+          const blocked = new Set(v.blockedSkus.map((s) => s.toUpperCase()));
+          for (let i = imageSkus.length - 1; i >= 0; i--) {
+            if (blocked.has(imageSkus[i].toUpperCase())) imageSkus.splice(i, 1);
+          }
+        }
+      }
+    }
 
     // ── Handle HANDOFF ───────────────────────────────────
     if (handoffReason) {
