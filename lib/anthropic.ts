@@ -832,12 +832,64 @@ export function hasRejectionSignal(userText: string): boolean {
  *      SKU, financing hint, or a budget question) BEFORE acknowledging and
  *      backing off. No forcing — one pivot attempt, then respect the no.
  */
+/**
+ * Derive the product the customer already has context about, so a later
+ * bare "¿precio?" / "which one?" resolves to THAT product instead of a
+ * generic catalog dump. Root cause it fixes: the ad product was injected
+ * only on turn 1, so a F5000-ad lead's second message ("le prix?") lost the
+ * context and got a generic 3-tier list.
+ *
+ * Priority (most-current intent wins):
+ *   1. The most recent assistant message that quoted exactly ONE model SKU
+ *      (a real recommendation, scanning only the last 8 messages so an
+ *      ancient quote can't override a fresh arrival). A multi-SKU menu does
+ *      NOT count — that's not a single recommendation.
+ *   2. The product NAME from the Click-to-WhatsApp ad (`ad_source`).
+ *   3. The resolved ad product SKU (`product_interest`).
+ * Returns null when there's no established product context.
+ */
+const MODEL_SKU_RE = /\b([EF]\d{3,4}[A-Z]{0,5})\b/g;
+
+export function deriveKnownProductHint(args: {
+  history: Message[];
+  adSource?: string | null;
+  productInterest?: string | null;
+}): string | null {
+  const recent = args.history.slice(-8);
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const m = recent[i];
+    if (m.role !== 'assistant') continue;
+    const uniq = Array.from(
+      new Set(Array.from(m.content.matchAll(MODEL_SKU_RE), (x) => x[1].toUpperCase()))
+    );
+    if (uniq.length === 1) return uniq[0]; // a single, clear recommendation
+    if (uniq.length > 1) break; // a menu — no single rec yet, fall to arrival
+  }
+  if (args.adSource) {
+    const name = (args.adSource.split(' | ')[1] ?? '').trim();
+    if (name) return name;
+  }
+  if (args.productInterest) return args.productInterest.toUpperCase();
+  return null;
+}
+
 export function buildDynamicDirectives(args: {
   userTurnCount: number;
   intentStage?: CustomerProfileReading['intent_stage'];
   lastUserText: string;
+  knownProductHint?: string | null;
 }): string {
   const rules: string[] = [];
+
+  if (args.knownProductHint) {
+    rules.push(
+      `• CONTEXTO DE PRODUCTO: el cliente ya tiene contexto sobre **${args.knownProductHint}** ` +
+        `(llegó por ese anuncio o ya se lo cotizaste). Si pregunta "¿precio?", "¿cuál?", "¿cómo lo compro?" ` +
+        `u otra duda SIN nombrar otro producto, asume que se refiere a ${args.knownProductHint}: respóndele ` +
+        `sobre ESE equipo directo (precio + link, o si está agotado la alternativa más cercana). NO sueltes ` +
+        `el catálogo genérico de 3 tramos. Si el cliente nombra o pide otro equipo, síguelo a ese sin insistir.`
+    );
+  }
 
   if (args.intentStage === 'listo_comprar' && args.userTurnCount >= 3) {
     rules.push(

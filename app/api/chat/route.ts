@@ -49,6 +49,7 @@ import {
   extractKBSuggestions,
   scoreLeadQuality,
   buildDynamicDirectives,
+  deriveKnownProductHint,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import {
@@ -197,6 +198,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       userTurnCount,
       intentStage: customerProfile?.reading?.intent_stage ?? undefined,
       lastUserText: message,
+      // Web has no ad referral, but the last-quoted product still anchors a
+      // bare "¿precio?" to that unit instead of a generic catalog.
+      knownProductHint: deriveKnownProductHint({ history: historyWithoutLast }),
     });
 
     // Learned coaching from the daily interaction-review loop (cached 10 min
