@@ -652,7 +652,7 @@ async function processWebhookLocked(
           `. YA SABES qué producto le interesa — abre reconociéndolo por nombre. ` +
           (priceAsk
             ? `Acaba de preguntar el PRECIO: dáselo DIRECTO de ESE equipo (precio + link + [SEND_IMAGE:SKU]) y cierra con UNA pregunta corta de uso. NO abras genérico ni escondas el precio. Si ese equipo está agotado, ofrece la alternativa en stock más cercana.`
-            : `Haz UNA pregunta de calificación enfocada en ese producto ("Veo que le interesa el ${adProductName} — ¿es para su casa?"). NO preguntes "¿qué quiere alimentar?" como si no supieras nada. No des precio salvo que lo pida.`);
+            : `AYÚDALO PRIMERO — sé práctico, no lo interrogues: dale los DATOS ÚTILES de ESE equipo en términos cotidianos (qué puede mantener andando: nevera, ventiladores, luces, TV…) + precio + link + [SEND_IMAGE:SKU]. SOLO DESPUÉS, una pregunta de uso corta y OPCIONAL para afinar ("¿es para su casa, un RV, o el trabajo?") — nunca como condición para darle valor. NO hagas que el comprador adivine ni responda un cuestionario antes de ayudarlo. Si está agotado, ofrece la alternativa en stock más cercana.`);
         if (adProductSku) {
           waitUntil(
             updateConversationFields(conversation.id, { product_interest: adProductSku }).catch(
