@@ -48,6 +48,49 @@ export default function AdsPage() {
     load();
   }, [load]);
 
+  // Ad URL → product map (operator-maintained). Powers Sol's product recovery
+  // when Meta's CTWA referral arrives without a headline.
+  const [mapRows, setMapRows] = useState<
+    Array<{ id: string; ad_url: string; sku: string | null; product_name: string | null }>
+  >([]);
+  const [newUrl, setNewUrl] = useState('');
+  const [newSku, setNewSku] = useState('');
+  const [mapMsg, setMapMsg] = useState<string | null>(null);
+
+  const loadMap = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ads/url-map', { cache: 'no-store' });
+      const json = await res.json();
+      if (res.ok) setMapRows(json.rows ?? []);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    loadMap();
+  }, [loadMap]);
+
+  async function addMapping() {
+    setMapMsg(null);
+    const res = await fetch('/api/ads/url-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ad_url: newUrl.trim(), sku: newSku.trim() }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      setMapMsg(json.error ?? 'Error');
+      return;
+    }
+    setNewUrl('');
+    setNewSku('');
+    await loadMap();
+  }
+  async function deleteMapping(id: string) {
+    await fetch(`/api/ads/url-map?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await loadMap();
+  }
+
   const t = data?.totals;
 
   return (
@@ -199,6 +242,69 @@ export default function AdsPage() {
             </p>
           </>
         )}
+
+        {/* Ad URL → product map (operator-maintained) */}
+        <div className="bg-surface-800 border border-surface-600 rounded-xl p-4 space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-100">Mapa de anuncios → producto</h2>
+            <p className="text-xs text-gray-500">
+              Cuando lances un anuncio nuevo, agrega su link + el SKU del producto. Así Sol reconoce
+              el producto desde el PRIMER lead, aunque Meta no mande el nombre del producto.
+            </p>
+          </div>
+          <div className="flex flex-col md:flex-row gap-2">
+            <input
+              value={newUrl}
+              onChange={(e) => setNewUrl(e.target.value)}
+              placeholder="https://fb.me/… o instagram.com/p/…"
+              className="flex-1 bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-sm text-gray-200
+                         placeholder:text-gray-600 focus:outline-none focus:border-whatsapp-500/50"
+            />
+            <input
+              value={newSku}
+              onChange={(e) => setNewSku(e.target.value.toUpperCase())}
+              placeholder="SKU (ej. F5000LFP)"
+              className="md:w-44 bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-sm text-gray-200
+                         placeholder:text-gray-600 focus:outline-none focus:border-whatsapp-500/50"
+            />
+            <button
+              type="button"
+              onClick={addMapping}
+              disabled={!newUrl.trim() || !newSku.trim()}
+              className="px-3 py-2 rounded-lg bg-whatsapp-500/15 text-whatsapp-600 border border-whatsapp-500/30
+                         text-sm font-medium hover:bg-whatsapp-500/25 disabled:opacity-40"
+            >
+              Agregar
+            </button>
+          </div>
+          {mapMsg && <p className="text-xs text-red-400">{mapMsg}</p>}
+          <div className="space-y-1.5">
+            {mapRows.length === 0 && <p className="text-sm text-gray-500">Sin anuncios mapeados.</p>}
+            {mapRows.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center gap-3 bg-surface-700/50 border border-surface-600 rounded-lg px-3 py-2"
+              >
+                <span className="shrink-0 w-24 text-xs font-semibold text-gray-200">{m.sku ?? '—'}</span>
+                <a
+                  href={m.ad_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 min-w-0 truncate text-xs text-gray-500 hover:text-whatsapp-600"
+                >
+                  {m.ad_url}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => deleteMapping(m.id)}
+                  className="shrink-0 text-xs text-gray-500 hover:text-red-400"
+                >
+                  Quitar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
