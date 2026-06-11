@@ -710,7 +710,9 @@ export interface Offer {
 // virtually every PECRON SKU). Override without a deploy via the
 // SOL_PRESENTABLE_COUPONS env (comma-separated list of codes).
 const DEFAULT_PRESENTABLE_COUPONS = [
-  'MEMORIAL100', 'PECRON7', 'E3600SAVE', 'E3800SAVE50', 'FAMILIA_F5000',
+  // SUMMER100 replaced the expired MEMORIAL100 (discount_codes description,
+  // 2026-06-06) — same $100-off-PECRON role for the hurricane-prep season.
+  'SUMMER100', 'PECRON7', 'E3600SAVE', 'E3800SAVE50', 'FAMILIA_F5000',
   'WELCOME50', 'BIENVENIDO10', 'SAVE5', 'HURRICANE5',
 ];
 
