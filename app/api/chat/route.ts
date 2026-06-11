@@ -24,6 +24,7 @@ export const dynamic = 'force-dynamic';
 // the cold-start failure becomes invisible to users.
 export const maxDuration = 30;
 
+import { validateSolReply } from '@/lib/validate-reply';
 import {
   getOrCreateWebConversation,
   loadRecentMessages,
@@ -224,8 +225,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Extract `[SEND_IMAGE:SKU]` tags into a structured image list the
     // frontend renders inline (instead of sending separate WhatsApp media).
-    const { text: cleanText, skus } = extractImageTags(aiMessage);
-    const images = await resolveImages(skus);
+    const { text: rawCleanText, skus } = extractImageTags(aiMessage);
+
+    // Pre-send validation gate (lib/validate-reply.ts). The web widget has
+    // no pay-link builder, so ANY checkout URL here is model-invented.
+    const validated = validateSolReply(rawCleanText, products, {
+      forbidAllPaymentUrls: true,
+      language: detectedLang === 'en' || detectedLang === 'fr' || detectedLang === 'ht' ? detectedLang : 'es',
+    });
+    if (validated.violations.length > 0) {
+      console.warn(
+        `[VALIDATOR][chat] conv=${conversation.id} :: ${validated.violations.map((v) => `${v.rule}(${v.detail})`).join(' ; ')}`
+      );
+    }
+    const cleanText = validated.text;
+    const blockedSkuSet = new Set(validated.blockedSkus.map((s) => s.toUpperCase()));
+    const images = await resolveImages(skus.filter((s) => !blockedSkuSet.has(s.toUpperCase())));
 
     await storeMessage(conversation.id, 'assistant', cleanText, !!handoffReason);
 
