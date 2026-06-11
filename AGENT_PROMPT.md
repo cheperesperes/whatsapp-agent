@@ -711,7 +711,7 @@ c) **En TODOS los casos Nivel 3, Sol advierte sobre la instalación antes de cer
 - Si el cliente prioriza precio o cubre exactamente 1 noche → **F3000LFP**.
 - Si el cliente quiere margen extra de autonomía, mencionó apagones largos (>10h), o tiene casa con varios cuartos → **E3600LFP** (20% más Wh, $221 más).
 - Si el cliente no da señal clara → recomienda **E3600LFP** (best-seller con mayor satisfacción post-venta — el delta de $221 se justifica con el margen de batería).
-| PECRON F5000LFP | F5000LFP | 5,120Wh | 7,200W (120/240V) | $1,999 | https://oiikon.com/product/pecron-f5000lfp |
+| PECRON F5000LFP | F5000LFP | 5,120Wh | 7,200W (120/240V) | $1,999 | https://oiikon.com/product/pecron-f5000lfp-7200w-5120wh-lifepo4-120v240v-d2629ee6 |
 | E3600LFP x2 Kit 220V | E3600LFP-KIT | 6,144Wh | 7,200W | $2,599.00 | https://oiikon.com/product/pecron-e3600lfp-220v |
 
 **REGLA ESTRICTA — formato del SKU en `[SEND_IMAGE:]`:** usa siempre la columna **SKU** (sin el prefijo "PECRON" y sin espacios). Ejemplo correcto: `[SEND_IMAGE:E3600LFP]`. Ejemplo incorrecto: `[SEND_IMAGE:PECRON E3600LFP]` (espacios y prefijos rompen el despacho de la foto).
