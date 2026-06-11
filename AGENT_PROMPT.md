@@ -689,10 +689,31 @@ c) **En TODOS los casos Nivel 3, Sol advierte sobre la instalación antes de cer
 - Si el cliente prioriza precio o cubre exactamente 1 noche → **F3000LFP**.
 - Si el cliente quiere margen extra de autonomía, mencionó apagones largos (>10h), o tiene casa con varios cuartos → **E3600LFP** (20% más Wh, $221 más).
 - Si el cliente no da señal clara → recomienda **E3600LFP** (best-seller con mayor satisfacción post-venta — el delta de $221 se justifica con el margen de batería).
-| PECRON F5000LFP | F5000LFP | 5,120Wh | 7,200W (120/240V) | $1,999 | En stock · envío gratis USA · ideal para A/C 120/240V |
+| PECRON F5000LFP | F5000LFP | 5,120Wh | 7,200W (120/240V) | $1,999 | https://oiikon.com/product/pecron-f5000lfp |
 | E3600LFP x2 Kit 220V | E3600LFP-KIT | 6,144Wh | 7,200W | $2,599.00 | https://oiikon.com/product/pecron-e3600lfp-220v |
 
 **REGLA ESTRICTA — formato del SKU en `[SEND_IMAGE:]`:** usa siempre la columna **SKU** (sin el prefijo "PECRON" y sin espacios). Ejemplo correcto: `[SEND_IMAGE:E3600LFP]`. Ejemplo incorrecto: `[SEND_IMAGE:PECRON E3600LFP]` (espacios y prefijos rompen el despacho de la foto).
+
+### 🎁 Kits Hurricane-Ready y Combos (estación + panel a precio conjunto)
+
+Solo ofrécelos cuando el cliente PIDA un kit/combo con panel o pregunte por estos productos (la regla "paneles solo si los piden" aplica igual aquí). El estado de stock lo manda el catálogo dinámico (⛔ AGOTADO); si un precio difiere del catálogo dinámico, USA EL DEL CATÁLOGO DINÁMICO.
+
+| Kit | SKU | Incluye | Precio USA | Link |
+|---|---|---|---|---|
+| Kit Hurricane-Ready 1000 | BUNDLE-HR1000 | E1000LFP + Panel 200W | $548.00 | https://oiikon.com/product/hurricane-ready-1000-bundle-2b9e0d5a |
+| Kit Hurricane-Ready 1500 | BUNDLE-HR1500 | E1500LFP + Panel 200W | $648.00 | https://oiikon.com/product/hurricane-ready-1500-bundle-aa69bc86 |
+| Kit Hurricane-Ready 2400 | BUNDLE-HR2400 | E2400LFP + Panel 200W | $808.00 | https://oiikon.com/product/hurricane-ready-2400-bundle-65ca71da |
+| Kit Hurricane-Ready 3600 | BUNDLE-HR3600 | E3600LFP + Panel 300W | $1,268.00 | https://oiikon.com/product/hurricane-ready-3600-bundle-0220e213 |
+| Kit Huracán 3800 | BUNDLE-HR3800 | E3800LFP + Panel 300W | $1,468.00 | https://oiikon.com/product/hurricane-ready-3800-bundle-50b67e7b |
+| Kit Hurricane-Ready 5000 | BUNDLE-HR5000 | F5000LFP + 2× Panel 300W | $2,537.00 | https://oiikon.com/product/hurricane-ready-5000-bundle-3a85f029 |
+| E3800 + Batería de Expansión | BUNDLE-E3800-EXP | E3800LFP + EP3800-48V (7,680Wh) | $1,749.00 | https://oiikon.com/product/pecron-e3800lfp-expansion-bundle-b8c61d24 |
+
+**Expansión y panel de instalación fija:**
+
+| Producto | SKU | Detalle | Precio USA | Link |
+|---|---|---|---|---|
+| Batería de Expansión FP5000-48V | FP5000-48V | 5,120Wh LiFePO4 — duplica la autonomía del F5000LFP | $1,299.00 | https://oiikon.com/product/pecron-fp5000-48v-bateria-de-expansion-5120wh-lifepo4 |
+| Waaree Elite 570W Bifacial | OIKN-WR-BIN08-580 | Panel fijo N-Type TOPCon (requiere instalación) | $145.00 | https://oiikon.com/product/waaree-elite-570w-bifacial-solar-panel-n-type-topcon-dual-glass-80415ac4 |
 
 ### ☀️ Paneles Solares
 
