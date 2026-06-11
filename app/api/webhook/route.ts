@@ -35,6 +35,7 @@ import {
   getConversationByAnyPhone,
   resolveProductFromUrl,
   resolveAdProductFromUrlHistory,
+  resolveAdProductFromMap,
   updateConversationFields,
   OPERATOR_REPLY_REASON,
 } from '@/lib/supabase';
@@ -655,9 +656,18 @@ async function processWebhookLocked(
           adProductName = r.headline.trim();
         }
       }
-      // Rare case: Meta sent only the ad short-link, no headline (e.g. Geo,
-      // fb.me/6LqKWPscm). Recover the product from our own history of the SAME
-      // ad URL — it almost always arrived WITH the product name on other leads.
+      // Meta sent no headline → resolve the product from the ad URL. First the
+      // operator-maintained map (Ed's ground truth per ad; works on the FIRST
+      // lead of a brand-new ad), then our own conversation history of the same
+      // URL (e.g. Geo, fb.me/6LqKWPscm — seen WITH the product on other leads).
+      if (!adProductName && refUrl) {
+        const mapped = await resolveAdProductFromMap(refUrl).catch(() => null);
+        if (mapped) {
+          adProductName = mapped.name;
+          adProductSku = mapped.sku;
+          console.log(`[WEBHOOK] ad product from URL map for ${senderPhone}: ${mapped.sku ?? mapped.name}`);
+        }
+      }
       if (!adProductName && refUrl) {
         const hist = await resolveAdProductFromUrlHistory(refUrl).catch(() => null);
         if (hist) {

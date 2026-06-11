@@ -1071,6 +1071,29 @@ export async function resolveProductFromUrl(
 }
 
 /**
+ * Operator-maintained ad URL → product map (`ad_url_map` table). Authoritative
+ * for a known ad: Ed declares "this fb.me/IG link sells the F5000" when he
+ * launches it, so even the FIRST headline-less lead resolves correctly. Checked
+ * before the history heuristic. Returns null if the URL isn't mapped/active.
+ */
+export async function resolveAdProductFromMap(
+  sourceUrl: string | null | undefined,
+): Promise<{ name: string; sku: string | null } | null> {
+  if (!sourceUrl || typeof sourceUrl !== 'string') return null;
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from('ad_url_map')
+    .select('sku, product_name')
+    .eq('ad_url', sourceUrl)
+    .eq('active', true)
+    .limit(1)
+    .maybeSingle();
+  const row = data as { sku?: string | null; product_name?: string | null } | null;
+  if (!row || (!row.sku && !row.product_name)) return null;
+  return { name: (row.product_name ?? row.sku) as string, sku: row.sku ?? null };
+}
+
+/**
  * Recover the ad's product when Meta's CTWA referral arrives with only a
  * source URL and NO headline (rare — ~1 in 40 ad leads). The SAME ad short-link
  * (e.g. fb.me/6LqKWPscm) almost always arrived WITH the product name on other
