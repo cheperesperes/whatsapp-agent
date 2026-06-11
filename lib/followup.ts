@@ -177,3 +177,102 @@ export function buildPaylinkNudgeDraft(input: PaylinkNudgeInput): string {
   const what = model ? `el ${model}` : 'su pedido';
   return `${g}¿alguna duda con el pago de ${what}? Su link de pago seguro sigue activo — aquí estoy si surgió algo o si quiere que le ayude a completarlo. 😊`;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Sales-pipeline nudge ladder (2026-06-11)
+//
+// A top seller follows a quoted lead more than once. The ladder, all inside
+// the WhatsApp 24h free-form window measured from the CUSTOMER's last
+// message:
+//
+//   touch 1 (2-6h)   quote_nudge        — quoted, went quiet same evening
+//                    paylink_nudge      — pay-link sent, didn't pay (existing)
+//   touch 2 (18-23h) window_close_nudge — still quiet, last free-form chance
+//   day 2-14         manual_chase       — dashboard queue; operator sends
+//                                         from the WhatsApp app (the API
+//                                         can't free-form outside 24h)
+//
+// Hard caps: max 2 automated touches per conversation, ≥10h apart, never
+// after a reply/order/opt-out/escalation, quiet-hours aware. The ledger
+// lives in the sol_followups table (NOT text markers) — every automated
+// send inserts a row there, and every cron consults it before sending.
+// ════════════════════════════════════════════════════════════════════════════
+
+export type FollowupKind =
+  | 'quote_nudge'
+  | 'window_close_nudge'
+  | 'paylink_nudge'
+  | 'manual_chase';
+
+/** An assistant message containing a storefront product link = a quote. Same
+ * definition send-followups has always used. */
+export const PRODUCT_QUOTE_RE = /https?:\/\/(?:www\.)?oiikon\.com\/product\//i;
+
+/** Max automated nudges per conversation, across all kinds. */
+export const MAX_AUTO_NUDGES = 2;
+/** Minimum spacing between two automated nudges. */
+export const MIN_NUDGE_GAP_HOURS = 10;
+
+export interface QuoteNudgeInput {
+  customerName: string | null;
+  lastAssistantContent: string;
+  language: NudgeLanguage;
+  /** Rotates the copy so consecutive leads don't read identical. Any int. */
+  variant?: number;
+}
+
+/**
+ * Touch-1 for a quoted-but-quiet lead (same evening, 2-6h). Asks for the
+ * close softly: answer doubts + offer to leave the order ready. Makes NO
+ * price/discount/stock claims — those may have changed since the quote.
+ */
+export function buildQuoteNudgeDraft(input: QuoteNudgeInput): string {
+  const { customerName, lastAssistantContent, language } = input;
+  const model = extractProductModel(lastAssistantContent);
+  const first = formatFirstName(customerName);
+  const v = Math.abs(input.variant ?? 0) % 2;
+
+  if (language === 'en') {
+    const g = first ? `Hi ${first}, ` : 'Hi, ';
+    const what = model ? `the ${model}` : 'the unit I recommended';
+    return v === 0
+      ? `${g}what did you think of ${what}? Happy to answer any question right away — and if you're ready, I'll set up your secure checkout link so it's done in 2 minutes. 😊`
+      : `${g}just circling back on ${what}. Any questions I can clear up? Whenever you're ready I'll get your order link set — no pressure. 😊`;
+  }
+  if (language === 'fr') {
+    const g = first ? `Bonjour ${first}, ` : 'Bonjour, ';
+    const what = model ? `le ${model}` : `l'équipement que je vous ai recommandé`;
+    return `${g}que pensez-vous de ${what} ? Je réponds à toute question tout de suite — et si vous êtes prêt(e), je vous prépare le lien de paiement sécurisé en 2 minutes. 😊`;
+  }
+  if (language === 'ht') {
+    const g = first ? `Bonjou ${first}, ` : 'Bonjou, ';
+    const what = model ? `${model} la` : 'aparèy mwen te rekòmande a';
+    return `${g}kisa ou panse de ${what}? M ap reponn nenpòt kesyon touswit — epi si ou pare, m ap prepare lyen peman sekirize ou a nan 2 minit. 😊`;
+  }
+  const g = first ? `Hola ${first}, ` : 'Hola, ';
+  const what = model ? `el ${model}` : 'el equipo que le recomendé';
+  return v === 0
+    ? `${g}¿qué le pareció ${what}? Cualquier duda se la respondo al momento — y si ya se decidió, le preparo su link de pago seguro y queda listo en 2 minutos. 😊`
+    : `${g}quedé pendiente con ${what}. ¿Le quedó alguna duda que le pueda aclarar? Cuando me diga, se lo dejo listo para ordenar — sin compromiso. 😊`;
+}
+
+/**
+ * Suggested copy for the MANUAL chase queue (>24h — operator sends it from
+ * the WhatsApp app, where a human 1-to-1 message is allowed). No price or
+ * discount claims (they may have changed); just reopen + offer help.
+ */
+export function buildManualChaseDraft(input: {
+  customerName: string | null;
+  sku: string | null;
+  language: 'es' | 'en';
+}): string {
+  const first = formatFirstName(input.customerName);
+  if (input.language === 'en') {
+    const g = first ? `Hi ${first}! ` : 'Hi! ';
+    const what = input.sku ? `the *${input.sku}*` : 'the power station you were looking at';
+    return `${g}It's Sol from Oiikon 😊 A few days ago we talked about ${what} — it's still available. If any question was holding you back, I'll answer it right away, and whenever you're ready I can leave your order set up in 2 minutes. Still interested?`;
+  }
+  const g = first ? `¡Hola ${first}! ` : '¡Hola! ';
+  const what = input.sku ? `el *${input.sku}*` : 'el equipo que estuvo mirando';
+  return `${g}Soy Sol de Oiikon 😊 Hace unos días hablamos de ${what} — sigue disponible. Si alguna duda lo detuvo, se la respondo al momento, y cuando guste se lo dejo listo para ordenar en 2 minutos. ¿Le interesa todavía?`;
+}

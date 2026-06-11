@@ -6,7 +6,13 @@ import {
   storeMessage,
 } from '@/lib/supabase';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
-import { buildFollowupDraft, hasPriorFollowup } from '@/lib/followup';
+import {
+  buildFollowupDraft,
+  hasPriorFollowup,
+  extractProductModel,
+  MAX_AUTO_NUDGES,
+  MIN_NUDGE_GAP_HOURS,
+} from '@/lib/followup';
 import { isInQuietHours, timezoneFromPhone } from '@/lib/timezone';
 
 export const dynamic = 'force-dynamic';
@@ -49,15 +55,22 @@ export const runtime = 'nodejs';
 
 // ── config ──────────────────────────────────────────────────────────────────
 
+/** The 18-23h window is measured from the CUSTOMER's last inbound message
+ * (that's what the WhatsApp 24h free-form policy counts). The conversations
+ * prefilter below uses a wider updated_at range because a touch-1 nudge
+ * (sales-followup / paylink-nudge, 2-6h) bumps updated_at without resetting
+ * the policy window. */
 const WINDOW_LOWER_HOURS = 18;
-const WINDOW_UPPER_HOURS = 24;
+const WINDOW_UPPER_HOURS = 23;
+const PREFILTER_LOWER_HOURS = 12;
+const PREFILTER_UPPER_HOURS = 24;
 const PRODUCT_LINK_RE = /https?:\/\/(?:www\.)?oiikon\.com\/product\//i;
 /**
- * How many recent messages to load per candidate. 10 is plenty to detect a
- * prior followup and verify the last message is our quote; keeps the per-run
- * DB load predictable.
+ * How many recent messages to load per candidate. 12 is plenty to detect a
+ * prior followup and a quote in the tail; keeps the per-run DB load
+ * predictable.
  */
-const MESSAGE_TAIL = 10;
+const MESSAGE_TAIL = 12;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -84,6 +97,10 @@ type SkipReason =
   | 'no_product_link'
   | 'no_user_messages'
   | 'already_followed_up'
+  | 'max_nudges'
+  | 'nudge_too_recent'
+  | 'too_early'
+  | 'window_closed'
   | 'quiet_hours'
   | 'send_failed';
 
@@ -125,8 +142,8 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
 
   const now = Date.now();
-  const lowerBound = new Date(now - WINDOW_UPPER_HOURS * 60 * 60 * 1000).toISOString(); // 24h ago
-  const upperBound = new Date(now - WINDOW_LOWER_HOURS * 60 * 60 * 1000).toISOString(); // 18h ago
+  const lowerBound = new Date(now - PREFILTER_UPPER_HOURS * 60 * 60 * 1000).toISOString(); // 24h ago
+  const upperBound = new Date(now - PREFILTER_LOWER_HOURS * 60 * 60 * 1000).toISOString(); // 12h ago
 
   // ── Find candidate conversations ───────────────────────────────────────
   // Strict window: updated_at between 24h-ago (inclusive) and 18h-ago
@@ -197,27 +214,69 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // Must have been a real quote, not a greeting — look for a product link.
-    if (!PRODUCT_LINK_RE.test(last.content)) {
+    // Must have been a real quote, not a greeting — a product link in ANY
+    // recent assistant message. (Not just the last one: after a touch-1
+    // nudge, the last assistant message is the nudge itself, but the lead
+    // is still a quoted lead.)
+    const quoteMsg = msgs.find((m) => m.role === 'assistant' && PRODUCT_LINK_RE.test(m.content));
+    if (!quoteMsg) {
       skipped.push({ conversation_id: c.id, reason: 'no_product_link' });
       continue;
     }
 
     // Must have at least one user message ever — otherwise the customer has
     // never engaged and a nudge would feel like cold outreach, not a follow-up.
-    const hasUserMessage = msgs.some((m) => m.role === 'user');
-    if (!hasUserMessage) {
+    const lastUser = msgs.find((m) => m.role === 'user');
+    if (!lastUser) {
       skipped.push({ conversation_id: c.id, reason: 'no_user_messages' });
       continue;
     }
 
-    // Double-nudge guard: scan assistant messages for our template phrases.
-    const assistantMsgs = msgs
-      .filter((m) => m.role === 'assistant')
-      .map((m) => ({ content: m.content }));
-    if (hasPriorFollowup(assistantMsgs)) {
-      skipped.push({ conversation_id: c.id, reason: 'already_followed_up' });
+    // The 18-23h window is measured from the CUSTOMER's last inbound — that
+    // is what the WhatsApp 24h free-form policy counts. A touch-1 nudge bumps
+    // updated_at but does NOT reset this window.
+    const userAgeH = (now - Date.parse(lastUser.created_at)) / (60 * 60 * 1000);
+    if (userAgeH < WINDOW_LOWER_HOURS) {
+      skipped.push({ conversation_id: c.id, reason: 'too_early', detail: `last inbound ${userAgeH.toFixed(1)}h` });
       continue;
+    }
+    if (userAgeH > WINDOW_UPPER_HOURS) {
+      skipped.push({ conversation_id: c.id, reason: 'window_closed', detail: `last inbound ${userAgeH.toFixed(1)}h` });
+      continue;
+    }
+
+    // ── Nudge-ladder guards (sol_followups ledger) ──────────────────────
+    // Max MAX_AUTO_NUDGES automated touches per conversation, ≥
+    // MIN_NUDGE_GAP_HOURS apart. Pre-ledger nudges (legacy text markers,
+    // no row) can't be timed → conservative skip, preserving the old
+    // one-nudge behavior for them.
+    const { data: ledgerRows } = await supabase
+      .from('sol_followups')
+      .select('created_at')
+      .eq('conversation_id', c.id)
+      .order('created_at', { ascending: false })
+      .limit(MAX_AUTO_NUDGES);
+    const nudges = ledgerRows ?? [];
+    if (nudges.length >= MAX_AUTO_NUDGES) {
+      skipped.push({ conversation_id: c.id, reason: 'max_nudges' });
+      continue;
+    }
+    if (nudges.length > 0) {
+      const gapH = (now - Date.parse(nudges[0].created_at)) / (60 * 60 * 1000);
+      if (gapH < MIN_NUDGE_GAP_HOURS) {
+        skipped.push({ conversation_id: c.id, reason: 'nudge_too_recent', detail: `${gapH.toFixed(1)}h since touch 1` });
+        continue;
+      }
+    } else {
+      // No ledger rows: a legacy text-marker nudge means a pre-ledger touch
+      // we can't time — keep the old single-nudge rule for those.
+      const assistantMsgs = msgs
+        .filter((m) => m.role === 'assistant')
+        .map((m) => ({ content: m.content }));
+      if (hasPriorFollowup(assistantMsgs)) {
+        skipped.push({ conversation_id: c.id, reason: 'already_followed_up' });
+        continue;
+      }
     }
 
     // Resolve language from customer_profiles (heuristic pinning persists it
@@ -241,10 +300,12 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // Build the draft and (unless dry-run) send + persist it.
+    // Build the draft and (unless dry-run) send + persist it. Model context
+    // comes from the QUOTE message (the last message may be a touch-1 nudge,
+    // which carries no product link).
     const draft = buildFollowupDraft({
       customerName: c.customer_name,
-      lastAssistantContent: last.content,
+      lastAssistantContent: quoteMsg.content,
       language,
     });
 
@@ -263,6 +324,15 @@ export async function GET(req: NextRequest) {
       // Persist so (a) the dashboard shows it, (b) the double-nudge guard
       // detects it on the next run.
       await storeMessage(c.id, 'assistant', draft);
+      // Ledger row — the nudge-count source for every cron + the dashboard.
+      const { error: ledgerErr } = await supabase.from('sol_followups').insert({
+        conversation_id: c.id,
+        phone_number: c.phone_number,
+        kind: 'window_close_nudge',
+        sku: extractProductModel(quoteMsg.content),
+        message: draft,
+      });
+      if (ledgerErr) console.error(`[send-followups] ledger insert failed conv=${c.id}: ${ledgerErr.message}`);
       sent.push({
         conversation_id: c.id,
         phone: c.phone_number,

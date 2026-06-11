@@ -37,6 +37,9 @@
     },
     "app/api/cron/paylink-nudge/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/sales-followup/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -75,6 +78,10 @@
     {
       "path": "/api/cron/paylink-nudge",
       "schedule": "30 * * * *"
+    },
+    {
+      "path": "/api/cron/sales-followup",
+      "schedule": "15 * * * *"
     }
   ],
   "headers": [
