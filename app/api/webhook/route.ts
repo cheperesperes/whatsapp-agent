@@ -493,7 +493,13 @@ async function processWebhookLocked(
     );
     // Persist the detection so subsequent turns inherit it as fallback
     // when the current message is SKU-only or emoji-only. Non-blocking.
-    if (customerProfile?.language !== detectedLang) {
+    // Only es/en are persisted — customer_profiles.language drives the ES/EN
+    // marketing-template variants; fr/ht customers stay per-turn detected
+    // (and are naturally excluded from ES/EN blasts).
+    if (
+      (detectedLang === 'es' || detectedLang === 'en') &&
+      customerProfile?.language !== detectedLang
+    ) {
       waitUntil(
         upsertCustomerProfile(senderPhone, { language: detectedLang }).catch(
           (err) =>
@@ -723,7 +729,8 @@ async function processWebhookLocked(
     // hot lead is contacted manually instead of silently dropped.
     let cleanMessage = normalizedMessage;
     {
-      const payLang: 'es' | 'en' = languageLock.includes('ENGLISH') ? 'en' : 'es';
+      // Pay-link / post-payment templates only exist in es/en — map fr/ht → en.
+      const payLang: 'es' | 'en' = detectedLang === 'es' ? 'es' : 'en';
       const pl = await applyPayLinkMarkers(normalizedMessage, payLang, senderPhone);
       cleanMessage = pl.text;
       if (pl.built > 0 || pl.failed > 0) {
