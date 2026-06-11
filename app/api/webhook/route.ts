@@ -726,7 +726,8 @@ async function processWebhookLocked(
           `. YA SABES qué producto le interesa — abre reconociéndolo por nombre. ` +
           (priceAsk
             ? `Acaba de preguntar el PRECIO: dáselo DIRECTO de ESE equipo (precio + link + [SEND_IMAGE:SKU]) y cierra con UNA pregunta corta de uso. NO abras genérico ni escondas el precio. Si ese equipo está agotado, ofrece la alternativa en stock más cercana.`
-            : `AYÚDALO PRIMERO — sé práctico, no lo interrogues: dale los DATOS ÚTILES de ESE equipo en términos cotidianos (qué puede mantener andando: nevera, ventiladores, luces, TV…) + precio + link + [SEND_IMAGE:SKU]. SOLO DESPUÉS, una pregunta de uso corta y OPCIONAL para afinar ("¿es para su casa, un RV, o el trabajo?") — nunca como condición para darle valor. NO hagas que el comprador adivine ni responda un cuestionario antes de ayudarlo. Si está agotado, ofrece la alternativa en stock más cercana.`);
+            : `AYÚDALO PRIMERO — sé práctico, no lo interrogues: dale los DATOS ÚTILES de ESE equipo en términos cotidianos (qué puede mantener andando: nevera, ventiladores, luces, TV…) + precio + link + [SEND_IMAGE:SKU]. SOLO DESPUÉS, una pregunta de uso corta y OPCIONAL para afinar ("¿es para su casa, un RV, o el trabajo?") — nunca como condición para darle valor. NO hagas que el comprador adivine ni responda un cuestionario antes de ayudarlo. Si está agotado, ofrece la alternativa en stock más cercana.`) +
+          ` ⚠️ OFERTA OBLIGATORIA: si el bloque de OFERTAS (en contexto) trae un cupón válido para ESE equipo, INCLÚYELO SIEMPRE en esta apertura — formato ~precio~ *precio con descuento* + código + link con ?promo=CODIGO. Un lead de anuncio que ve el descuento convierte más; omitirlo regala la venta. (Si no hay oferta en el bloque, precio normal sin inventar descuentos.)`;
         if (adProductSku) {
           waitUntil(
             updateConversationFields(conversation.id, { product_interest: adProductSku }).catch(
