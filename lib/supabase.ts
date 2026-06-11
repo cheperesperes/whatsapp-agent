@@ -572,7 +572,13 @@ export async function upsertLeadScore(
 // ============================================================
 
 /**
- * Load all in-stock products from agent_product_catalog for Sol's context window.
+ * Load the full agent_product_catalog for Sol's context window — INCLUDING
+ * out-of-stock rows. OOS products used to be filtered out entirely, which made
+ * Sol deny knowing a product the website still shows (honesty rule → "no está
+ * en mi catálogo"). Now they're included and the formatter marks them
+ * ⛔ AGOTADO so Sol can disclose, offer the closest alternative, and offer a
+ * back-in-stock notification. Pay-links stay safe: lib/paylink.ts rejects any
+ * SKU with in_stock=false.
  */
 export async function loadAgentCatalog(): Promise<AgentProduct[]> {
   const supabase = createServiceClient();
@@ -580,7 +586,7 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
   const { data, error } = await supabase
     .from('agent_product_catalog')
     .select('*')
-    .eq('in_stock', true)
+    .order('in_stock', { ascending: false })
     .order('category')
     .order('sell_price');
 
@@ -664,7 +670,10 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
         priceParts.push(`(antes $${p.original_price.toFixed(2)}, ${discount}% descuento)`);
       }
 
-      lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}`);
+      const oosTag = p.in_stock
+        ? ''
+        : ' ⛔ AGOTADO TEMPORALMENTE — no lo vendas ni des link de pago; informa con honestidad, ofrece la alternativa en stock más cercana y pregunta si quiere que le avisemos cuando regrese';
+      lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}${oosTag}`);
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
       // Real expansion/compatibility pairings (source: pecron.com) so Sol names
       // the correct battery instead of guessing. Only present when populated.

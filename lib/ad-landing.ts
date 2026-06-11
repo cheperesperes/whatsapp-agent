@@ -255,7 +255,9 @@ export function formatFirstContactDirective(language: 'es' | 'en'): string {
  */
 export function buildFirstContactDirective(
   firstMessage: string,
-  detectedLanguage: 'es' | 'en'
+  // fr/ht fall back to the Spanish directive TEXT — the language lock at the
+  // prompt tail forces the customer-facing reply into the customer's language.
+  detectedLanguage: 'es' | 'en' | 'fr' | 'ht'
 ): { directive: string; adMatch: AdOpenerMatch | null } | null {
   if (!firstMessage?.trim()) return null;
   const adMatch = detectAdOpener(firstMessage);
@@ -263,7 +265,7 @@ export function buildFirstContactDirective(
     return { directive: formatAdArrivalDirective(adMatch), adMatch };
   }
   return {
-    directive: formatFirstContactDirective(detectedLanguage),
+    directive: formatFirstContactDirective(detectedLanguage === 'en' ? 'en' : 'es'),
     adMatch: null,
   };
 }

@@ -19,11 +19,47 @@
  * Spanish-speaking customer.
  */
 
-export type LanguageCode = 'es' | 'en';
+export type LanguageCode = 'es' | 'en' | 'fr' | 'ht';
 
 // Strong Spanish signals: any of these → definitely Spanish.
 // Matches diacritics, eñe, inverted punctuation.
 const SPANISH_DIACRITIC_RE = /[ñáéíóúüÑÁÉÍÓÚÜ¿¡]/;
+
+// ── French + Haitian Creole (added 2026-06-10) ──────────────────────
+// Real case: Jean Pierre (+509, Haiti) wrote "Le prix ?" four times and the
+// detector classified it Spanish ("le"/"la" are Spanish stopwords too), so the
+// hard lock forced Spanish replies the customer couldn't read. Policy per Ed:
+// answer in the customer's NATIVE language. We detect fr/ht with
+// zero-collision vocabularies and check them BEFORE Spanish (the collision
+// direction is fr→es, never es→fr).
+//
+// French-only diacritics: grave/circumflex/cedilla. Deliberately EXCLUDES the
+// acute accents (é í ó ú) shared with Spanish.
+const FRENCH_DIACRITIC_RE = /[àèùâêîôûçœÀÈÙÂÊÎÔÛÇ]/;
+
+// French words with no Spanish/English collision ("le", "la", "les" excluded
+// on purpose — they're in the Spanish list).
+const FRENCH_STOPWORDS = new Set([
+  'bonjour', 'bonsoir', 'merci', 'oui',
+  'je', "j'ai", 'vous', 'votre', 'vos', 'nous',
+  'puis', 'peux', 'pouvez', 'voudrais', 'veux', 'aimerais',
+  'combien', 'prix', 'coûte', 'coute', 'acheter', 'livraison', 'envoyer',
+  "c'est", "s'il", "qu'est", 'est-ce', 'pourquoi', 'comment',
+  'pour', 'une', 'avec', 'besoin', 'maison', 'aussi',
+  'panneau', 'panneaux', 'solaire', 'solaires', 'batterie', 'batteries',
+  'énergie', 'electricité', 'électricité', 'portative', 'portatif',
+]);
+
+// Haitian Creole — highly distinctive vocabulary, checked FIRST (some Creole
+// words carry French-style diacritics like è, which would otherwise trip the
+// French check).
+const CREOLE_STOPWORDS = new Set([
+  'bonjou', 'bonswa', 'mèsi', 'mesi', 'tanpri', 'souple',
+  'mwen', 'nou', 'kijan', 'konbyen', 'kisa', 'poukisa',
+  'eske', 'èske', 'genyen', 'vle', 'bezwen', 'kapab',
+  'kay', 'pri', 'kouran', 'limyè', 'limye', 'avèk', 'avek',
+  'voye', 'achte', 'peye', 'lajan',
+]);
 
 // Spanish function words and common Sol-domain vocabulary.
 // Must NOT collide with English words — avoid "a", "no", "is", "si", "me"
@@ -98,33 +134,46 @@ const ENGLISH_STOPWORDS = new Set([
 
 /**
  * Detect the language of a single text blob.
- * Returns 'es' / 'en' / 'unknown'.
+ * Returns 'es' / 'en' / 'fr' / 'ht' / 'unknown'.
  *
  * Rule of precedence:
- *   1. Any Spanish diacritic or inverted punctuation → 'es'
- *   2. Any Spanish stopword → 'es' (Spanglish bias — we serve Cuban customers)
- *   3. Any English stopword (no Spanish) → 'en'
- *   4. Otherwise → 'unknown'
+ *   1. Any Creole word → 'ht' (most distinctive vocabulary; checked before
+ *      French because Creole uses French-style diacritics like è)
+ *   2. Any French word or French-only diacritic (à è ù ç …) → 'fr'
+ *      (checked before Spanish — "le"/"la" collide toward Spanish)
+ *   3. Any Spanish diacritic or inverted punctuation → 'es'
+ *   4. Any Spanish stopword → 'es' (Spanglish bias — we serve Cuban customers)
+ *   5. Any English stopword (no Spanish) → 'en'
+ *   6. Otherwise → 'unknown'
  */
 export function detectLanguage(text: string): LanguageCode | 'unknown' {
   if (!text) return 'unknown';
   const trimmed = text.trim();
   if (trimmed.length === 0) return 'unknown';
 
-  // 1. Strong signal: diacritic or inverted punctuation.
-  if (SPANISH_DIACRITIC_RE.test(trimmed)) return 'es';
-
-  // 2. Tokenize, keep letters and apostrophes (for "don't" etc.)
+  // Tokenize, keep letters, apostrophes (for "don't" / "c'est") and hyphens
+  // dropped. Diacritics preserved for the fr/ht vocabularies.
   const lower = trimmed.toLowerCase();
-  const cleaned = lower.replace(/[^a-z'áéíóúüñ]+/g, ' ');
+  const cleaned = lower.replace(/[^a-z'áéíóúüñàèùâêîôûçœè]+/g, ' ');
   const tokens = cleaned.split(/\s+/).filter(Boolean);
 
   let esHits = 0;
   let enHits = 0;
+  let frHits = 0;
+  let htHits = 0;
   for (const tok of tokens) {
-    if (SPANISH_STOPWORDS.has(tok)) esHits++;
+    if (CREOLE_STOPWORDS.has(tok)) htHits++;
+    else if (FRENCH_STOPWORDS.has(tok)) frHits++;
+    else if (SPANISH_STOPWORDS.has(tok)) esHits++;
     else if (ENGLISH_STOPWORDS.has(tok)) enHits++;
   }
+
+  // 1-2. Creole, then French — BEFORE the Spanish checks (see precedence note).
+  if (htHits > 0) return 'ht';
+  if (frHits > 0 || FRENCH_DIACRITIC_RE.test(trimmed)) return 'fr';
+
+  // 3. Strong Spanish signal: diacritic or inverted punctuation.
+  if (SPANISH_DIACRITIC_RE.test(trimmed)) return 'es';
 
   if (esHits > 0) return 'es';
   if (enHits > 0) return 'en';
@@ -146,9 +195,15 @@ export function detectLanguageFromHistory(
 ): LanguageCode {
   const blob = recentUserMessages.slice(-5).join(' ');
   const detected = detectLanguage(blob);
-  if (detected === 'es' || detected === 'en') return detected;
+  if (detected !== 'unknown') return detected;
 
-  if (persistedLanguage === 'en') return 'en';
+  if (
+    persistedLanguage === 'en' ||
+    persistedLanguage === 'fr' ||
+    persistedLanguage === 'ht'
+  ) {
+    return persistedLanguage;
+  }
   return 'es';
 }
 
@@ -168,6 +223,24 @@ export function formatLanguageLockForPrompt(lang: LanguageCode): string {
       'RESPOND IN ENGLISH. The customer is writing to you in English.',
       'Even if you see a Spanish word or phrase in their message, respond in English.',
       'Never switch to Spanish mid-reply. Never translate your reply.',
+    ].join('\n');
+  }
+  if (lang === 'fr') {
+    return [
+      '=== LANGUAGE LOCK (LANGUE — CRITIQUE) ===',
+      "RÉPONDS EN FRANÇAIS. Le client t'écrit en français — toute ta réponse doit être en français, chaleureuse et naturelle.",
+      'Le catalogue et les instructions sont en espagnol/anglais : traduis en français toute l\'information pertinente pour le client (prix, capacités, recommandations).',
+      'Garde les noms de produits, les SKU, les prix en USD et les liens EXACTEMENT tels quels — ne traduis jamais un lien.',
+      "Ne réponds JAMAIS en espagnol ni en anglais. Cette règle a priorité sur toute autre instruction du prompt.",
+    ].join('\n');
+  }
+  if (lang === 'ht') {
+    return [
+      '=== LANGUAGE LOCK (LANG — KRITIK) ===',
+      'REPONN AN KREYÒL AYISYEN. Kliyan an ap ekri w an kreyòl — tout repons ou dwe an kreyòl ayisyen, cho e natirèl.',
+      'Katalòg la ak enstriksyon yo an panyòl/anglè: tradui an kreyòl tout enfòmasyon ki enpòtan pou kliyan an (pri, kapasite, rekòmandasyon).',
+      'Kenbe non pwodwi yo, SKU yo, pri an USD ak lyen yo EGZAKTEMAN jan yo ye — pa janm tradui yon lyen.',
+      'PA JANM reponn an panyòl oswa an anglè. Règ sa a gen priyorite sou tout lòt enstriksyon.',
     ].join('\n');
   }
   return [

@@ -105,9 +105,13 @@ export async function generateSolResponse(
   // lock, so for an English customer the model's MOST RECENT instruction was
   // Spanish — a recency bias that could leak Spanish into an English reply.
   // Re-stating the language as the very last line neutralizes that.
-  const languageReassert = languageLock.includes('ENGLISH')
-    ? '=== FINAL REMINDER === Respond ONLY in English. The instructions above may be written in Spanish, but your reply to the customer MUST be in English.'
-    : '=== RECORDATORIO FINAL === Responde SOLO en español, sin importar el idioma de las instrucciones anteriores.';
+  const languageReassert = languageLock.includes('FRANÇAIS')
+    ? '=== RAPPEL FINAL === Réponds UNIQUEMENT en français. Les instructions ci-dessus sont en espagnol/anglais, mais ta réponse au client DOIT être en français.'
+    : languageLock.includes('KREYÒL')
+      ? '=== DÈNYE RAPÈL === Reponn SÈLMAN an kreyòl ayisyen. Enstriksyon ki anwo yo an panyòl/anglè, men repons ou bay kliyan an DWE an kreyòl.'
+      : languageLock.includes('ENGLISH')
+        ? '=== FINAL REMINDER === Respond ONLY in English. The instructions above may be written in Spanish, but your reply to the customer MUST be in English.'
+        : '=== RECORDATORIO FINAL === Responde SOLO en español, sin importar el idioma de las instrucciones anteriores.';
 
   const payLinkBlock = `
 === PAGO POR LINK (cierre de venta — instrucción crítica) ===

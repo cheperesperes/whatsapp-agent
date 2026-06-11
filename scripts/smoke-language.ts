@@ -165,6 +165,43 @@ checkTrue(
   formatLanguageLockForPrompt('en').toLowerCase().includes('never switch')
 );
 
+// ── detectLanguage: French + Haitian Creole (PROD case 2026-06-10) ──
+// Jean Pierre (+509, Haiti) asked "Le prix ?" four times and got Spanish
+// every time — "le" hit the Spanish stopword list. These mirror his real
+// messages verbatim.
+
+check('PROD fr: Bonjour ! Puis-je en savoir plus à ce sujet ?',
+  detectLanguage('Bonjour ! Puis-je en savoir plus à ce sujet ?'), 'fr');
+check('PROD fr: Le prix ? (le collides with es — prix must win)',
+  detectLanguage('Le prix ?'), 'fr');
+check('PROD fr: 7500 watts le prix ? (en+es+fr tokens — fr wins)',
+  detectLanguage('7500 watts le prix ?'), 'fr');
+check('PROD fr/es mix: Necesita una panneau solaire portative',
+  detectLanguage('Necesita una panneau solaire portative'), 'fr');
+check('fr diacritic only: ça coûte combien', detectLanguage('ça coûte combien'), 'fr');
+check('ht: Bonjou, konbyen pri a?', detectLanguage('Bonjou, konbyen pri a?'), 'ht');
+check('ht: Mwen vle achte yon estasyon', detectLanguage('Mwen vle achte yon estasyon'), 'ht');
+check('ht beats fr diacritic: èske ou gen kouran',
+  detectLanguage('èske ou gen kouran'), 'ht');
+
+// Guards: existing es/en behavior unchanged by the new languages.
+check('guard: hola gracias still es', detectLanguage('hola gracias'), 'es');
+check('guard: how much still en', detectLanguage('Hi, how much is this?'), 'en');
+
+check('history: French thread → fr',
+  detectLanguageFromHistory(['Bonjour !', 'Le prix ?']), 'fr');
+check('history: unknown with persisted fr → fr',
+  detectLanguageFromHistory(['E1000LFP'], 'fr'), 'fr');
+
+checkTrue('lock fr: contains FRANÇAIS',
+  formatLanguageLockForPrompt('fr').includes('FRANÇAIS'));
+checkTrue('lock fr: keeps links untranslated',
+  formatLanguageLockForPrompt('fr').includes('liens'));
+checkTrue('lock ht: contains KREYÒL',
+  formatLanguageLockForPrompt('ht').includes('KREYÒL'));
+checkTrue('lock ht: forbids es/en replies',
+  formatLanguageLockForPrompt('ht').includes('PA JANM'));
+
 // ── Summary ───────────────────────────────────────────────────
 
 console.log();
