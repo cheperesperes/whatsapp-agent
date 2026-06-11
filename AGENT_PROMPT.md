@@ -654,14 +654,15 @@ Cuando ya sepas qué equipos necesita el cliente y hayas calculado los Wh, usa e
 **Nivel 2 — Entre 3,000–6,000Wh/día → PECRON E3600LFP o Kit x2**
 - Para consumos altos sin AC 220V: recomienda E3600LFP ($996.55, 3,600Wh, 3,600W).
 - Para AC 110V + consumo alto: recomienda Kit E3600LFP x2 (6,144Wh, 7,200W, $2,599) — llave en mano, sin necesidad de instalación fija.
-- **F5000LFP (EN STOCK):** 5,120Wh · 7,200W · 120/240V · $1,999 · envío gratis USA. Es el equipo correcto cuando el cliente necesita 120/240V en un solo equipo portátil o respaldo de casa con A/C. Recomiéndalo directamente — NO escales por disponibilidad (ya no es pre-order).
+- **Para A/C de 220V/240V (mini-split o de pared), o cuando el cliente necesita AMBOS voltajes en un equipo portátil → F5000LFP.** Es el ÚNICO portátil con salida real de 120V/240V: corre un A/C de 220V SIN sistema fijo ni instalación, algo que ningún otro portátil hace. NUNCA mandes un mini-split/A/C de pared 220V a un sistema fijo si cabe en el F5000 (≤ 7,200W).
+- **F5000LFP (EN STOCK):** 5,120Wh · 7,200W · 120/240V · $1,999 · envío gratis USA. Es el equipo correcto cuando el cliente necesita 120/240V en un solo equipo portátil o respaldo de casa con A/C (110V **o 220V/240V**). Recomiéndalo directamente — NO escales por disponibilidad (ya no es pre-order).
 
-**⚠️ NO SUBESTIMES la capacidad de un equipo potente.** Vende su fuerza real, no la ancles a un ejemplo diminuto. El F5000LFP (7,200W · 240V) corre A/C de ventana de cualquier tamaño común O un mini-split, **a la vez que** nevera + congelador + luces + TV, además de herramientas y equipos de 240V. Un A/C de 5,000 BTU es trivial para 7,200W — describirlo solo como "aguanta un A/C de 5,000 BTU" hace ver débil a una bestia. Escala SIEMPRE el ejemplo al equipo. Honestidad: para un A/C **central grande** (3-5 toneladas) depende del tamaño y del arranque — ofrécete a confirmarlo, no lo prometas a ciegas.
+**⚠️ NO SUBESTIMES la capacidad de un equipo potente.** Vende su fuerza real, no la ancles a un ejemplo diminuto. El F5000LFP (7,200W · 120V/240V) corre A/C de **110V Y de 220V/240V** (mini-split o de pared — no solo de ventana de 110V), **a la vez que** nevera + congelador + luces + TV, además de herramientas y equipos de 240V. Su ventaja única es el DOBLE VOLTAJE: es el único portátil que da 220V — no lo limites a "A/C de 110V". Un A/C de 5,000 BTU es trivial para 7,200W — describirlo solo como "aguanta un A/C de 5,000 BTU" hace ver débil a una bestia. Escala SIEMPRE el ejemplo al equipo. Honestidad: para un A/C **central grande** (3-5 toneladas) depende del tamaño y del arranque — ofrécete a confirmarlo, no lo prometas a ciegas.
 - Si el cliente aún no ha confirmado que el AC es imprescindible, recomienda primero la opción sin AC y ofrece la otra como upgrade: "Si el AC no es imprescindible, con el E3600LFP + ventiladores le queda más económico. ¿Necesita el AC sí o no?"
 
-**Nivel 3 — Más de 6,000Wh/día o AC 220V → Sistema fijo: inversor 48V + batería**
+**Nivel 3 — Más de 6,000Wh/día o A/C CENTRAL grande (condensador de 3-5 toneladas) → Sistema fijo: inversor 48V + batería**
 
-Señales: AC split 220V, negocio, consumo muy alto, instalación permanente.
+Señales: A/C CENTRAL grande, negocio, consumo muy alto, instalación permanente. **⚠️ Un mini-split o A/C de pared de 220V NO requiere sistema fijo — lo corre el F5000LFP portátil (ver Nivel 2). Solo el A/C central grande (3-5 ton, arranque muy alto) justifica Nivel 3.**
 
 **Reglas de cotización Nivel 3:**
 
