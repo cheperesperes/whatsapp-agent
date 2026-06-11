@@ -31,6 +31,7 @@
   var TEASER_DISMISSED_KEY = 'oiikon_sol_teaser_dismissed';
   var TEASER_LAST_SHOWN_KEY = 'oiikon_sol_teaser_shown_at';
   var TEASER_LANG_KEY = 'oiikon_sol_lang';
+  var EMAIL_CAPTURE_KEY = 'oiikon_sol_email_capture'; // 'done' | 'dismissed'
 
   // ── Language detection ───────────────────────────────────
   // Priority: persisted preference > host-page <html lang> > navigator.language
@@ -65,6 +66,15 @@
       input_placeholder: 'Escribe tu mensaje...',
       fallback_error: 'Disculpa, hubo un problema. Intenta de nuevo.',
       fallback_network: 'No pude enviar tu mensaje. Revisa tu conexión y vuelve a intentarlo.',
+      email_title: '¿Le doy seguimiento por email?',
+      email_hint: 'Si tiene que irse, le mando los detalles y le aviso de cualquier duda pendiente.',
+      email_placeholder: 'su@email.com',
+      email_consent: 'Acepto que Oiikon me envíe un seguimiento y ofertas por email. Puedo darme de baja cuando quiera.',
+      email_submit: 'Sí, envíenme el seguimiento',
+      email_dismiss: 'No, gracias',
+      email_thanks: '¡Listo! Le escribimos pronto. 😊',
+      email_error: 'No se pudo guardar. Intente de nuevo.',
+      email_invalid: 'Escriba un email válido.',
     },
     en: {
       greeting: "Hi, I'm Oiikon. How can we help?",
@@ -75,6 +85,15 @@
       input_placeholder: 'Type your message...',
       fallback_error: 'Sorry, something went wrong. Try again.',
       fallback_network: "Couldn't send your message. Check your connection and try again.",
+      email_title: 'Want a follow-up by email?',
+      email_hint: "If you have to run, I'll send you the details and check in on any open questions.",
+      email_placeholder: 'you@email.com',
+      email_consent: 'I agree to receive a follow-up and offers from Oiikon by email. I can unsubscribe at any time.',
+      email_submit: 'Yes, send me the follow-up',
+      email_dismiss: 'No, thanks',
+      email_thanks: "Done! We'll be in touch soon. 😊",
+      email_error: "Couldn't save it. Please try again.",
+      email_invalid: 'Please enter a valid email.',
     },
   };
   var LANG = detectLanguage();
@@ -398,6 +417,85 @@
     return div;
   }
 
+  // ── Email follow-up opt-in card ──────────────────────────
+  // Shown ONCE per device, only after Sol has quoted a real product (the
+  // reply contains a product link) — that's the "visitor liked a product"
+  // signal. The consent checkbox is UNCHECKED by default and the exact
+  // consent wording is sent to the server verbatim (legal record). Without
+  // the checkbox ticked the server refuses to store the email at all.
+  var CONTACT_ENDPOINT = ENDPOINT.replace(/\/api\/chat\/?$/, '/api/web-leads/contact');
+
+  function maybeShowEmailCard(replyText) {
+    try {
+      if (localStorage.getItem(EMAIL_CAPTURE_KEY)) return;
+    } catch (e) {}
+    if (!replyText || replyText.indexOf('oiikon.com/product/') === -1) return;
+    if (document.getElementById('oiikon-sol-email-card')) return;
+
+    var card = document.createElement('div');
+    card.id = 'oiikon-sol-email-card';
+    card.className = 'oiikon-sol-msg oiikon-sol-msg-bot';
+    card.style.cssText = 'border:1px solid #F97316;border-radius:12px;padding:12px;';
+    card.innerHTML =
+      '<div style="font-weight:bold;margin-bottom:4px;">' + T.email_title + '</div>' +
+      '<div style="font-size:12px;opacity:.85;margin-bottom:8px;">' + T.email_hint + '</div>' +
+      '<input type="email" id="oiikon-sol-email-input" placeholder="' + T.email_placeholder + '" ' +
+      'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;margin-bottom:8px;" />' +
+      '<label style="display:flex;gap:6px;align-items:flex-start;font-size:11px;line-height:1.4;margin-bottom:8px;cursor:pointer;">' +
+      '<input type="checkbox" id="oiikon-sol-email-consent" style="margin-top:2px;" />' +
+      '<span>' + T.email_consent + '</span></label>' +
+      '<div id="oiikon-sol-email-err" style="display:none;color:#dc2626;font-size:11px;margin-bottom:6px;"></div>' +
+      '<button type="button" id="oiikon-sol-email-send" ' +
+      'style="background:#F97316;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:bold;cursor:pointer;width:100%;">' +
+      T.email_submit + '</button>' +
+      '<button type="button" id="oiikon-sol-email-no" ' +
+      'style="background:none;border:none;color:#6b7280;font-size:11px;cursor:pointer;width:100%;margin-top:6px;text-decoration:underline;">' +
+      T.email_dismiss + '</button>';
+    msgsEl.appendChild(card);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    function showErr(msg) {
+      var e = card.querySelector('#oiikon-sol-email-err');
+      e.textContent = msg;
+      e.style.display = 'block';
+    }
+
+    card.querySelector('#oiikon-sol-email-no').addEventListener('click', function () {
+      try { localStorage.setItem(EMAIL_CAPTURE_KEY, 'dismissed'); } catch (e) {}
+      card.remove();
+    });
+
+    card.querySelector('#oiikon-sol-email-send').addEventListener('click', function () {
+      var email = (card.querySelector('#oiikon-sol-email-input').value || '').trim();
+      var consent = card.querySelector('#oiikon-sol-email-consent').checked;
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showErr(T.email_invalid); return; }
+      if (!consent) { showErr(T.email_consent); return; }
+      var btn = card.querySelector('#oiikon-sol-email-send');
+      btn.disabled = true;
+      fetch(CONTACT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionId,
+          email: email,
+          consent: true,
+          consentText: T.email_consent,
+          language: LANG,
+        }),
+      })
+        .then(function (res) { if (!res.ok) throw new Error('http_' + res.status); return res.json(); })
+        .then(function () {
+          try { localStorage.setItem(EMAIL_CAPTURE_KEY, 'done'); } catch (e) {}
+          card.innerHTML = '<div style="font-weight:bold;">' + T.email_thanks + '</div>';
+          setTimeout(function () { card.remove(); }, 4000);
+        })
+        .catch(function () {
+          btn.disabled = false;
+          showErr(T.email_error);
+        });
+    });
+  }
+
   function showTyping() {
     var t = document.createElement('div');
     t.className = 'oiikon-sol-typing';
@@ -478,6 +576,7 @@
         saveHistory(history);
         msgsEl.appendChild(renderMessage({ role: 'assistant', text: reply, images: images }));
         msgsEl.scrollTop = msgsEl.scrollHeight;
+        maybeShowEmailCard(reply);
       })
       .catch(function (err) {
         hideTyping();

@@ -1,6 +1,8 @@
 {
   "framework": "nextjs",
-  "regions": ["iad1"],
+  "regions": [
+    "iad1"
+  ],
   "functions": {
     "app/api/webhook/route.ts": {
       "maxDuration": 60
@@ -39,6 +41,9 @@
       "maxDuration": 60
     },
     "app/api/cron/sales-followup/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/web-lead-followup/route.ts": {
       "maxDuration": 60
     }
   },
@@ -82,6 +87,10 @@
     {
       "path": "/api/cron/sales-followup",
       "schedule": "15 * * * *"
+    },
+    {
+      "path": "/api/cron/web-lead-followup",
+      "schedule": "45 * * * *"
     }
   ],
   "headers": [

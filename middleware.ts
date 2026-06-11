@@ -8,6 +8,7 @@ const PUBLIC_PATHS = [
   '/api/marketing/heygen-webhook', // HeyGen calls this directly — no user session
   '/api/cron/',                     // Vercel cron calls with CRON_SECRET, not cookies
   '/api/chat',                      // Website chat endpoint — anonymous browser sessions
+  '/api/web-leads/',                // Widget email opt-in + one-click unsubscribe — anonymous by design
   '/widget.js',                     // Embeddable widget script for oiikon.com
   '/widget-test',                   // Public preview page for the embed
   '/api/marketing/templates/public-status', // Aggregate counts only, used by cloud schedulers
