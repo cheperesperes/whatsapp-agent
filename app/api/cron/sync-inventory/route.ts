@@ -342,19 +342,34 @@ export async function GET(req: NextRequest) {
     ).catch((e) => console.warn('[sync-inventory] OOS alert failed:', e));
   }
 
-  // ── Missing-SKU alert — once a day (the 12:0x UTC run of this */10 cron) ──
+  // ── Missing-SKU alert — once a day, durable ──
+  // The old gate was "the 12:0x UTC run" by wall clock: a delayed or skipped
+  // run silently lost the whole day's alert, and a same-window retry could
+  // double-send. Now ANY run at/after 12:00 UTC sends IF the app_config
+  // marker says today's alert hasn't gone out yet (marker set before the
+  // send so concurrent runs can't double-fire).
   const nowUtc = new Date();
-  if (
-    operatorPhone &&
-    missingInAgent.length > 0 &&
-    nowUtc.getUTCHours() === 12 &&
-    nowUtc.getUTCMinutes() < 10
-  ) {
-    const list = missingInAgent.slice(0, 12).map((s) => `• ${s}`).join('\n');
-    sendWhatsAppMessage(
-      operatorPhone,
-      `🛒 *Catálogo de Sol:* ${missingInAgent.length} producto(s) vendibles en oiikon.com que Sol NO tiene (no los puede ofrecer ni cobrar):\n${list}\n\nAgrégalos a agent_product_catalog con su precio para que Sol los venda.`
-    ).catch((e) => console.warn('[sync-inventory] missing-sku alert failed:', e));
+  const todayUtc = nowUtc.toISOString().slice(0, 10);
+  if (operatorPhone && missingInAgent.length > 0 && nowUtc.getUTCHours() >= 12) {
+    const { data: marker } = await supabase
+      .from('app_config')
+      .select('value')
+      .eq('key', 'sol_missing_sku_alert_last_sent')
+      .maybeSingle();
+    if ((marker?.value ?? '') !== todayUtc) {
+      const { error: markErr } = await supabase
+        .from('app_config')
+        .upsert({ key: 'sol_missing_sku_alert_last_sent', value: todayUtc }, { onConflict: 'key' });
+      if (markErr) {
+        console.warn('[sync-inventory] missing-sku alert marker failed (skipping alert):', markErr.message);
+      } else {
+        const list = missingInAgent.slice(0, 12).map((s) => `• ${s}`).join('\n');
+        sendWhatsAppMessage(
+          operatorPhone,
+          `🛒 *Catálogo de Sol:* ${missingInAgent.length} producto(s) vendibles en oiikon.com que Sol NO tiene (no los puede ofrecer ni cobrar):\n${list}\n\nAgrégalos a agent_product_catalog con su precio para que Sol los venda.`
+        ).catch((e) => console.warn('[sync-inventory] missing-sku alert failed:', e));
+      }
+    }
   }
 
   summary.duration_ms = Date.now() - startedAt;

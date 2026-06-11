@@ -1906,7 +1906,10 @@ function PayLinkPanel({ products }: { products: Product[] }) {
 
 function SendOfferPanel() {
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
-  const [templateName, setTemplateName] = useState('oiikon_offer_v1');
+  // No default name: the old 'oiikon_offer_v1' was DELETED in Meta — a
+  // pre-filled dead name silently made every blast fail template-not-found
+  // unless the operator remembered to overwrite it.
+  const [templateName, setTemplateName] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [audience, setAudience] = useState<'all' | 'es' | 'en'>('all');
   // When ON, re-send even to leads who already got an offer in the last 24h
@@ -1997,7 +2000,7 @@ function SendOfferPanel() {
               value={templateName}
               onChange={(e) => setTemplateName(e.target.value)}
               className="w-full text-sm bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-200 font-mono"
-              placeholder="oiikon_offer_v1"
+              placeholder="nombre exacto de la plantilla APROBADA en Meta"
             />
             <p className="text-[10px] text-gray-600 mt-1">Debe existir en Meta Business Manager con status APPROVED.</p>
           </div>

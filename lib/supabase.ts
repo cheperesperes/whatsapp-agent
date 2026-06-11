@@ -294,6 +294,47 @@ export async function storeMessage(
 }
 
 /**
+ * Store an INBOUND message where the insert itself is the idempotency gate.
+ * A unique partial index on messages.twilio_message_sid (migration
+ * 20260611_messages_wamid_unique) makes the wamid insert race-proof across
+ * lambda instances: if Meta double-delivers and two instances pass the cheap
+ * hasProcessedMessageSid pre-check simultaneously, exactly ONE insert wins —
+ * the loser gets a unique-violation and must ack WITHOUT replying.
+ * Returns { duplicate: true } in that case; any other failure still throws.
+ */
+export async function storeInboundMessageGate(
+  conversationId: string,
+  content: string,
+  providerMessageId: string
+): Promise<{ duplicate: boolean }> {
+  const supabase = createServiceClient();
+  const { error } = await supabase.from('messages').insert({
+    conversation_id: conversationId,
+    role: 'user',
+    content,
+    handoff_detected: false,
+    twilio_message_sid: providerMessageId,
+  });
+
+  if (error) {
+    // 23505 = unique_violation → another instance already processed this wamid.
+    if (error.code === '23505' || /duplicate key value/i.test(error.message)) {
+      return { duplicate: true };
+    }
+    throw new Error(`Failed to store inbound message: ${error.message}`);
+  }
+
+  const { error: bumpErr } = await supabase
+    .from('conversations')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', conversationId);
+  if (bumpErr) {
+    console.warn(`[storeMessage] updated_at bump failed | conv=${conversationId}: ${bumpErr.message}`);
+  }
+  return { duplicate: false };
+}
+
+/**
  * Returns true if we've already persisted a message with this provider id
  * (Meta wamid). Used for webhook idempotency against retries.
  */

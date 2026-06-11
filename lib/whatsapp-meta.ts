@@ -134,6 +134,13 @@ export interface ParsedMetaIncoming {
   recipientPhoneNumberId: string;
   /** Set only when the message carries a click-to-WhatsApp ad referral. */
   referral: AdReferral | null;
+  /** Additional TEXT messages from the SAME sender batched into this webhook
+   * delivery (value.messages[1..]) — a double-text is one thought; the caller
+   * joins them into a single turn instead of silently dropping them. */
+  extraTexts: string[];
+  /** Batched messages we could NOT fold in (different sender or non-text).
+   * Rare; surfaced so a recurring pattern shows up in logs. */
+  droppedBatchMessages: number;
 }
 
 export function parseMetaIncomingMessage(body: unknown): ParsedMetaIncoming | null {
@@ -151,6 +158,19 @@ export function parseMetaIncomingMessage(body: unknown): ParsedMetaIncoming | nu
     // Extract text from text or interactive messages; other types fall through with empty text
     const messageText =
       msg.type === 'text' ? msg.text?.body ?? '' : '';
+
+    // Meta can batch several messages into ONE delivery. Fold extra TEXT
+    // messages from the same sender into this turn; count anything else.
+    const extraTexts: string[] = [];
+    let droppedBatchMessages = 0;
+    for (const raw of value.messages.slice(1)) {
+      const extra = raw as WhatsAppMessage;
+      if (extra.from === msg.from && extra.type === 'text' && extra.text?.body) {
+        extraTexts.push(extra.text.body);
+      } else {
+        droppedBatchMessages++;
+      }
+    }
 
     // Click-to-WhatsApp ad referral — Meta attaches `referral` to the first
     // message when the customer tapped a FB/IG ad. Carries the product/ad URL.
@@ -175,6 +195,8 @@ export function parseMetaIncomingMessage(body: unknown): ParsedMetaIncoming | nu
       timestamp: Number(msg.timestamp),
       recipientPhoneNumberId: value.metadata.phone_number_id,
       referral,
+      extraTexts,
+      droppedBatchMessages,
     };
   } catch {
     return null;

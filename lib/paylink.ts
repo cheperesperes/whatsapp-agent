@@ -21,6 +21,8 @@ import {
   loadStorefrontProductsBySku,
   selectBestOffer,
   createServiceClient,
+  getOrCreateConversation,
+  storeMessage,
   type Offer,
 } from './supabase';
 import {
@@ -418,7 +420,17 @@ export async function recordPayLinkOrder(
     if (waPhone) {
       try {
         const firstName = (details.payerName ?? '').trim().split(/\s+/)[0] ?? '';
-        await sendWhatsAppMessage(waPhone, thankYouMessage(waLang, firstName, orderNumber ?? ''));
+        const thanks = thankYouMessage(waLang, firstName, orderNumber ?? '');
+        await sendWhatsAppMessage(waPhone, thanks);
+        // Persist it so the dashboard transcript shows the thank-you and the
+        // follow-up crons see the conversation's true last message (an
+        // unpersisted send made the customer look "silent after quote").
+        try {
+          const conv = await getOrCreateConversation(waPhone);
+          await storeMessage(conv.id, 'assistant', thanks);
+        } catch (persistErr) {
+          console.warn('[PAYLINK] thank-you persist failed (non-blocking):', persistErr);
+        }
       } catch (e) {
         console.error('[PAYLINK] thank-you send failed (non-blocking):', e);
       }

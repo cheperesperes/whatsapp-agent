@@ -21,6 +21,7 @@ import {
   formatKnowledgeBaseForPrompt,
   addKnowledgeEntry,
   hasProcessedMessageSid,
+  storeInboundMessageGate,
   countRecentUserMessagesFromPhone,
   optOutConversation,
   loadCustomerProfile,
@@ -253,7 +254,21 @@ function ok200() {
 // Core processing logic
 // ============================================================
 async function processWebhook(parsed: ParsedIncomingMessage) {
-  const { senderPhone: rawSenderPhone, senderName, messageText, messageType, messageId, channel } = parsed;
+  const { senderPhone: rawSenderPhone, senderName, messageType, messageId, channel } = parsed;
+  // Meta can batch several messages into one delivery; the parser folds
+  // same-sender extra texts into the turn (a double-text is one thought —
+  // previously value.messages[1..] were silently lost).
+  const messageText = [parsed.messageText, ...(parsed.extraTexts ?? [])]
+    .filter((t) => t && t.trim())
+    .join('\n');
+  if (parsed.extraTexts?.length) {
+    console.log(`[WEBHOOK] folded ${parsed.extraTexts.length} batched same-sender message(s) into one turn`);
+  }
+  if (parsed.droppedBatchMessages > 0) {
+    console.warn(
+      `[WEBHOOK] delivery batch had ${parsed.droppedBatchMessages} unfoldable message(s) (other sender / non-text) — dropped; investigate if recurring`
+    );
+  }
   const senderPhone = rawSenderPhone.startsWith('+')
     ? '+' + rawSenderPhone.slice(1).replace(/[^\d]/g, '')
     : '+' + rawSenderPhone.replace(/[^\d]/g, '');
@@ -347,21 +362,40 @@ async function processWebhookLocked(
   const recentCount = await countRecentUserMessagesFromPhone(senderPhone, 60);
   if (recentCount >= HOURLY_MESSAGE_CAP) {
     console.warn(`[WEBHOOK] Rate cap hit for ${senderPhone}: ${recentCount} msgs in last hour`);
-    await storeMessage(conversation.id, 'user', messageText, false, messageId);
-    if (recentCount === HOURLY_MESSAGE_CAP) {
+    const capGate = await storeInboundMessageGate(conversation.id, messageText, messageId);
+    if (capGate.duplicate) return;
+    // Notify + escalate exactly once per episode, keyed on the DURABLE
+    // escalated flag (escalateConversation sets it) — not on an exact
+    // `=== CAP` count match, which a burst could jump straight past
+    // (39 → 41) leaving the customer silently dropped with no notice
+    // and no operator alert.
+    if (!conversation.escalated) {
       await sendReplyForParsed(
         parsed,
         'Ha alcanzado el límite de mensajes por hora. Un especialista le contactará pronto si es urgente.',
       );
-      await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'rate_cap_exceeded', messageText);
       await escalateConversation(conversation.id, 'rate_cap_exceeded', messageText);
+      try {
+        await sendHandoffAlert(OPERATOR_PHONE, senderPhone, 'rate_cap_exceeded', messageText);
+      } catch (alertErr) {
+        console.error(`[WEBHOOK] rate-cap operator alert failed for ${senderPhone}:`, alertErr);
+      }
     }
     return;
   }
 
-  // ── Store user message (idempotent on MessageSid) ────────
+  // ── Store user message — the insert IS the idempotency gate ────────
+  // The early hasProcessedMessageSid check is a cheap fast-path for Meta
+  // retries, but it's check-then-act: two lambda instances can both pass it
+  // before either commits. The unique wamid index makes THIS insert the real
+  // gate — a losing instance acks and stops before any AI call or reply
+  // (the cross-instance duplicate-reply race).
   try {
-    await storeMessage(conversation.id, 'user', messageText, false, messageId);
+    const gate = await storeInboundMessageGate(conversation.id, messageText, messageId);
+    if (gate.duplicate) {
+      console.log(`[WEBHOOK] Duplicate wamid ${messageId} lost insert race — ack without reply`);
+      return;
+    }
     console.log(`[WEBHOOK] Stored inbound message | conv=${conversation.id} | sid=${messageId}`);
   } catch (err) {
     console.error(`[WEBHOOK] storeMessage FAILED | conv=${conversation.id} | sid=${messageId}:`, err);
@@ -1008,16 +1042,22 @@ async function runBackgroundLearning(
     // bug (customer wrote Spanglish, Haiku decided "en", Sol replied
     // in English to a Spanish speaker).
     //
-    // `reading` already comes pre-merged from extractCustomerFacts (it
-    // runs mergeReading internally against existingProfile.reading), so
-    // we just persist whatever it returned. `arrival_source` is preserved
-    // across merges because freshReading.arrival_source is never emitted
-    // by Haiku — only the webhook's turn-1 path seeds it.
+    // `reading` from extractCustomerFacts was merged against the profile
+    // snapshot loaded BEFORE this extraction ran — on turn 1 the inline
+    // arrival_source seed (a concurrent waitUntil) lands in that window,
+    // and persisting the stale-snapshot object would clobber it. Re-read
+    // the profile NOW and re-merge: mergeReading's null-preserves-existing
+    // rule keeps the seeded arrival_source (Haiku never emits one), while
+    // the fresh Haiku read still wins on every field it actually set.
+    const latest = facts.reading ? await loadCustomerProfile(phone) : existingProfile;
+    const reading = facts.reading
+      ? mergeReading(latest?.reading ?? null, facts.reading, new Date().toISOString())
+      : null;
     await upsertCustomerProfile(phone, {
       display_name: facts.display_name ?? null,
       summary: facts.summary ?? null,
       facts: facts.facts ?? [],
-      reading: facts.reading ?? null,
+      reading,
     });
   }
 

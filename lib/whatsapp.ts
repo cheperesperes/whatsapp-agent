@@ -111,6 +111,10 @@ export interface ParsedIncomingMessage {
   metaRecipientPhoneNumberId: string;
   /** Click-to-WhatsApp ad referral (FB/IG ad arrival), if present. */
   referral: import('./whatsapp-meta').AdReferral | null;
+  /** Same-sender TEXT messages batched into this delivery (joined into the turn). */
+  extraTexts: string[];
+  /** Batched messages that could not be folded in (other sender / non-text). */
+  droppedBatchMessages: number;
 }
 
 export function parseIncomingMessage(body: unknown): ParsedIncomingMessage | null {
@@ -128,6 +132,8 @@ export function parseIncomingMessage(body: unknown): ParsedIncomingMessage | nul
     provider: 'meta',
     metaRecipientPhoneNumberId: meta.recipientPhoneNumberId,
     referral: meta.referral,
+    extraTexts: meta.extraTexts,
+    droppedBatchMessages: meta.droppedBatchMessages,
   };
 }
 
