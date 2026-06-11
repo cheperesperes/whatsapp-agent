@@ -530,88 +530,6 @@ async function processWebhookLocked(
       const built = buildFirstContactDirective(messageText, detectedLang);
       if (built) {
         firstContactDirective = built.directive;
-
-        // ── Click-to-WhatsApp ad: resolve the clicked PRODUCT ──────────────
-        // When the customer arrived from a FB/IG ad, Meta attaches a referral
-        // with the ad's destination URL (usually the product page). Resolve it
-        // to a SKU so Sol can open referencing the exact product they clicked
-        // ("I see you're looking at the E3600LFP…") instead of a blind
-        // "what do you want to power?". Persist to product_interest so later
-        // turns keep the context. Best-effort — falls back to generic opener.
-        // Persist ad attribution (which ad/post drove this lead) the moment a
-        // referral arrives — independent of whether the URL maps to a SKU. This
-        // populates conversations.ad_source + ctwa_clid so we can later report
-        // "this lead came from the E3600 hurricane ad" and target accordingly.
-        if (parsed.referral) {
-          const r = parsed.referral;
-          const adSource = [r.sourceType, r.headline, r.sourceUrl]
-            .filter(Boolean).join(' | ').slice(0, 500) || null;
-          if (adSource || r.ctwaClid) {
-            waitUntil(
-              updateConversationFields(conversation.id, {
-                ad_source: adSource,
-                ctwa_clid: r.ctwaClid ?? null,
-              }).catch((err) => console.warn(`[WEBHOOK] ad attribution save failed for ${senderPhone}:`, err))
-            );
-            console.log(`[WEBHOOK] CTWA attribution saved for ${senderPhone}: ${adSource?.slice(0, 80)} clid=${r.ctwaClid ?? '—'}`);
-          }
-        }
-
-        // Resolve the ad's PRODUCT so Sol opens on it, from two sources in order:
-        //  1. The referral destination URL → an oiikon product page (works for
-        //     ads that deep-link straight to a product).
-        //  2. The ad HEADLINE (e.g. "PECRON E3600LFP … Power Station"). This is
-        //     what CTWA actually sends for fb.me / instagram.com ad links — the
-        //     sourceUrl is the IG/FB post, NOT an oiikon URL, so it never
-        //     resolved. Extracting the model SKU from the headline is what makes
-        //     "Hey how much" from an ad lead resolve to THAT product instead of
-        //     a blind generic opener. (Real case: Kerenski, E3600 IG ad.)
-        const SKU_FROM_AD = /\b([EF]\d{3,4}[A-Z]{0,5})\b/;
-        let adProductName: string | null = null;
-        let adProductSku: string | null = null;
-        const refUrl = parsed.referral?.sourceUrl ?? null;
-        if (refUrl) {
-          try {
-            const prod = await resolveProductFromUrl(refUrl);
-            if (prod) {
-              adProductName = prod.name;
-              adProductSku = prod.sku;
-            }
-          } catch (err) {
-            console.warn(`[WEBHOOK] CTWA product resolve failed for ${senderPhone}:`, err);
-          }
-        }
-        if (!adProductSku && parsed.referral?.headline) {
-          const sku = parsed.referral.headline.match(SKU_FROM_AD)?.[1]?.toUpperCase() ?? null;
-          if (sku) {
-            adProductSku = sku;
-            adProductName = parsed.referral.headline.trim();
-          }
-        }
-        if (adProductName) {
-          // Did they already ask the price in their first message? Then answer
-          // it (Regla de Oro) — don't hide it behind a discovery question.
-          const priceAsk =
-            /\b(how much|price|cost|cu[aá]nto|precio|vale|cuesta|prix|konbyen|pri)\b/i.test(messageText);
-          firstContactDirective +=
-            `\n\n=== PRODUCTO DEL ANUNCIO (contexto de llegada) ===\n` +
-            `El cliente hizo clic en un anuncio del producto **${adProductName}**` +
-            (adProductSku ? ` (SKU ${adProductSku})` : '') +
-            `. YA SABES qué producto le interesa — abre reconociéndolo por nombre. ` +
-            (priceAsk
-              ? `Acaba de preguntar el PRECIO: dáselo DIRECTO de ESE equipo (precio + link + [SEND_IMAGE:SKU]) y cierra con UNA pregunta corta de uso ("¿es para su casa, RV o trabajo?"). NO abras genérico ni escondas el precio. Si ese equipo está agotado, ofrece la alternativa en stock más cercana.`
-              : `Haz UNA pregunta de calificación enfocada en ese producto ("Veo que le interesa el ${adProductName} — ¿es para su casa?"). NO preguntes "¿qué quiere alimentar?" como si no supieras nada. No des precio salvo que lo pida.`);
-          if (adProductSku) {
-            waitUntil(
-              updateConversationFields(conversation.id, { product_interest: adProductSku }).catch(
-                (err) => console.warn(`[WEBHOOK] product_interest seed failed for ${senderPhone}:`, err)
-              )
-            );
-          }
-          console.log(`[WEBHOOK] CTWA ad → product ${adProductSku ?? adProductName} for ${senderPhone} priceAsk=${priceAsk}`);
-        } else if (refUrl) {
-          console.log(`[WEBHOOK] CTWA referral did not yield a product (url=${refUrl.slice(0, 80)})`);
-        }
         console.log(
           `[WEBHOOK] Turn-1 directive for ${senderPhone}: ` +
             (built.adMatch
@@ -664,6 +582,95 @@ async function processWebhookLocked(
         console.log(
           `[WEBHOOK] Seeded user_timezone=${seededTz} for ${senderPhone}`
         );
+      }
+    }
+
+    // ── Ad referral — process on EVERY message that carries one ────────────
+    // NOT gated on turn-1: a RETURNING customer can click a NEW ad, and their
+    // conversation already has history. Gating this on turn-1 left returning
+    // ad-clickers with a cold generic answer and a null ad_source (real case:
+    // Julio first wrote in April, came back via a new ad in June → Sol asked
+    // "¿qué necesita alimentar?" as if it had never met him). Here we (a)
+    // refresh ad attribution on every click, (b) inject the ad's product, and
+    // (c) greet a returning customer back instead of interrogating from zero.
+    const returningCustomer = historyWithoutLast.length > 0;
+    if (parsed.referral) {
+      const r = parsed.referral;
+      const adSource =
+        [r.sourceType, r.headline, r.sourceUrl].filter(Boolean).join(' | ').slice(0, 500) || null;
+      if (adSource || r.ctwaClid) {
+        waitUntil(
+          updateConversationFields(conversation.id, {
+            ad_source: adSource,
+            ctwa_clid: r.ctwaClid ?? null,
+          }).catch((err) => console.warn(`[WEBHOOK] ad attribution save failed for ${senderPhone}:`, err))
+        );
+        console.log(`[WEBHOOK] CTWA attribution saved for ${senderPhone}: ${adSource?.slice(0, 80)} clid=${r.ctwaClid ?? '—'}`);
+      }
+
+      // Resolve the ad's PRODUCT: the destination URL → an oiikon product page,
+      // else the ad HEADLINE (what CTWA actually sends for fb.me / instagram.com
+      // links — the sourceUrl is the IG/FB post, not an oiikon URL).
+      const SKU_FROM_AD = /\b([EF]\d{3,4}[A-Z]{0,5})\b/;
+      let adProductName: string | null = null;
+      let adProductSku: string | null = null;
+      const refUrl = r.sourceUrl ?? null;
+      if (refUrl) {
+        try {
+          const prod = await resolveProductFromUrl(refUrl);
+          if (prod) {
+            adProductName = prod.name;
+            adProductSku = prod.sku;
+          }
+        } catch (err) {
+          console.warn(`[WEBHOOK] CTWA product resolve failed for ${senderPhone}:`, err);
+        }
+      }
+      if (!adProductSku && r.headline) {
+        const sku = r.headline.match(SKU_FROM_AD)?.[1]?.toUpperCase() ?? null;
+        if (sku) {
+          adProductSku = sku;
+          adProductName = r.headline.trim();
+        }
+      }
+      if (adProductName) {
+        const priceAsk =
+          /\b(how much|price|cost|cu[aá]nto|precio|vale|cuesta|prix|konbyen|pri)\b/i.test(messageText);
+        firstContactDirective +=
+          `\n\n=== PRODUCTO DEL ANUNCIO (contexto de llegada) ===\n` +
+          (returningCustomer
+            ? `(Este cliente YA te había escrito antes y vuelve por un anuncio nuevo — salúdalo de vuelta con calidez ("¡Qué gusto verlo de nuevo!"), NO lo trates como nuevo ni repitas preguntas que ya respondió en el historial.) `
+            : '') +
+          `El cliente hizo clic en un anuncio del producto **${adProductName}**` +
+          (adProductSku ? ` (SKU ${adProductSku})` : '') +
+          `. YA SABES qué producto le interesa — abre reconociéndolo por nombre. ` +
+          (priceAsk
+            ? `Acaba de preguntar el PRECIO: dáselo DIRECTO de ESE equipo (precio + link + [SEND_IMAGE:SKU]) y cierra con UNA pregunta corta de uso. NO abras genérico ni escondas el precio. Si ese equipo está agotado, ofrece la alternativa en stock más cercana.`
+            : `Haz UNA pregunta de calificación enfocada en ese producto ("Veo que le interesa el ${adProductName} — ¿es para su casa?"). NO preguntes "¿qué quiere alimentar?" como si no supieras nada. No des precio salvo que lo pida.`);
+        if (adProductSku) {
+          waitUntil(
+            updateConversationFields(conversation.id, { product_interest: adProductSku }).catch(
+              (err) => console.warn(`[WEBHOOK] product_interest seed failed for ${senderPhone}:`, err)
+            )
+          );
+        }
+        console.log(`[WEBHOOK] CTWA ad → product ${adProductSku ?? adProductName} for ${senderPhone} returning=${returningCustomer} priceAsk=${priceAsk}`);
+      }
+    } else if (returningCustomer) {
+      // Returning after a long gap, WITHOUT a new ad: welcome them back and
+      // don't re-interrogate. Threshold 3 days so an active back-and-forth
+      // (same-day / next-day replies) never triggers a jarring "welcome back".
+      const lastPrior = historyWithoutLast[historyWithoutLast.length - 1];
+      const gapDays = lastPrior
+        ? (Date.now() - Date.parse(lastPrior.created_at)) / 86_400_000
+        : 0;
+      if (gapDays >= 3) {
+        firstContactDirective +=
+          `\n\n=== CLIENTE QUE REGRESA ===\n` +
+          `Este cliente ya te había escrito antes (hace ${Math.round(gapDays)} días) y vuelve ahora. ` +
+          `Salúdalo de vuelta con calidez ("¡Qué gusto verlo de nuevo!"), retoma el interés previo que veas en el historial ` +
+          `(no le preguntes de cero lo que ya respondió), responde su mensaje y avanza hacia el cierre. NO lo trates como cliente nuevo.`;
+        console.log(`[WEBHOOK] Returning customer ${senderPhone} after ${Math.round(gapDays)}d gap (no ad)`);
       }
     }
 
