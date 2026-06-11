@@ -798,8 +798,9 @@ const REJECTION_PATTERNS: RegExp[] = [
 
 /**
  * Detect whether the latest user message carries a rejection signal Sol
- * should pivot off of (offer a cheaper SKU, ask about budget, suggest
- * financing) rather than closing the conversation with a flat "entiendo".
+ * should pivot off of (offer a cheaper in-stock SKU or ask about budget)
+ * rather than closing the conversation with a flat "entiendo". Oiikon does
+ * NOT offer financing/installments — never pivot to a payment plan.
  * Exported for unit testing.
  */
 export function hasRejectionSignal(userText: string): boolean {
@@ -829,8 +830,9 @@ export function hasRejectionSignal(userText: string): boolean {
  *      "Sol answered every question but never asked for the sale" pattern.
  *   2. POST-REJECTION PIVOT: if the current user message contains a
  *      rejection signal, the reply must offer one lateral option (cheaper
- *      SKU, financing hint, or a budget question) BEFORE acknowledging and
- *      backing off. No forcing — one pivot attempt, then respect the no.
+ *      in-stock SKU or a budget question — NEVER financing/installments,
+ *      we don't offer them) BEFORE acknowledging and backing off. No
+ *      forcing — one pivot attempt, then respect the no.
  */
 /**
  * Derive the product the customer already has context about, so a later
@@ -915,8 +917,8 @@ export function buildDynamicDirectives(args: {
   if (hasRejectionSignal(args.lastUserText)) {
     rules.push(
       '• PIVOTE ANTES DE RETIRARTE: el cliente acaba de rechazar ("muy caro" / "no me interesa" / similar). ' +
-        'Antes de cerrar amablemente, ofrece UNA alternativa lateral: un SKU más económico del catálogo, ' +
-        'una pregunta corta sobre presupuesto ("¿qué rango manejas?"), o mencionar financiamiento si aplica. ' +
+        'Antes de cerrar amablemente, ofrece UNA alternativa lateral: un SKU más económico del catálogo (en stock) ' +
+        'o una pregunta corta sobre presupuesto ("¿qué rango manejas?"). NO ofrezcas financiamiento ni pagos a plazos — no los manejamos. ' +
         'UNA sola propuesta, no insistas. Si vuelve a decir que no, respétalo y cierra con elegancia.'
     );
   }
