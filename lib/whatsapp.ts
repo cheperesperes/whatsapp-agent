@@ -31,6 +31,12 @@ function metaCreds(): { accessToken: string; phoneNumberId: string } {
 }
 
 function bareNumber(phone: string): string {
+  // Fail loud and clear instead of crashing with a cryptic
+  // "Cannot read properties of null (reading 'startsWith')" when a caller
+  // passes a null/empty recipient (e.g. a web conversation with no phone).
+  if (!phone) {
+    throw new Error('cannot send WhatsApp message: missing recipient phone number');
+  }
   return phone.startsWith('whatsapp:') ? phone.slice('whatsapp:'.length) : phone;
 }
 

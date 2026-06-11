@@ -47,13 +47,28 @@ export async function POST(
   const supabase = createServiceClient();
   const { data: conv, error: convErr } = await supabase
     .from('conversations')
-    .select('id, phone_number, escalated')
+    .select('id, phone_number, escalated, channel')
     .eq('id', id)
     .maybeSingle();
   if (convErr || !conv) {
     return NextResponse.json(
       { error: convErr?.message ?? 'conversation not found' },
       { status: 404 }
+    );
+  }
+
+  // A WhatsApp send needs a real phone. Web-widget visitors have none (they're
+  // keyed by session id), so a manual WhatsApp reply can't reach them — return
+  // a clear 400 instead of crashing on null.startsWith() inside the sender.
+  if (!conv.phone_number) {
+    return NextResponse.json(
+      {
+        error:
+          conv.channel === 'web'
+            ? 'Esta conversación es del chat web (sin número de WhatsApp). Respóndele desde el widget del sitio, no por WhatsApp.'
+            : 'Esta conversación no tiene número de teléfono registrado, no se puede enviar por WhatsApp.',
+      },
+      { status: 400 }
     );
   }
 
