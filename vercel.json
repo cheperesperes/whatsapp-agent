@@ -34,6 +34,9 @@
     },
     "app/api/cron/sol-learning/route.ts": {
       "maxDuration": 120
+    },
+    "app/api/cron/paylink-nudge/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -68,6 +71,10 @@
     {
       "path": "/api/cron/sol-learning",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/paylink-nudge",
+      "schedule": "30 * * * *"
     }
   ],
   "headers": [

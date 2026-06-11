@@ -26,6 +26,15 @@ export interface FollowupInput {
   language: 'es' | 'en';
 }
 
+// Pay-link nudge supports the four languages Sol speaks (es/en/fr/ht).
+export type NudgeLanguage = 'es' | 'en' | 'fr' | 'ht';
+
+export interface PaylinkNudgeInput {
+  customerName: string | null;
+  lastAssistantContent: string;
+  language: NudgeLanguage;
+}
+
 /**
  * Regex patterns that match our own follow-up templates. Used to detect
  * whether a prior follow-up has already been sent on this conversation,
@@ -34,10 +43,20 @@ export interface FollowupInput {
  * We avoid a dedicated schema column because the templates are distinctive
  * enough ("quería ver si pudo revisar" / "just checking in on") that false
  * positives are near-zero. Sol's normal replies don't use these phrases.
+ *
+ * The pay-link-nudge openers are included here on purpose: a lead that got
+ * a pay-link nudge must NOT also get the generic 18-24h follow-up (that
+ * would be two nudges — the exact thing the one-nudge policy forbids).
+ * Both crons call hasPriorFollowup, so either nudge suppresses the other.
  */
 export const FOLLOWUP_MARKER_PATTERNS: RegExp[] = [
   /quería ver si pudo revisar/i,
   /just checking in on/i,
+  // pay-link nudge openers (es/en/fr/ht)
+  /¿alguna duda con el pago/i,
+  /any questions about (your )?checkout/i,
+  /une question sur le paiement/i,
+  /èske ou gen kesyon sou peman/i,
 ];
 
 /**
@@ -113,4 +132,46 @@ export function hasPriorFollowup(
   return assistantMessages.some((m) =>
     FOLLOWUP_MARKER_PATTERNS.some((p) => p.test(m.content))
   );
+}
+
+/**
+ * Detect that Sol's message actually delivered a PayPal pay-link — the
+ * trigger for the pay-link-abandonment nudge. Matches the real hosted URL
+ * and the localized "secure pay link" lead-ins that applyPayLinkMarkers
+ * emits, so a mere product link (oiikon.com/product/...) does NOT qualify.
+ */
+export const PAYLINK_SENT_RE =
+  /paypal\.com\/checkoutnow|checkoutnow\?token=|link de pago seguro|secure pay link/i;
+
+/**
+ * Build the pay-link-abandonment nudge: the customer asked to buy, Sol sent
+ * a pay-link, and they went quiet without paying. Framed as PAYMENT HELP,
+ * never "you didn't pay" — we assume friction or a question, not reluctance.
+ * Language-aware (es/en/fr/ht); model-aware when the SKU is recoverable.
+ * One nudge only (the shared FOLLOWUP_MARKER_PATTERNS enforce that across
+ * both crons).
+ */
+export function buildPaylinkNudgeDraft(input: PaylinkNudgeInput): string {
+  const { customerName, lastAssistantContent, language } = input;
+  const model = extractProductModel(lastAssistantContent);
+  const first = formatFirstName(customerName);
+
+  if (language === 'en') {
+    const g = first ? `Hi ${first}, ` : 'Hi, ';
+    const what = model ? `the ${model}` : 'your order';
+    return `${g}any questions about your checkout for ${what}? Your secure payment link is still active — I'm here if anything came up or you'd like help wrapping it up. 😊`;
+  }
+  if (language === 'fr') {
+    const g = first ? `Bonjour ${first}, ` : 'Bonjour, ';
+    const what = model ? `le ${model}` : 'votre commande';
+    return `${g}une question sur le paiement de ${what} ? Votre lien de paiement sécurisé est toujours actif — je suis là si quelque chose bloque ou si vous voulez de l'aide pour finaliser. 😊`;
+  }
+  if (language === 'ht') {
+    const g = first ? `Bonjou ${first}, ` : 'Bonjou, ';
+    const what = model ? `${model} la` : 'kòmand ou an';
+    return `${g}èske ou gen kesyon sou peman ${what}? Lyen peman sekirize ou an toujou aktif — mwen la si gen yon bagay ki bloke oswa si ou vle èd pou fini l. 😊`;
+  }
+  const g = first ? `Hola ${first}, ` : 'Hola, ';
+  const what = model ? `el ${model}` : 'su pedido';
+  return `${g}¿alguna duda con el pago de ${what}? Su link de pago seguro sigue activo — aquí estoy si surgió algo o si quiere que le ayude a completarlo. 😊`;
 }
