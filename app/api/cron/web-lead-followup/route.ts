@@ -79,8 +79,14 @@ export async function GET(req: NextRequest) {
   const skipped: Array<Record<string, unknown>> = [];
   const errors: Array<Record<string, unknown>> = [];
 
-  // Offer machinery loaded once per run.
-  const [offers, costs] = pending.length > 0 ? await Promise.all([loadActiveOffers(), loadProductCosts()]) : [[], {}];
+  // Offer machinery loaded once per run. (Explicit types: the previous
+  // ternary form typed `costs` as `Record<string, number> | {}`, which
+  // Vercel's build rejected on `costs[p.sku]` — broke deploys #191-#193.)
+  let offers: Awaited<ReturnType<typeof loadActiveOffers>> = [];
+  let costs: Record<string, number> = {};
+  if (pending.length > 0) {
+    [offers, costs] = await Promise.all([loadActiveOffers(), loadProductCosts()]);
+  }
 
   for (const c of pending) {
     // Quiet check: if the visitor wrote after opting in, Sol is already
