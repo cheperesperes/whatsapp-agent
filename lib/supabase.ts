@@ -1036,6 +1036,7 @@ export function formatOffersForPrompt(
     ...lines,
     '',
     'Reglas de oferta (OBLIGATORIAS):',
+    '• AL RECOMENDAR EN FIRME o dar el precio de un equipo que SÍ aparece arriba, presenta SIEMPRE el precio CON su oferta: ~precio normal~ *precio final* + código + link con ?promo=. NUNCA des el precio "limpio" sin el cupón cuando existe — omitir el descuento en una recomendación regala la conversión (pasó en producción: un lead del F5000 recibió $1,999 plano teniendo $100 vigentes).',
     '• UN código por equipo: para CADA equipo presenta SOLO su código listado arriba. NUNCA le ofrezcas a un mismo equipo varios cupones, ni inventes códigos, ni le pongas a un equipo el cupón de otro.',
     '• COMBO (varios equipos en un mismo pago por link): en la etiqueta [[PAYLINK ... coupon=A,B]] incluye el código de CADA equipo separados por coma —el mismo que cotizaste para cada uno—. El sistema aplica a cada equipo el mejor cupón seguro de esa lista, así ninguno queda a precio completo. Esto NO contradice la regla anterior: sigue siendo UN código por equipo, solo combinados en una misma etiqueta.',
     '• Si un equipo NO aparece en esta lista, no tiene oferta aplicable — cotiza el precio normal del catálogo, sin cupón.',
