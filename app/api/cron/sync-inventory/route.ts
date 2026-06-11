@@ -206,7 +206,9 @@ export async function GET(req: NextRequest) {
     if (fieldChanges.length > 0) {
       changesBySku.set(sku, fieldChanges);
       const stockChange = fieldChanges.find((c) => c.field === 'in_stock');
-      if (stockChange && stockChange.oldValue === true && stockChange.newValue === false) {
+      // Alert on any transition INTO out-of-stock — incl. NULL→false (a
+      // never-initialized row going OOS), not just true→false.
+      if (stockChange && stockChange.oldValue !== false && stockChange.newValue === false) {
         oosTransitions.push({ sku, name: agent.name });
       }
     }

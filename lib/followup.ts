@@ -136,12 +136,14 @@ export function hasPriorFollowup(
 
 /**
  * Detect that Sol's message actually delivered a PayPal pay-link — the
- * trigger for the pay-link-abandonment nudge. Matches the real hosted URL
- * and the localized "secure pay link" lead-ins that applyPayLinkMarkers
- * emits, so a mere product link (oiikon.com/product/...) does NOT qualify.
+ * trigger for the pay-link-abandonment nudge. Matches ONLY the real hosted
+ * PayPal URL. Must NOT match the localized "link de pago seguro" / "secure
+ * pay link" lead-in phrases, because the SOFT FAILURE fallback (sent when
+ * buildPayLink fails — OOS SKU, PayPal error) contains those exact phrases
+ * but NO url; matching them would nudge a customer about a link that was
+ * never delivered. A successful send always contains the checkoutnow URL.
  */
-export const PAYLINK_SENT_RE =
-  /paypal\.com\/checkoutnow|checkoutnow\?token=|link de pago seguro|secure pay link/i;
+export const PAYLINK_SENT_RE = /paypal\.com\/checkoutnow|checkoutnow\?token=/i;
 
 /**
  * Build the pay-link-abandonment nudge: the customer asked to buy, Sol sent

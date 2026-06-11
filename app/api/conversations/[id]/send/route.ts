@@ -96,14 +96,23 @@ export async function POST(
     );
   }
 
-  await storeMessage(id, 'assistant', text || (imageUrl ? '[imagen del producto]' : ''), false);
+  // Persist after a successful send, wrapped so a DB hiccup AFTER the message
+  // already left Meta can't 500 the route — a 500 makes the operator re-click
+  // Send and deliver the same WhatsApp message to the customer twice.
+  try {
+    await storeMessage(id, 'assistant', text || (imageUrl ? '[imagen del producto]' : ''), false);
+  } catch (e) {
+    console.error('[send] persist-after-send failed (non-fatal):', e instanceof Error ? e.message : e);
+  }
 
   // Use the OPERATOR_REPLY_REASON sentinel — the webhook recognizes this and
   // auto-resumes Sol on the customer's next reply, so a one-off operator text
   // doesn't permanently take Sol offline. Real "take over" handoffs use a
   // different reason and stay escalated until manually de-escalated.
+  // Pass '' as last-customer-message: this is the OPERATOR's outbound text, not
+  // the customer's — recording it as the customer message mislabels the audit row.
   if (shouldEscalate && !conv.escalated) {
-    await escalateConversation(id, OPERATOR_REPLY_REASON, text);
+    await escalateConversation(id, OPERATOR_REPLY_REASON, '');
   }
 
   return NextResponse.json({ ok: true, escalated: shouldEscalate });

@@ -594,6 +594,22 @@ async function processWebhookLocked(
     // refresh ad attribution on every click, (b) inject the ad's product, and
     // (c) greet a returning customer back instead of interrogating from zero.
     const returningCustomer = historyWithoutLast.length > 0;
+    // Welcome-back directive for a customer returning after a 3+ day gap.
+    // Used for BOTH organic returns AND ad returns whose product can't be
+    // resolved — so a returning ad-clicker is never cold-started (the Julio
+    // regression). Returns '' for active/new conversations.
+    const buildGapWelcomeBack = (): string => {
+      const lastPrior = historyWithoutLast[historyWithoutLast.length - 1];
+      const gapDays = lastPrior ? (Date.now() - Date.parse(lastPrior.created_at)) / 86_400_000 : 0;
+      if (gapDays < 3) return '';
+      console.log(`[WEBHOOK] Returning customer ${senderPhone} after ${Math.round(gapDays)}d gap`);
+      return (
+        `\n\n=== CLIENTE QUE REGRESA ===\n` +
+        `Este cliente ya te había escrito antes (hace ${Math.round(gapDays)} días) y vuelve ahora. ` +
+        `Salúdalo de vuelta con calidez ("¡Qué gusto verlo de nuevo!"), retoma el interés previo que veas en el historial ` +
+        `(no le preguntes de cero lo que ya respondió), responde su mensaje y avanza hacia el cierre. NO lo trates como cliente nuevo.`
+      );
+    };
     // Product from THIS message's FRESH ad click. It overrides any stale
     // history-derived hint below: a returning customer who once asked about
     // the E1000 months ago but just clicked a DIFFERENT ad wants the NEW
@@ -644,6 +660,7 @@ async function processWebhookLocked(
           /\b(how much|price|cost|cu[aá]nto|precio|vale|cuesta|prix|konbyen|pri)\b/i.test(messageText);
         firstContactDirective +=
           `\n\n=== PRODUCTO DEL ANUNCIO (contexto de llegada) ===\n` +
+          `(Esta instrucción MANDA sobre cualquier apertura genérica de arriba — ya sabes exactamente qué producto le interesa.) ` +
           (returningCustomer
             ? `(Este cliente YA te había escrito antes y vuelve por un anuncio nuevo — salúdalo de vuelta con calidez ("¡Qué gusto verlo de nuevo!"), NO lo trates como nuevo ni repitas preguntas que ya respondió en el historial.) `
             : '') +
@@ -661,23 +678,14 @@ async function processWebhookLocked(
           );
         }
         console.log(`[WEBHOOK] CTWA ad → product ${adProductSku ?? adProductName} for ${senderPhone} returning=${returningCustomer} priceAsk=${priceAsk}`);
+      } else if (returningCustomer) {
+        // Referral present but the ad product was unresolvable — still
+        // welcome a returning customer back instead of cold-starting them.
+        firstContactDirective += buildGapWelcomeBack();
       }
     } else if (returningCustomer) {
-      // Returning after a long gap, WITHOUT a new ad: welcome them back and
-      // don't re-interrogate. Threshold 3 days so an active back-and-forth
-      // (same-day / next-day replies) never triggers a jarring "welcome back".
-      const lastPrior = historyWithoutLast[historyWithoutLast.length - 1];
-      const gapDays = lastPrior
-        ? (Date.now() - Date.parse(lastPrior.created_at)) / 86_400_000
-        : 0;
-      if (gapDays >= 3) {
-        firstContactDirective +=
-          `\n\n=== CLIENTE QUE REGRESA ===\n` +
-          `Este cliente ya te había escrito antes (hace ${Math.round(gapDays)} días) y vuelve ahora. ` +
-          `Salúdalo de vuelta con calidez ("¡Qué gusto verlo de nuevo!"), retoma el interés previo que veas en el historial ` +
-          `(no le preguntes de cero lo que ya respondió), responde su mensaje y avanza hacia el cierre. NO lo trates como cliente nuevo.`;
-        console.log(`[WEBHOOK] Returning customer ${senderPhone} after ${Math.round(gapDays)}d gap (no ad)`);
-      }
+      // Returning after a long gap, WITHOUT a new ad: welcome them back.
+      firstContactDirective += buildGapWelcomeBack();
     }
 
     // ── Per-turn dynamic directives ─────────────────────────
@@ -805,13 +813,28 @@ async function processWebhookLocked(
       }
     }
 
+    // Defense-in-depth: strip any residual internal tag the downstream
+    // extractors could miss (a malformed [SEND_IMAGE...] without a valid SKU,
+    // or a leftover [[PAYLINK...]]) so it can NEVER reach the customer.
+    cleanMessage = cleanMessage
+      .replace(/\[\[?\s*(SEND_IMAGE|PAYLINK)\b[^\]]*\]\]?/gi, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
     // ── Handle HANDOFF ───────────────────────────────────
     if (handoffReason) {
       console.log(`[WEBHOOK] Handoff detected for ${senderPhone}: ${handoffReason}`);
       await escalateConversation(conversation.id, handoffReason, messageText);
       await storeMessage(conversation.id, 'assistant', cleanMessage, true);
       await sendReplyForParsed(parsed, cleanMessage);
-      await sendHandoffAlert(OPERATOR_PHONE, senderPhone, handoffReason, messageText);
+      // Operator alert is a POST-reply side effect — wrap it so a failed alert
+      // can't fall through to the outer catch and send the customer a
+      // contradictory "técnico" fallback after they already got the answer.
+      try {
+        await sendHandoffAlert(OPERATOR_PHONE, senderPhone, handoffReason, messageText);
+      } catch (alertErr) {
+        console.error(`[WEBHOOK] handoff alert failed for ${senderPhone}:`, alertErr);
+      }
     } else {
       // ── Normal AI response ──────────────────────────────
       await storeMessage(conversation.id, 'assistant', cleanMessage);
