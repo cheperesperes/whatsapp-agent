@@ -44,6 +44,7 @@ import {
   scoreLeadQuality,
   mergeReading,
   buildDynamicDirectives,
+  deriveKnownProductHint,
 } from '@/lib/anthropic';
 import { classifyIntent, formatIntentHintForPrompt } from '@/lib/classifier';
 import {
@@ -648,6 +649,13 @@ async function processWebhookLocked(
       userTurnCount,
       intentStage: customerProfile?.reading?.intent_stage ?? undefined,
       lastUserText: messageText,
+      // Re-inject the known product (ad arrival / last quote) EVERY turn so a
+      // bare "¿precio?" resolves to that unit, not a generic catalog.
+      knownProductHint: deriveKnownProductHint({
+        history: historyWithoutLast,
+        adSource: (conversation as { ad_source?: string | null }).ad_source ?? null,
+        productInterest: (conversation as { product_interest?: string | null }).product_interest ?? null,
+      }),
     });
     if (dynamicDirectives) {
       console.log(
