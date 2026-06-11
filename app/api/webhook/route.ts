@@ -594,6 +594,11 @@ async function processWebhookLocked(
     // refresh ad attribution on every click, (b) inject the ad's product, and
     // (c) greet a returning customer back instead of interrogating from zero.
     const returningCustomer = historyWithoutLast.length > 0;
+    // Product from THIS message's FRESH ad click. It overrides any stale
+    // history-derived hint below: a returning customer who once asked about
+    // the E1000 months ago but just clicked a DIFFERENT ad wants the NEW
+    // product, not the old one. Fresh action beats old history.
+    let currentAdProductSku: string | null = null;
     if (parsed.referral) {
       const r = parsed.referral;
       const adSource =
@@ -634,6 +639,7 @@ async function processWebhookLocked(
         }
       }
       if (adProductName) {
+        currentAdProductSku = adProductSku; // fresh ad — takes priority below
         const priceAsk =
           /\b(how much|price|cost|cu[aá]nto|precio|vale|cuesta|prix|konbyen|pri)\b/i.test(messageText);
         firstContactDirective +=
@@ -686,13 +692,17 @@ async function processWebhookLocked(
       userTurnCount,
       intentStage: customerProfile?.reading?.intent_stage ?? undefined,
       lastUserText: messageText,
-      // Re-inject the known product (ad arrival / last quote) EVERY turn so a
-      // bare "¿precio?" resolves to that unit, not a generic catalog.
-      knownProductHint: deriveKnownProductHint({
-        history: historyWithoutLast,
-        adSource: (conversation as { ad_source?: string | null }).ad_source ?? null,
-        productInterest: (conversation as { product_interest?: string | null }).product_interest ?? null,
-      }),
+      // Re-inject the known product EVERY turn so a bare "¿precio?" resolves to
+      // that unit, not a generic catalog. A FRESH ad click on this message wins
+      // over any history-derived product (don't assume the old E1000 when they
+      // just landed from a different ad).
+      knownProductHint:
+        currentAdProductSku ??
+        deriveKnownProductHint({
+          history: historyWithoutLast,
+          adSource: (conversation as { ad_source?: string | null }).ad_source ?? null,
+          productInterest: (conversation as { product_interest?: string | null }).product_interest ?? null,
+        }),
     });
     if (dynamicDirectives) {
       console.log(
