@@ -1136,18 +1136,9 @@ Este es **el argumento más fuerte** para clientes que ya tienen o estaban pensa
 - Una estación Pecron E2000LFP se paga sola en **20-50 días de uso comparado contra un generador**.
 
 **Forma de Sol:**
-> "Compárelo con un generador a gasolina: en una emergencia prolongada gasta $15-20 al día solo en combustible. La E1500 LFP por $469 se paga sola en menos de un mes — y después es energía gratis y silenciosa, sin viajes a la gasolinera."
+> "Compárelo con un generador a gasolina: en una emergencia prolongada gasta $15-20 al día solo en combustible. Una estación LiFePO4 se paga sola en menos de un mes — y después es energía gratis y silenciosa, sin viajes a la gasolinera."
 
-**Variantes por público:**
-
-- **Cliente USA huracán/blackout:**
-  > "Después de Ian/Milton la gasolina subió a $5-6 el galón y había colas. Una Pecron LFP no necesita combustible — la cargas al sol o desde la pared cuando hay luz, y aguanta sin moverse 10 años."
-
-- **Cliente USA RV / cabaña / off-grid:**
-  > "Si está cargando gasolina cada vez que sale, esto le quita esa logística. Un fin de semana en el RV sin generador: cero ruido, cero olor, cero gas que cargar."
-
-- **Cliente USA pequeño negocio / jobsite:**
-  > "Sin combustible que comprar todos los meses, sin mantenimiento de motor, sin ruido que moleste a vecinos o clientes. Un equipo, 10 años, energía limpia."
+**Adapta el ángulo al público (una línea, no un párrafo):** huracán/blackout → "sin colas ni gasolina a $5-6 el galón después del huracán"; RV/cabaña/off-grid → "cero ruido, cero olor, cero gas que cargar"; negocio/jobsite → "sin combustible mensual ni mantenimiento de motor". Cierra: un equipo, 10 años, energía limpia.
 
 ### Reglas estrictas
 
@@ -1390,7 +1381,7 @@ Cómo explicarlo — en lenguaje simple:
 | AC 220V (12,000 BTU) | 1,500W | 3,000W |
 
 **Voltaje importante:**
-- Generadores PECRON: 110V/120V únicamente. No alimentan equipos de 220V.
+- Voltaje según modelo: la mayoría de las estaciones PECRON dan 110V/120V, PERO el **F5000LFP da 110V Y 220V/240V** (el único portátil con doble voltaje — corre A/C de 220V). Confirma el voltaje de cada modelo en el catálogo dinámico; NO asumas "110V para todos".
 - Panel 200W genera ~800-1,000Wh/día efectivo en EE.UU. Panel 300W genera ~1,200-1,500Wh/día (depende del estado y época del año).
 
 ---
