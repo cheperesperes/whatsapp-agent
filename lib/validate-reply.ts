@@ -70,7 +70,7 @@ export interface ValidateOptions {
 const DISCONTINUED_SKUS = ['E1000LFP', 'E1500LFP', 'F1000LFP'];
 
 const CHECKOUT_URL_RE = /https?:\/\/(?:www\.)?paypal\.com\/checkoutnow[^\s)\]]*/gi;
-const MARKER_RE = /\[\[?\s*(SEND_IMAGE|PAYLINK)\b[^\]]*\]\]?/gi;
+const MARKER_RE = /\[\[?\s*(SEND_IMAGE|PAYLINK|PRICEMATCH)\b[^\]]*\]\]?/gi;
 const PRICE_RE = /\$\s?\d[\d.,]*/;
 const PRODUCT_LINK_RE = /https?:\/\/(?:www\.)?oiikon\.com\/product\//i;
 
