@@ -347,8 +347,8 @@ Devuelve SOLO JSON válido con esta forma:
 Reglas de hechos:
 - "display_name": solo si el cliente dijo claramente su nombre.
 - "language": "es" si el cliente escribe en español, "en" si en inglés, null si ambiguo.
-- "summary": máximo 200 caracteres, resumen neutral de quién es el cliente y qué busca (p.ej. "Cliente en Miami comprando para familia en Cuba; interesado en estación portátil para nevera y luces").
-- "new_facts": hechos concretos que el cliente mencionó y que NO aparecen ya en la lista de hechos previos. Ejemplos: "Vive en Miami", "Compra para su madre en Santiago de Cuba", "Su familia tiene nevera vieja y ventilador", "Presupuesto cerca de $800". NO incluyas hechos genéricos o inferidos.
+- "summary": máximo 200 caracteres, resumen neutral de quién es el cliente y qué busca (p.ej. "Cliente en Florida buscando respaldo de energía para su casa; interesado en estación portátil para nevera y luces").
+- "new_facts": hechos concretos que el cliente mencionó y que NO aparecen ya en la lista de hechos previos. Ejemplos: "Vive en Florida", "Compra para su madre", "Tiene una nevera vieja y un ventilador", "Presupuesto cerca de $800". NO incluyas hechos genéricos o inferidos. NUNCA registres destino/país fuera de EE.UU. — Oiikon entrega solo en EE.UU.
 
 Reglas de lectura (SOLO emite un valor si hay SEÑAL EXPLÍCITA en la conversación; null si no):
 - "intent_stage":
@@ -695,7 +695,7 @@ export async function scoreLeadQuality(history: Message[]): Promise<LeadScore | 
     .map((m) => `${m.role === 'user' ? 'CLIENTE' : 'SOL'}: ${m.content}`)
     .join('\n');
 
-  const prompt = `Eres un evaluador de calidad de leads para Sol, un agente de ventas de WhatsApp (Oiikon, energía solar para Cuba/USA). Lee la conversación y clasifica al cliente.
+  const prompt = `Eres un evaluador de calidad de leads para Sol, un agente de ventas de WhatsApp (Oiikon, energía solar para clientes en EE.UU.). Lee la conversación y clasifica al cliente.
 
 Conversación reciente:
 ${thread}
