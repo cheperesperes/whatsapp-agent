@@ -169,6 +169,17 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: '/dashboard/funnel',
+    label: 'Embudo',
+    primary: false,
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M3 4h18l-7 8v6l-4 2v-8L3 4z" />
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/analytics',
     label: 'Analíticas',
     primary: false,
