@@ -1044,9 +1044,25 @@ export function formatOffersForPrompt(
     const cost = costBySku[p.sku.toLowerCase()] ?? null;
     const best = selectBestOffer(effective, p.brand, cost, offers);
     if (best) {
-      lines.push(
-        `• ${p.sku}: código *${best.code}* — ${best.label} (ahorra ~$${best.savings.toFixed(2)}, queda ~$${best.finalPrice.toFixed(2)})`,
-      );
+      // Anchor the presentation to the MSRP (original_price), NOT the sell_price.
+      // Otherwise a coupon on a 56%-off-MSRP unit reads as a puny "$50 off" — Sol
+      // showed exactly that to a comparison shopper (Maddog, E3600 $949 framed as
+      // "$50 off ~$1,049" instead of "59% off ~$2,299"). When a real MSRP anchor
+      // exists (> final), give Sol the strike price + TOTAL % off the customer is
+      // getting, coupon folded in. No MSRP → fall back to coupon-only framing.
+      const msrp = p.original_price ?? 0;
+      const showAnchor = msrp > best.finalPrice + 0.01;
+      if (showAnchor) {
+        const totalPct = Math.min(80, Math.round((1 - best.finalPrice / msrp) * 100));
+        const totalSavings = Math.round((msrp - best.finalPrice) * 100) / 100;
+        lines.push(
+          `• ${p.sku}: código *${best.code}* → presenta ~$${msrp.toFixed(2)}~ *$${best.finalPrice.toFixed(2)}* (${totalPct}% de descuento, YA incluye el código) · ahorro total ~$${totalSavings.toFixed(2)} · link con ?promo=${best.code}`,
+        );
+      } else {
+        lines.push(
+          `• ${p.sku}: código *${best.code}* — ${best.label} (ahorra ~$${best.savings.toFixed(2)}, queda ~$${best.finalPrice.toFixed(2)}) · link con ?promo=${best.code}`,
+        );
+      }
     }
   }
   if (lines.length === 0) return '';
@@ -1058,7 +1074,7 @@ export function formatOffersForPrompt(
     ...lines,
     '',
     'Reglas de oferta (OBLIGATORIAS):',
-    '• AL RECOMENDAR EN FIRME o dar el precio de un equipo que SÍ aparece arriba, presenta SIEMPRE el precio CON su oferta: ~precio normal~ *precio final* + código + link con ?promo=. NUNCA des el precio "limpio" sin el cupón cuando existe — omitir el descuento en una recomendación regala la conversión (pasó en producción: un lead del F5000 recibió $1,999 plano teniendo $100 vigentes).',
+    '• AL RECOMENDAR EN FIRME o dar el precio de un equipo que SÍ aparece arriba, presenta SIEMPRE el precio CON su oferta usando EXACTAMENTE el ancla y los números de la línea de arriba: ~precio de LISTA tachado~ *precio final* + el % TOTAL de descuento + código + link con ?promo=. ANCLA AL PRECIO DE LISTA (el ~$X~ de arriba), NUNCA al precio neto: un equipo que ya está 56% por debajo de lista NO se presenta como "$50 de descuento" — eso entierra la oferta real y regala la venta a un cliente que compara (pasó en producción: el E3600 a $949 se mostró como "$50 off ~$1,049" en vez de "59% off ~$2,299"). Tampoco des el precio "limpio" sin el cupón cuando existe (un lead del F5000 recibió $1,999 plano teniendo $100 vigentes).',
     '• UN código por equipo: para CADA equipo presenta SOLO su código listado arriba. NUNCA le ofrezcas a un mismo equipo varios cupones, ni inventes códigos, ni le pongas a un equipo el cupón de otro.',
     '• COMBO (varios equipos en un mismo pago por link): en la etiqueta [[PAYLINK ... coupon=A,B]] incluye el código de CADA equipo separados por coma —el mismo que cotizaste para cada uno—. El sistema aplica a cada equipo el mejor cupón seguro de esa lista, así ninguno queda a precio completo. Esto NO contradice la regla anterior: sigue siendo UN código por equipo, solo combinados en una misma etiqueta.',
     '• Si un equipo NO aparece en esta lista, no tiene oferta aplicable — cotiza el precio normal del catálogo, sin cupón.',
