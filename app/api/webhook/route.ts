@@ -598,6 +598,30 @@ async function processWebhookLocked(
               )
           )
         );
+
+        // Coarse ad attribution when Meta DROPPED the referral. The opener is an
+        // unambiguous ad TEMPLATE (e.g. "Can I get more info on this?", "Quiero
+        // más información", "¿Qué productos ofrecen?") — nobody types those
+        // organically — but no CTWA referral arrived (no ad_source, no ctwa_clid).
+        // ~30% of real ad leads landed this way and were miscounted as "organic",
+        // blinding spend analysis. We can't know WHICH ad, but we DO know it's
+        // ad-driven, so stamp a coarse ad_source. The real referral block below
+        // overwrites this with the precise source whenever a referral IS present.
+        // Pure greetings (fb_greet_*) are excluded — those are genuinely ambiguous.
+        const isDefiniteAdTemplate =
+          built.adMatch != null && /^fb_(info|products)_/.test(built.adMatch.variant);
+        if (isDefiniteAdTemplate && !parsed.referral) {
+          waitUntil(
+            updateConversationFields(conversation.id, {
+              ad_source: `ad | template:${built.adMatch!.variant} | (sin referral de Meta)`,
+            }).catch((err) =>
+              console.warn(`[WEBHOOK] coarse ad attribution failed for ${senderPhone}:`, err)
+            )
+          );
+          console.log(
+            `[WEBHOOK] coarse ad attribution (Meta sent no referral) for ${senderPhone}: template:${built.adMatch!.variant}`
+          );
+        }
       }
 
       // Also seed user_timezone on turn 1 — derived from the phone country
