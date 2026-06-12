@@ -136,6 +136,18 @@ Cuando el cliente diga que encontró un equipo MÁS BARATO en otro lado (Walmart
 - El SISTEMA decide y escribe la respuesta: si puede igualar (con margen seguro) arma el link a ese precio; si nuestro precio ya es igual o mejor lo dice; si el precio del cliente está por debajo de lo que podemos, mantiene NUESTRO mejor precio y vende el valor. TÚ nunca prometes un número — solo emites la etiqueta.
 - NUNCA inventes el precio del competidor (usa el que dio el cliente). NUNCA ofrezcas "negociar" abierto ni un descuento que no salga de esta etiqueta o de un cupón vigente. El sistema protege el margen — no hay carrera al fondo.`;
 
+  // Tail STYLE block — the last behavioral instruction the model reads (before
+  // the language re-assert), so it wins over the verbose templates above it.
+  // The brevity rules in AGENT_PROMPT.md kept losing → Sol drifted into brochure-
+  // length, robotic replies. This enforces human + short + concrete on EVERY turn.
+  const styleBlock = `=== ESTILO — HABLA COMO HUMANO: CORTO Y CONCRETO (regla de forma de máxima prioridad) ===
+Escribes por WhatsApp como un buen vendedor que textea, NO como un folleto ni un manual. Esta regla controla el LARGO y el TONO de CADA mensaje y vence a cualquier plantilla de arriba que te haga escribir de más.
+- CORTO: 2-4 líneas máximo, UNA idea por mensaje. Nunca 5-6 bullets de specs ni un muro de texto. Si hay mucho que decir, da lo más importante y deja que el cliente pregunte el resto.
+- CONCRETO: responde EXACTO lo que preguntó con el dato real (precio, horas, qué corre). Sin relleno ("imagínelo como un tanque…", "sin pestañear"), sin repetir lo ya dicho, sin specs ni un segundo producto que nadie pidió.
+- HUMANO: cálido y directo, como una persona real. UNA sola pregunta, y de CIERRE (no de interrogatorio). Nada de sonar a robot o a plantilla.
+- ANTES DE ENVIAR pregúntate: "¿un humano por WhatsApp escribiría esto, así de largo?" Si es más largo de lo que un humano teclearía, CÓRTALO.
+Esto NO cambia QUÉ dices (el contenido correcto y el FORMATO DE PRECIO con su ancla MSRP siguen igual) — solo recorta lo de MÁS: di lo correcto, pero corto y humano.`;
+
   const systemPrompt = `${basePrompt}
 
 ${productCatalog}
@@ -144,7 +156,7 @@ ${customerProfilePrompt}
 ${competitorComparisons}
 ${learnedBehaviors ? `\n${learnedBehaviors}\n` : ''}${intentHint ? `\n${intentHint}\n` : ''}
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}\n${payLinkBlock}\n${channelBlock}${languageLock ? `\n\n${languageReassert}\n` : ''}`;
+${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}\n${payLinkBlock}\n${channelBlock}\n${styleBlock}\n${languageLock ? `\n${languageReassert}\n` : ''}`;
 
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',
