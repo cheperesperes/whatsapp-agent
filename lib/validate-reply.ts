@@ -69,6 +69,15 @@ export interface ValidateOptions {
  * never be pitched. Keep in sync with AGENT_PROMPT "MODELOS DESCONTINUADOS". */
 const DISCONTINUED_SKUS = ['E1000LFP', 'E1500LFP', 'F1000LFP'];
 
+/** Big fixed-system categories we drop-ship from suppliers. When OOS these are a
+ * consultative SPECIAL ORDER (Sol sizes them, quotes an indicative price, routes
+ * to a human for a firm quote), NOT a blocked pitch — so they're exempt from the
+ * OOS paragraph-drop below. A real pay-link still can't form (buildPayLink rejects
+ * OOS) and any hallucinated checkout URL is stripped by the fake_payment_link rule,
+ * so allowing the consultation paragraph carries no payment risk. Keep in sync with
+ * SPECIAL_ORDER_CATEGORIES in lib/supabase.ts. */
+const SPECIAL_ORDER_CATEGORIES = new Set(['inverter', 'battery', 'sistemas-solares-todo-en-uno']);
+
 const CHECKOUT_URL_RE = /https?:\/\/(?:www\.)?paypal\.com\/checkoutnow[^\s)\]]*/gi;
 const MARKER_RE = /\[\[?\s*(SEND_IMAGE|PAYLINK|PRICEMATCH)\b[^\]]*\]\]?/gi;
 const PRICE_RE = /\$\s?\d[\d.,]*/;
@@ -136,10 +145,15 @@ export function validateSolReply(
       }
     }
 
-    // 1. OOS / discontinued product pitch — paragraph-level drop.
+    // 1. OOS / discontinued product pitch — paragraph-level drop. Special-order
+    // categories (big fixed systems) are EXEMPT when OOS — those are a consultative
+    // special order, not a blocked pitch (see SPECIAL_ORDER_CATEGORIES). Discontinued
+    // SKUs are blocked unconditionally regardless of category.
     const oosSkus = new Set<string>(DISCONTINUED_SKUS.map((s) => s.toUpperCase()));
     for (const p of catalog) {
-      if (p && p.in_stock === false && p.sku) oosSkus.add(p.sku.toUpperCase());
+      if (p && p.in_stock === false && p.sku && !SPECIAL_ORDER_CATEGORIES.has(p.category)) {
+        oosSkus.add(p.sku.toUpperCase());
+      }
     }
     if (oosSkus.size > 0) {
       const paragraphs = text.split(/\n{2,}/);

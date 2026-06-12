@@ -645,6 +645,14 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
  * for historical orders + EAR §762 5-year retention, but never reach the LLM.
  * @param products Array of AgentProduct from agent_product_catalog
  */
+// Categories we drop-ship from suppliers rather than keep on the shelf — the
+// whole-house "fixed system" gear. When one of these is out of stock it is NOT
+// a dead end: Sol can still consult and offer it as a special order (procured
+// from the supplier on the customer's commitment), routed to a human for a firm
+// quote (lead time + freight + deposit). Portable stations (category 'kit') are
+// the stocked consumer line — their OOS stays an honest "agotado, te aviso".
+const SPECIAL_ORDER_CATEGORIES = new Set(['inverter', 'battery', 'sistemas-solares-todo-en-uno']);
+
 export function formatProductCatalogForPrompt(products: AgentProduct[]): string {
   const categoryNames: Record<string, string> = {
     kit: 'ESTACIONES PORTÁTILES',
@@ -725,7 +733,9 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
 
       const oosTag = p.in_stock
         ? ''
-        : ' ⛔ AGOTADO TEMPORALMENTE — no lo vendas ni des link de pago; informa con honestidad, ofrece la alternativa en stock más cercana y pregunta si quiere que le avisemos cuando regrese';
+        : SPECIAL_ORDER_CATEGORIES.has(p.category)
+          ? ' 🔧 POR ENCARGO (no en stock) — puedes asesorarlo y dimensionarlo con normalidad; es un pedido especial que traemos del proveedor. NO des link de pago ni prometas fecha exacta de entrega. Captura la necesidad (carga, ciudad, uso) y escala con [HANDOFF: pedido por encargo — SKU + necesidad] para que el especialista cotice (tiempo + flete) y gestione el anticipo.'
+          : ' ⛔ AGOTADO TEMPORALMENTE — no lo vendas ni des link de pago; informa con honestidad, ofrece la alternativa en stock más cercana y pregunta si quiere que le avisemos cuando regrese';
       lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}${oosTag}`);
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
       // Real expansion/compatibility pairings (source: pecron.com) so Sol names
