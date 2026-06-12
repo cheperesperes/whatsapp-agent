@@ -38,6 +38,11 @@ import { sendWhatsAppMessage } from './whatsapp';
 export interface PayLinkLineRequest {
   sku: string;
   qty: number;
+  /** Price-match: a competitor unit price to sell at INSTEAD of the catalog
+   * price. Server-enforced — buildPayLink rejects it if it falls below the
+   * margin floor (cost / (1 − PRICE_MATCH_MIN_MARGIN_PCT/100)), so Sol can
+   * never undercut below a safe margin no matter what it emits. */
+  overrideUnitPrice?: number;
 }
 
 export interface BuildPayLinkResult {
@@ -54,6 +59,17 @@ const clampQty = (n: number) => Math.max(1, Math.min(20, Math.floor(Number(n) ||
 // storefront). Sol asks a low-friction "¿envío a Florida?" yes/no and sets fl=si
 // in the marker; we tax ONLY Florida. Add states here if nexus ever expands.
 const FL_SALES_TAX_RATE = 0.07;
+
+// Price-match floor. Sol may match a competitor's verified comparable price,
+// but NEVER below this gross-margin floor: price ≥ cost / (1 − M/100). M defaults
+// to 12% (covers the PayPal fee + a small net margin — "break-even + a bit", no
+// race to the bottom). If cost is unknown we can't prove the floor → no match.
+const PRICE_MATCH_MIN_MARGIN_PCT = Number(process.env.PRICE_MATCH_MIN_MARGIN_PCT ?? 12);
+export function priceMatchFloor(cost: number | null | undefined): number | null {
+  if (cost == null || !(cost > 0)) return null;
+  const m = Math.max(0, Math.min(45, PRICE_MATCH_MIN_MARGIN_PCT));
+  return Math.round((cost / (1 - m / 100)) * 100) / 100;
+}
 
 /**
  * Build a PayPal pay-link for one or more catalog SKUs. Price + coupon are
@@ -124,11 +140,20 @@ export async function buildPayLink(
     const qty = clampQty(ln.qty);
     const disc = Math.max(0, Math.min(50, p.discount_percentage ?? 0));
     let unit = disc > 0 ? p.sell_price * (1 - disc / 100) : p.sell_price;
+    const cost = costs[p.sku.toLowerCase()] ?? null;
 
-    // Apply the requested coupon ONLY if it is margin-safe for this product
-    // (selectBestOffer enforces brand, min-order and the per-code margin floor).
-    if (couponOffers.length) {
-      const cost = costs[p.sku.toLowerCase()] ?? null;
+    if (ln.overrideUnitPrice != null) {
+      // PRICE MATCH — sell at the competitor price, but ONLY if it clears the
+      // margin floor (server-authoritative; cost never leaves the server).
+      const floor = priceMatchFloor(cost);
+      if (floor == null) return { ok: false, error: `match_no_cost:${p.sku}` };
+      if (ln.overrideUnitPrice < floor - 0.01) {
+        return { ok: false, error: `match_below_floor:${p.sku}` };
+      }
+      unit = ln.overrideUnitPrice; // coupon does NOT stack on a match
+    } else if (couponOffers.length) {
+      // Apply the requested coupon ONLY if it is margin-safe for this product
+      // (selectBestOffer enforces brand, min-order and the per-code margin floor).
       const best = selectBestOffer(unit, p.brand ?? '', cost, couponOffers);
       if (best) unit = best.finalPrice;
     }
@@ -233,6 +258,113 @@ export async function applyPayLinkMarkers(
     } catch (e) {
       failed++;
       details.push(`err ${e instanceof Error ? e.message : String(e)}`);
+    }
+    out = out.replace(m[0], replacement);
+  }
+
+  return { text: out, built, failed, details };
+}
+
+// ── Price match ─────────────────────────────────────────────────────────────
+// Sol emits [[PRICEMATCH sku=SKU competitor=PRICE fl=si|no]] when a customer has
+// shown a genuinely comparable unit at a lower price. The SERVER decides the
+// outcome (cost/floor never reach the LLM) and writes the whole customer-facing
+// line, so Sol can't pre-promise a number it can't honor:
+//   • already_cheaper — our price ≤ theirs → affirm we're already as good/better.
+//   • match           — floor ≤ theirs < ours → match to their price (margin-safe).
+//   • hold            — theirs < floor (or cost unknown) → hold at our price + value.
+const PRICEMATCH_RE = /\[\[\s*PRICEMATCH\s+([^\]]+?)\s*\]\]/gi;
+
+function parsePriceMatchMarker(inner: string): { sku: string; competitor: number; isFlorida: boolean } | null {
+  const skuM = inner.match(/sku=([^\s]+)/i);
+  const compM = inner.match(/competitor=\$?([0-9]+(?:[.,][0-9]+)?)/i);
+  const flM = inner.match(/fl=([^\s]+)/i);
+  if (!skuM || !compM) return null;
+  const competitor = Number(compM[1].replace(',', '.'));
+  if (!(competitor > 0)) return null;
+  const isFlorida = flM ? /^(s[ií]|si|yes|y|1|true|fl|florida)$/i.test(flM[1].trim()) : false;
+  return { sku: skuM[1].trim(), competitor, isFlorida };
+}
+
+function framePriceMatch(
+  lang: 'es' | 'en',
+  outcome: 'already_cheaper' | 'match' | 'hold',
+  ourPrice: number,
+  matchedPrice: number,
+  url: string,
+): string {
+  const link = lang === 'en'
+    ? `👉 Secure checkout (card / PayPal / Apple Pay — no account):\n${url}`
+    : `👉 Pague seguro (tarjeta / PayPal / Apple Pay — sin cuenta):\n${url}`;
+  if (lang === 'en') {
+    if (outcome === 'already_cheaper')
+      return `Good news — our price is already as good or better: *$${ourPrice.toFixed(2)}*, with US-backed warranty + LiFePO4 (~10-yr life). ${link}`;
+    if (outcome === 'match')
+      return `🤝 Done — I'll match it: *$${matchedPrice.toFixed(2)}* for the same unit, plus warranty handled here in the US and direct support. ${link}`;
+    return `My best on this one is *$${ourPrice.toFixed(2)}* — I can't go lower without dropping the US-backed warranty and support that a cheaper, shorter-life unit won't give you. ${link}`;
+  }
+  if (outcome === 'already_cheaper')
+    return `¡Buena noticia! Nuestro precio ya es igual o mejor: *$${ourPrice.toFixed(2)}*, con garantía respaldada en EE.UU. + batería LiFePO4 (~10 años de vida). ${link}`;
+  if (outcome === 'match')
+    return `🤝 ¡Hecho, le igualo el precio! *$${matchedPrice.toFixed(2)}* por el mismo equipo, con garantía aquí en EE.UU. y soporte directo. ${link}`;
+  return `Mi mejor precio en este equipo es *$${ourPrice.toFixed(2)}* — no puedo bajar más sin quitarle la garantía respaldada en EE.UU. y el soporte que una opción más barata y de menor duración no le da. ${link}`;
+}
+
+export async function applyPriceMatchMarkers(
+  text: string,
+  lang: 'es' | 'en' = 'es',
+  waPhone?: string,
+): Promise<ApplyPayLinkResult> {
+  const markers = [...text.matchAll(PRICEMATCH_RE)];
+  if (markers.length === 0) return { text, built: 0, failed: 0, details: [] };
+
+  const soft = lang === 'en'
+    ? 'One moment — let me check the best price I can do. 🙏'
+    : 'Un momento — déjeme ver el mejor precio que le puedo dar. 🙏';
+
+  const [catalog, costs] = await Promise.all([loadAgentCatalog(), loadProductCosts()]);
+  let out = text, built = 0, failed = 0;
+  const details: string[] = [];
+
+  for (const m of markers) {
+    let replacement = soft;
+    try {
+      const parsed = parsePriceMatchMarker(m[1]);
+      if (!parsed) { failed++; details.push('pm parse_fail'); out = out.replace(m[0], soft); continue; }
+
+      const r0 = catalog.find((c) => c.sku.toLowerCase() === parsed.sku.toLowerCase());
+      let resolved: { sku: string; sell_price: number; disc: number | null; in_stock: boolean } | null = r0
+        ? { sku: r0.sku, sell_price: r0.sell_price, disc: r0.discount_percentage, in_stock: r0.in_stock }
+        : null;
+      if (!resolved) {
+        const fp = (await loadStorefrontProductsBySku([parsed.sku]))[0];
+        if (fp) resolved = { sku: fp.sku, sell_price: fp.sell_price, disc: fp.discount_percentage, in_stock: fp.in_stock };
+      }
+      if (!resolved || !resolved.in_stock) { failed++; details.push(`pm unknown_or_oos:${parsed.sku}`); out = out.replace(m[0], soft); continue; }
+
+      const disc = Math.max(0, Math.min(50, resolved.disc ?? 0));
+      const ourPrice = Math.round((disc > 0 ? resolved.sell_price * (1 - disc / 100) : resolved.sell_price) * 100) / 100;
+      const floor = priceMatchFloor(costs[resolved.sku.toLowerCase()] ?? null);
+      const comp = parsed.competitor;
+
+      let outcome: 'already_cheaper' | 'match' | 'hold';
+      let overrideUnitPrice: number | undefined;
+      if (comp >= ourPrice - 0.01) outcome = 'already_cheaper';
+      else if (floor != null && comp >= floor) { outcome = 'match'; overrideUnitPrice = comp; }
+      else outcome = 'hold';
+
+      const r = await buildPayLink(
+        [{ sku: resolved.sku, qty: 1, overrideUnitPrice }],
+        null, parsed.isFlorida, waPhone, lang,
+      );
+      if (!r.ok || !r.url) { failed++; details.push(`pm fail ${r.error}`); out = out.replace(m[0], soft); continue; }
+
+      built++;
+      details.push(`pm ${outcome} our=${ourPrice} comp=${comp} floor=${floor ?? 'n/a'}`);
+      replacement = framePriceMatch(lang, outcome, ourPrice, overrideUnitPrice ?? ourPrice, r.url);
+    } catch (e) {
+      failed++;
+      details.push(`pm err ${e instanceof Error ? e.message : String(e)}`);
     }
     out = out.replace(m[0], replacement);
   }

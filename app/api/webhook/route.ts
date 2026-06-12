@@ -58,7 +58,7 @@ import {
 } from '@/lib/competitors';
 import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-extractor';
 import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
-import { applyPayLinkMarkers } from '@/lib/paylink';
+import { applyPayLinkMarkers, applyPriceMatchMarkers } from '@/lib/paylink';
 import { validateSolReply, extractCheckoutUrls } from '@/lib/validate-reply';
 import {
   detectLanguageFromHistory,
@@ -869,13 +869,24 @@ async function processWebhookLocked(
           }
         }
       }
+
+      // Price match: [[PRICEMATCH sku=… competitor=… fl=…]] → server decides
+      // match / already-cheaper / hold-the-line (margin floor enforced server-
+      // side; cost never reaches the LLM) and writes the customer line.
+      const pm = await applyPriceMatchMarkers(cleanMessage, payLang, senderPhone);
+      cleanMessage = pm.text;
+      if (pm.built > 0 || pm.failed > 0) {
+        console.log(
+          `[PRICEMATCH] ${senderPhone} conv=${conversation.id} built=${pm.built} failed=${pm.failed} :: ${pm.details.join(' ; ')}`
+        );
+      }
     }
 
     // Defense-in-depth: strip any residual internal tag the downstream
     // extractors could miss (a malformed [SEND_IMAGE...] without a valid SKU,
     // or a leftover [[PAYLINK...]]) so it can NEVER reach the customer.
     cleanMessage = cleanMessage
-      .replace(/\[\[?\s*(SEND_IMAGE|PAYLINK)\b[^\]]*\]\]?/gi, '')
+      .replace(/\[\[?\s*(SEND_IMAGE|PAYLINK|PRICEMATCH)\b[^\]]*\]\]?/gi, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
