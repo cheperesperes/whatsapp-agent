@@ -45,6 +45,9 @@
     },
     "app/api/cron/web-lead-followup/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/catalog-price-drift/route.ts": {
+      "maxDuration": 30
     }
   },
   "crons": [
@@ -91,6 +94,10 @@
     {
       "path": "/api/cron/web-lead-followup",
       "schedule": "45 * * * *"
+    },
+    {
+      "path": "/api/cron/catalog-price-drift",
+      "schedule": "30 13 * * *"
     }
   ],
   "headers": [
