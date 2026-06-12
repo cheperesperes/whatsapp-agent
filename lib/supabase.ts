@@ -706,9 +706,21 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
       // p.cuba_shipping_fee / p.cuba_handling_fee remain in the DB for
       // historical-order math + EAR §762 retention, but Sol's prompt only
       // ever sees the US sell_price.
+      // Discount badge — computed from the MSRP anchor (original_price) vs the
+      // effective price, NOT from discount_percentage. This survives a catalog→
+      // storefront price sync where sell_price is the real price and
+      // discount_percentage=0 but original_price still holds the MSRP (e.g.
+      // E2000LFP $599 vs MSRP $1,499 = 60% off — the storefront's hook). The
+      // PRICE shown is always effectiveUsa, so this DISPLAY math can never cause
+      // a giveaway; cap the shown % at 80 as a sanity guard against a bogus MSRP.
+      const msrp = p.original_price ?? 0;
+      const showStrike = msrp > effectiveUsa + 0.01;
+      const badgePct = showStrike
+        ? Math.min(80, Math.round((1 - effectiveUsa / msrp) * 100))
+        : 0;
       const priceParts: string[] = [`SKU ${p.sku}`, `Precio $${effectiveUsa.toFixed(2)} (envío gratis en EE.UU.)`];
-      if (discount > 0 && p.original_price) {
-        priceParts.push(`(antes $${p.original_price.toFixed(2)}, ${discount}% descuento)`);
+      if (showStrike) {
+        priceParts.push(`(antes $${msrp.toFixed(2)}, ${badgePct}% descuento)`);
       }
 
       const oosTag = p.in_stock
