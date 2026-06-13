@@ -198,7 +198,7 @@ export function formatAdArrivalDirective(match: AdOpenerMatch): string {
       'YOUR REPLY MUST (2–4 short lines):',
       '• One-line warm intro ("Hi, I\'m Sol from Oiikon 👋").',
       '• If you KNOW the product they clicked (AD CONTEXT / product_interest): LEAD with THAT product — name it, ONE concrete benefit, free US shipping + the direct link. Real intent there, so price is fine.',
-      '• If you do NOT know the product: give ONE value sentence with NO price — what it solves ("we keep your fridge, lights and fans running when the power goes out — no gas, no noise, free US shipping"). No price, no link yet, and do NOT default to the $1,049 unit.',
+      '• If you do NOT know the product: give ONE value sentence with NO price — what it solves ("we keep your fridge, lights and fans running when the power goes out — no gas, no noise, free US shipping"). No price, no link yet. If they then ask the price, your entry anchor is the accessible E2000LFP (~$599), NEVER a $949+ unit — keep the first number low so price-sensitive leads don\'t bounce.',
       '• End with ONE discovery question: "Is this for your home, an RV, or work?"',
       '',
       'YOUR REPLY MUST NOT:',
@@ -214,7 +214,7 @@ export function formatAdArrivalDirective(match: AdOpenerMatch): string {
     'TU RESPUESTA DEBE (2–4 líneas cortas):',
     '• Presentación cálida de una línea ("¡Hola! Soy Sol de Oiikon 😊").',
     '• Si SABES qué producto vio (bloque AD CONTEXT / product_interest): ARRANCA con ESE producto — nómbralo, UN beneficio concreto, envío gratis EE.UU. + el link directo. Ahí sí hay intención; el precio va bien.',
-    '• Si NO sabes el producto: da UNA frase de valor SIN precio — qué resuelve ("mantenemos su nevera, luces y ventiladores andando cuando se va la luz, sin gasolina ni ruido, con envío gratis a EE.UU."). Sin precio ni link todavía, y NO ancles en el equipo de $1,049.',
+    '• Si NO sabes el producto: da UNA frase de valor SIN precio — qué resuelve ("mantenemos su nevera, luces y ventiladores andando cuando se va la luz, sin gasolina ni ruido, con envío gratis a EE.UU."). Sin precio ni link todavía. Si luego pregunta el precio, tu ancla de entrada es el E2000LFP accesible (~$599), NUNCA un equipo de $949+ — el primer número bajo evita que un lead sensible al precio se vaya.',
     '• Cierra con UNA pregunta de descubrimiento: "¿Para qué lo necesita — respaldo en casa, una traila/RV, o el trabajo?"',
     '',
     'TU RESPUESTA NO DEBE:',
@@ -236,14 +236,14 @@ export function formatFirstContactDirective(language: 'es' | 'en'): string {
       '=== TURN 1 · NEW CUSTOMER ===',
       'This is this customer\'s FIRST message. Open with a brief one-line intro ("Hi, I\'m Sol from Oiikon 👋"). Two failure modes to avoid: a bare question alone (loses most new customers), and front-loading a ~$1,000 price on someone who hasn\'t said what they need (price-shock).',
       'If they asked a CONCRETE question (price, warranty, cheapest, a specific model): answer it directly in 2–4 lines, with price + free US shipping + the direct product link, then one soft next-step question.',
-      'If vague/generic: give ONE value sentence with NO price (what it solves — fridge, lights, fans through an outage, free US shipping), THEN ONE discovery question ("Is this for your home, an RV, or work?"). No price, no link, no $1,049 anchor, no catalog dump until you know their use.',
+      'If vague/generic: give ONE value sentence with NO price (what it solves — fridge, lights, fans through an outage, free US shipping), THEN ONE discovery question ("Is this for your home, an RV, or work?"). No price, no link, no catalog dump until you know their use. If a price is warranted, your entry anchor is the accessible E2000LFP (~$599), never a $949+ unit.',
     ].join('\n');
   }
   return [
     '=== TURNO 1 · CLIENTE NUEVO ===',
     'Este es el PRIMER mensaje del cliente. Abre con una presentación de una línea ("Hola, soy Sol de Oiikon 👋"). Dos errores a evitar: una pregunta sola (pierde a la mayoría de clientes nuevos), y disparar un precio de ~$1,000 a alguien que aún no ha dicho qué necesita (rechazo por precio).',
     'Si hizo una pregunta CONCRETA (precio, garantía, el más barato, un modelo): respóndela directo en 2–4 líneas, con precio + envío gratis EE.UU. + el link directo del producto, y cierra con una pregunta suave de siguiente paso.',
-    'Si es vago/genérico: da UNA frase de valor SIN precio (qué resuelve — nevera, luces, ventiladores cuando se va la luz, envío gratis EE.UU.), LUEGO UNA pregunta de descubrimiento ("¿Es para su casa, una traila/RV, o el trabajo?"). Sin precio, sin link, sin anclar en el equipo de $1,049, sin volcar el catálogo hasta saber el uso.',
+    'Si es vago/genérico: da UNA frase de valor SIN precio (qué resuelve — nevera, luces, ventiladores cuando se va la luz, envío gratis EE.UU.), LUEGO UNA pregunta de descubrimiento ("¿Es para su casa, una traila/RV, o el trabajo?"). Sin precio, sin link, sin volcar el catálogo hasta saber el uso. Si hace falta un precio, tu ancla de entrada es el E2000LFP accesible (~$599), nunca un equipo de $949+.',
   ].join('\n');
 }
 
