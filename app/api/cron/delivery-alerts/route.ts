@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createServiceClient } from '@/lib/supabase';
 import { notifyOrder } from '@/lib/order-notify';
-import { trackingConfigured, carrierSlug, createTracking, getTracking } from '@/lib/tracking';
+import { trackingConfigured, registerTracking, getDeliveryStatus } from '@/lib/tracking';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -57,20 +57,21 @@ export async function GET(req: NextRequest): Promise<Response> {
   const sb = createServiceClient();
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000).toISOString();
 
-  // ── Phase 1 — DETECT delivery via AfterShip (track by number, no carrier acct) ─
-  // Poll still-"shipped" orders that have a tracking number; AfterShip tracks the
+  // ── Phase 1 — DETECT delivery via 17TRACK (track by number, no carrier acct) ───
+  // Poll still-"shipped" orders that have a tracking number; 17TRACK tracks the
   // number across carriers (auto-detecting the courier) and reports "Delivered" → we
-  // flip fulfillment_status so the alert phase below picks it up. We create the
-  // AfterShip tracking once and stash its id on orders.fulfillment_data so later runs
-  // just re-read it (AfterShip fetches the carrier asynchronously, so the first
-  // create is usually still "Pending"; a later run sees "Delivered"). This is the
-  // auto-detection that makes the alert hands-off. Dormant unless AFTERSHIP_API_KEY
+  // flip fulfillment_status so the alert phase below picks it up. 17TRACK's model:
+  // REGISTER a number once (1 of the monthly free quota), then status reads are free.
+  // We flag the registration on orders.fulfillment_data.st_registered so each number
+  // is registered once; registration also lets 17track fetch the carrier async (so a
+  // just-registered number may read non-delivered until a later run). This is the
+  // auto-detection that makes the alert hands-off. Dormant unless SEVENTEENTRACK_API_KEY
   // is set. PECRON ships from its own account — we only read status, never ship.
   let detected = 0;
   if (trackingConfigured()) {
     const { data: shipped } = await sb
       .from('orders')
-      .select('order_number, tracking_number, shipping_carrier, fulfillment_data')
+      .select('order_number, tracking_number, fulfillment_data')
       .eq('fulfillment_status', 'shipped')
       .not('tracking_number', 'is', null)
       .gte('created_at', since)
@@ -82,28 +83,25 @@ export async function GET(req: NextRequest): Promise<Response> {
         o.fulfillment_data && typeof o.fulfillment_data === 'object' && !Array.isArray(o.fulfillment_data)
           ? (o.fulfillment_data as Record<string, unknown>)
           : {};
-      const existingId = typeof fd.aftership_id === 'string' ? fd.aftership_id : null;
 
-      const state = existingId
-        ? await getTracking(existingId)
-        : await createTracking(tn, carrierSlug(o.shipping_carrier));
-      if (!state) continue;
-
-      // First sight: remember the AfterShip id so future runs just re-read it.
-      if (!existingId && state.id) {
+      // Register once; on failure (e.g. quota/invalid) skip and retry next run.
+      if (fd.st_registered !== true) {
+        const ok = await registerTracking(tn);
+        if (!ok) continue;
         await sb
           .from('orders')
-          .update({ fulfillment_data: { ...fd, aftership_id: state.id } })
+          .update({ fulfillment_data: { ...fd, st_registered: true } })
           .eq('order_number', o.order_number);
       }
 
-      if (state.delivered) {
+      const state = await getDeliveryStatus(tn);
+      if (state?.delivered) {
         await sb
           .from('orders')
           .update({ fulfillment_status: 'delivered', updated_at: new Date().toISOString() })
           .eq('order_number', o.order_number);
         detected++;
-        console.log(`[delivery-alerts] AfterShip delivered → marked ${o.order_number} (${tn})`);
+        console.log(`[delivery-alerts] 17track delivered → marked ${o.order_number} (${tn})`);
       }
     }
   }

@@ -1,112 +1,100 @@
 /**
- * Multi-carrier delivery tracking via AfterShip — track by number, NO carrier
- * account required. Oiikon doesn't ship (PECRON ships from its own FedEx account);
- * we only need "is this tracking number delivered yet?". AfterShip tracks any
- * FedEx/UPS/USPS/DHL number by number and auto-detects the courier, on a free tier.
+ * Multi-carrier delivery tracking via 17TRACK — track by number, NO carrier
+ * account, free tier (100 registrations/month; status polling after that is free).
+ * Oiikon doesn't ship (PECRON ships from its own FedEx account); we only need
+ * "is this tracking number delivered yet?". 17TRACK tracks any FedEx/UPS/USPS/DHL
+ * number and auto-detects the courier.
  *
- * Model: you CREATE a tracking once (AfterShip then polls the carrier async), and
- * READ it back later by its AfterShip id. We stash that id on the order
- * (orders.fulfillment_data.aftership_id) so the cron can re-read without a lookup.
+ * Model: REGISTER a number once (costs 1 of the monthly free quota), then read its
+ * status as often as you want for free. We flag the registration on the order
+ * (orders.fulfillment_data.st_registered) so the cron registers each number once.
  *
- * Env-gated: returns null on missing AFTERSHIP_API_KEY or any error — the caller
- * skips that order and never throws. Built to the AfterShip Tracking API 2026-01
- * (header `as-api-key`, version in the path); response parsing is defensive across
- * envelope shapes so a version bump won't silently break it.
+ * Env-gated: returns false/null on missing SEVENTEENTRACK_API_KEY or any error — the
+ * caller skips that order and never throws. Built to the 17TRACK API v2.2 (header
+ * `17token`); response parsing is defensive so a shape change won't silently break it.
  */
-const VERSION = process.env.AFTERSHIP_API_VERSION || '2026-01';
-const BASE = `https://api.aftership.com/tracking/${VERSION}`;
+const BASE = process.env.SEVENTEENTRACK_API_BASE || 'https://api.17track.net/track/v2.2';
 
 export function trackingConfigured(): boolean {
-  return Boolean(process.env.AFTERSHIP_API_KEY);
+  return Boolean(process.env.SEVENTEENTRACK_API_KEY);
 }
 
-/** Map our stored carrier label → AfterShip courier slug. Undefined = auto-detect. */
-export function carrierSlug(carrier: string | null | undefined): string | undefined {
-  const c = (carrier ?? '').toLowerCase();
-  if (c.includes('fedex')) return 'fedex';
-  if (c.includes('ups')) return 'ups';
-  if (c.includes('usps')) return 'usps';
-  if (c.includes('dhl')) return 'dhl';
-  return undefined;
-}
-
-export interface TrackingState {
-  id: string | null;
-  tag: string | null; // AfterShip status tag: Delivered | InTransit | OutForDelivery | …
-  delivered: boolean;
-  deliveredAt: string | null;
-}
-
-function isDeliveredTag(tag: string | null): boolean {
-  return (tag ?? '').toLowerCase() === 'delivered';
+async function call(path: string, body: unknown): Promise<Record<string, unknown> | null> {
+  const key = process.env.SEVENTEENTRACK_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { '17token': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!res.ok) console.warn(`[tracking] 17track ${path} → HTTP ${res.status}`);
+    return json;
+  } catch (e) {
+    console.warn(`[tracking] 17track request failed: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
-function parseTracking(json: unknown): TrackingState | null {
-  // Single-tracking responses have historically been wrapped as
-  // { meta, data: { tracking: {...} } }; tolerate flatter shapes too.
-  const root = asRecord(json);
-  if (!root) return null;
-  const t =
-    asRecord(asRecord(root.data)?.tracking) ?? asRecord(root.tracking) ?? asRecord(root.data) ?? root;
-  const tag = typeof t.tag === 'string' ? t.tag : null;
-  const deliveredAt =
-    typeof t.shipment_delivery_date === 'string'
-      ? t.shipment_delivery_date
-      : typeof t.delivered_at === 'string'
-        ? t.delivered_at
-        : null;
-  return {
-    id: typeof t.id === 'string' ? t.id : null,
-    tag,
-    delivered: isDeliveredTag(tag),
-    deliveredAt,
-  };
+/** Pull the {accepted, rejected} arrays out of a 17track response, tolerating shape. */
+function lists(json: Record<string, unknown> | null): {
+  accepted: Record<string, unknown>[];
+  rejected: Record<string, unknown>[];
+} {
+  const data = asRecord(json?.data) ?? {};
+  const accepted = Array.isArray(data.accepted) ? (data.accepted as Record<string, unknown>[]) : [];
+  const rejected = Array.isArray(data.rejected) ? (data.rejected as Record<string, unknown>[]) : [];
+  return { accepted, rejected };
 }
 
-async function afterShip(path: string, init: RequestInit): Promise<unknown | null> {
-  const key = process.env.AFTERSHIP_API_KEY;
-  if (!key) return null;
-  try {
-    const res = await fetch(`${BASE}${path}`, {
-      ...init,
-      headers: {
-        'as-api-key': key,
-        'Content-Type': 'application/json',
-        ...(init.headers ?? {}),
-      },
-    });
-    // 4xx/5xx still parse — "already exists" responses can carry the tracking.
-    const json = await res.json().catch(() => null);
-    if (!res.ok && res.status !== 409) {
-      console.warn(`[tracking] AfterShip ${init.method} ${path} → ${res.status}`);
-    }
-    return json;
-  } catch (e) {
-    console.warn(`[tracking] AfterShip request failed: ${e instanceof Error ? e.message : String(e)}`);
-    return null;
+/**
+ * Register a tracking number so 17track starts monitoring it. Returns true if it's
+ * now registered (freshly accepted OR already registered before). False on a real
+ * rejection (invalid number, out of monthly quota) — caller should retry later.
+ */
+export async function registerTracking(number: string, carrier?: number): Promise<boolean> {
+  const json = await call('/register', [{ number, ...(carrier ? { carrier } : {}) }]);
+  if (!json) return false;
+  const { accepted, rejected } = lists(json);
+  if (accepted.some((a) => String(a.number) === String(number))) return true;
+  const r = rejected.find((x) => String(x.number) === String(number));
+  if (r) {
+    const err = asRecord(r.error);
+    const msg = String(err?.message ?? '').toLowerCase();
+    // "already registered" is success for our purposes — proceed to poll it.
+    if (msg.includes('already') || msg.includes('exist')) return true;
+    console.warn(`[tracking] 17track register rejected ${number}: ${msg || JSON.stringify(err)}`);
   }
+  return false;
 }
 
-/** Create an AfterShip tracking for a number. Returns its id + current tag (often
- *  "Pending" on first create — AfterShip fetches the carrier asynchronously). */
-export async function createTracking(
-  trackingNumber: string,
-  slug?: string,
-): Promise<TrackingState | null> {
-  if (!trackingConfigured()) return null;
-  const body: Record<string, string> = { tracking_number: trackingNumber };
-  if (slug) body.slug = slug;
-  const json = await afterShip('/trackings', { method: 'POST', body: JSON.stringify(body) });
-  return json ? parseTracking(json) : null;
+export interface TrackingState {
+  delivered: boolean;
+  status: string | null;
 }
 
-/** Read a tracking's current state by its AfterShip id. */
-export async function getTracking(id: string): Promise<TrackingState | null> {
-  if (!trackingConfigured()) return null;
-  const json = await afterShip(`/trackings/${encodeURIComponent(id)}`, { method: 'GET' });
-  return json ? parseTracking(json) : null;
+/** Read a registered number's current delivery state. Null if not found / error. */
+export async function getDeliveryStatus(number: string): Promise<TrackingState | null> {
+  const json = await call('/gettrackinfo', [{ number }]);
+  if (!json) return null;
+  const { accepted } = lists(json);
+  if (!accepted.length) return null;
+  const item = accepted.find((a) => String(a.number) === String(number)) ?? accepted[0];
+  const trackInfo = asRecord(item.track_info) ?? {};
+  const latest = trackInfo.latest_status;
+  const latestRec = asRecord(latest);
+  const status =
+    typeof latest === 'string'
+      ? latest
+      : typeof latestRec?.status === 'string'
+        ? (latestRec.status as string)
+        : null;
+  const sub = typeof latestRec?.sub_status === 'string' ? (latestRec.sub_status as string) : '';
+  const delivered = /delivered/i.test(status ?? '') || /delivered/i.test(sub);
+  return { delivered, status };
 }
