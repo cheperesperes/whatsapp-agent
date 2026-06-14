@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
 // 'shipped' pulls tracking_number / tracking_url / shipping_carrier from the order
 // and messages the buyer's WhatsApp. Free-form inside the 24h window; an approved
 // Meta template (ORDER_UPDATE_TEMPLATE) is used outside it.
-const VALID_TYPES: OrderNotifyType[] = ['shipped', 'thanks', 'custom'];
+const VALID_TYPES: OrderNotifyType[] = ['shipped', 'thanks', 'delivered', 'custom'];
 
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json().catch(() => ({}))) as {
@@ -26,6 +26,7 @@ export async function POST(req: Request): Promise<Response> {
     type?: OrderNotifyType;
     text?: string;
     force?: boolean;
+    phone?: string; // override for orders with no stamped customer_phone
   };
 
   const orderNumber = (body.orderNumber ?? '').trim();
@@ -46,6 +47,7 @@ export async function POST(req: Request): Promise<Response> {
     type,
     customText: body.text,
     force: body.force === true,
+    phoneOverride: body.phone?.trim() || undefined,
   });
 
   const status = result.ok ? 200 : result.error === 'order_not_found' ? 404 : 422;

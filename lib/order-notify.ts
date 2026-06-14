@@ -26,7 +26,7 @@ import {
 import { sendWhatsAppMessage } from './whatsapp';
 import { sendMetaWhatsAppTemplate } from './whatsapp-meta';
 
-export type OrderNotifyType = 'shipped' | 'thanks' | 'custom';
+export type OrderNotifyType = 'shipped' | 'thanks' | 'delivered' | 'custom';
 
 export interface OrderNotifyResult {
   ok: boolean;
@@ -91,6 +91,29 @@ function thanksBody(lang: 'es' | 'en', name: string, orderNumber: string): strin
   );
 }
 
+/**
+ * "Your package arrived at your door" — fires when an order is marked delivered.
+ * Warm + brief: confirm it's at the door, offer setup help (service/trust), and a
+ * light review nudge (reviews are a known gap). NO delivery-date talk — it already
+ * arrived. Keep it to 2-3 lines.
+ */
+function deliveredBody(lang: 'es' | 'en', name: string, o: OrderRow): string {
+  const hi = name ? `, ${name}` : '';
+  const ref = o.order_number ? ` *${o.order_number}*` : '';
+  if (lang === 'en') {
+    return (
+      `It's here${hi}! 📦 Your order${ref} just arrived at your door.` +
+      `\n\nAny questions getting it set up, I'm right here for you. And if you're happy with it, ` +
+      `a quick review would mean a lot 🙏 — Sol at Oiikon`
+    );
+  }
+  return (
+    `¡Ya llegó${hi}! 📦 Su pedido${ref} acaba de llegar a su puerta.` +
+    `\n\nCualquier duda para empezar a usarlo, aquí estoy para ayudarle. Y si quedó contento, ` +
+    `nos encantaría su opinión 🙏 — Sol de Oiikon`
+  );
+}
+
 /** True if the customer messaged us within the last 24h (Meta free-form window open). */
 async function inboundWithin24h(conversationId: string): Promise<boolean> {
   const sb = createServiceClient();
@@ -135,6 +158,7 @@ export async function notifyOrder(opts: {
   type: OrderNotifyType;
   customText?: string;
   force?: boolean; // operator override of the dedupe guard
+  phoneOverride?: string; // for orders with no stamped customer_phone (pre-#144)
 }): Promise<OrderNotifyResult> {
   const sb = createServiceClient();
   const { data: order } = await sb
@@ -145,7 +169,7 @@ export async function notifyOrder(opts: {
   if (!order) return { ok: false, error: 'order_not_found' };
   const o = order as OrderRow;
 
-  const phone = o.customer_phone;
+  const phone = o.customer_phone ?? opts.phoneOverride ?? null;
   if (!phone) return { ok: false, orderNumber: o.order_number ?? undefined, error: 'no_customer_phone' };
   if (opts.type === 'shipped' && !o.tracking_number) {
     return { ok: false, orderNumber: o.order_number ?? undefined, error: 'no_tracking_number' };
@@ -158,6 +182,7 @@ export async function notifyOrder(opts: {
   let body: string;
   if (opts.type === 'shipped') body = shippedBody(lang, name, o);
   else if (opts.type === 'thanks') body = thanksBody(lang, name, o.order_number ?? '');
+  else if (opts.type === 'delivered') body = deliveredBody(lang, name, o);
   else body = (opts.customText ?? '').trim();
   if (!body) return { ok: false, orderNumber: o.order_number ?? undefined, error: 'empty_message' };
 
