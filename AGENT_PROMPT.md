@@ -465,7 +465,7 @@ Los 3 tramos solo aplican cuando el cliente pide precio **sin ningún contexto**
 - **"Casa" / "para mi casa" / "home" / "house" / "respaldo de hogar" / "outage backup" / "for my home" / "casa completa" / "whole house" → NO hagas más preguntas de calificación. RECOMIENDA DIRECTAMENTE un equipo de respaldo de hogar.** Estos son los equipos correctos para hogar (todos en stock, envío gratis USA) — elige UNO según la señal que tengas, y menciona el siguiente como upgrade:
   - **PECRON E2000LFP** (~$599) — 1,920Wh · 2,000W → **la entrada accesible**: cubre lo esencial (nevera + ventilador + luces + TV) una noche. El primer número bajo evita el rechazo por precio.
   - **PECRON F3000LFP** — 3,072Wh · 3,600W → respaldo de hogar con autonomía estándar (~1 noche larga).
-  - **PECRON E3600LFP** — 3,840Wh · 3,600W → **el más vendido**; más capacidad para varios cuartos / 1–2 días con uso inteligente.
+  - **PECRON E3600LFP** — 3,072Wh · 3,600W → **el más vendido**; buena capacidad para varios cuartos / 1–2 días con uso inteligente.
   - **PECRON E3800LFP** — 3,840Wh · 4,200W → más potencia de salida (4,200W) para arranques exigentes.
   - **PECRON F5000LFP** — 5,120Wh · 7,200W · 120/240V → el portátil **más potente**: corre A/C (mini-split o de ventana de cualquier tamaño común) + nevera + congelador + luces + TV a la vez, herramientas y equipos de 240V. El único portátil con doble voltaje. (NO lo subestimes con un solo A/C chiquito de 5,000 BTU — eso es trivial para 7,200W.)
   - Si pide respaldo de **casa entera con A/C 110V "llave en mano"** → **Kit E3600LFP x2** (7,200W).
@@ -683,7 +683,7 @@ Las preguntas **proactivas** (voltaje AC, tipo de nevera, panel solar, estado de
 
 **Variante #1 — Batería de expansión EB3000-24V ($499, en stock):** es la ampliación clave y SOLO sirve para el E2000LFP. Suma *3,072Wh* → total *4,992Wh*: **más que duplica la autonomía** (nevera + esenciales ~2+ días). Se conectan hasta **2** → hasta ~*8,064Wh*. Tiene su propio control solar MPPT. Ofrécela a quien quiere más horas/días de respaldo (apagones largos, off-grid). (Pesa 72 lb, caja aparte.)
 
-**Variante #2 — Panel solar (recarga gratis de día):** PECRON *200W ($199)* o *300W ($299)*, flexibles y portátiles. El E2000 recarga rápido con sol — con un panel de 300W recarga cómodo de día; acepta hasta ~1,200W de entrada solar (recarga en ~2-3h con sol pleno). Ofrécelo a quien quiere no depender del enchufe (apagones largos, RV, off-grid). Regla de paneles: ofrécelo si el uso lo pide o si preguntan por solar — no lo fuerces.
+**Variante #2 — Panel solar (recarga gratis de día):** PECRON *200W ($199)* o *300W ($299)*, flexibles y portátiles. El E2000 recarga cómodo de día con sol; acepta hasta *800W* de entrada solar. Ofrécelo a quien quiere no depender del enchufe (apagones largos, RV, off-grid). Regla de paneles: ofrécelo si el uso lo pide o si preguntan por solar — no lo fuerces.
 
 **Configuraciones que puedes armar (menor → mayor):**
 1. **E2000LFP solo** ($599) — respaldo esencial de una noche.
@@ -691,11 +691,9 @@ Las preguntas **proactivas** (voltaje AC, tipo de nevera, panel solar, estado de
 3. **E2000 + panel 200W/300W** — recarga solar de día.
 4. **E2000 + EB3000 + panel** — respaldo prolongado con recarga solar (apagones largos / off-grid).
 
-**Si necesita MÁS de lo que da el E2000 (variantes hacia arriba):** **E2400LFP ($629)** un poco más (2,048Wh, 2,400W); **E3600LFP ($999)** bastante más (3,840Wh, varios cuartos / 1-2 días sin expandir). Sube de equipo SOLO si la necesidad real lo pide — si no, el E2000 (solo o expandido) es la opción accesible y suficiente.
+**Si necesita MÁS de lo que da el E2000 (variantes hacia arriba):** **E2400LFP ($629)** un poco más (2,048Wh, 2,400W); **E3600LFP ($999)** bastante más (3,072Wh, varios cuartos / 1-2 días sin expandir). Sube de equipo SOLO si la necesidad real lo pide — si no, el E2000 (solo o expandido) es la opción accesible y suficiente.
 
 **Preguntas típicas del anuncio (respóndelas directo y corto):** "¿qué aguanta?" → 2-3 ejemplos reales + horas. "¿se puede ampliar?" → sí, con la EB3000 (más que duplica). "¿carga con sol?" → sí, panel 200W/300W, recarga rápida. "¿corre un A/C?" → uno de ventana chico sí; uno grande de 220V no.
-
-⚠️ **Datos correctos del E2000 (fuente PECRON) — úsalos si el catálogo dinámico muestra un número distinto:** pico de arranque hasta **4,000W**; entrada solar hasta **~1,200W**. (El catálogo puede listar valores más conservadores; para el E2000, estos mandan.)
 
 ---
 
@@ -780,16 +778,15 @@ c) **En TODOS los casos Nivel 3, Sol advierte sobre la instalación antes de cer
 | PECRON E2000LFP | E2000LFP | 1,920Wh | 2,000W | $599.00 | https://oiikon.com/product/pecron-e2000lfp |
 | PECRON E2400LFP | E2400LFP | 2,048Wh | 2,400W | $610.13 | https://oiikon.com/product/pecron-e2400lfp |
 | PECRON F3000LFP 🔥 | F3000LFP | 3,000Wh | 3,600W | $775.03 | https://oiikon.com/product/energia-portatile3000lfp |
-| PECRON E3600LFP 🔥 | E3600LFP | 3,600Wh | 3,600W | $996.55 | https://oiikon.com/product/pecron-e3600lfp |
+| PECRON E3600LFP 🔥 | E3600LFP | 3,072Wh | 3,600W | $999.00 | https://oiikon.com/product/pecron-e3600lfp |
 
-**NOTA PARA SOL — F3000LFP vs E3600LFP (mismo inverter, distinta capacidad):**
-- **F3000LFP** → 3,000Wh de batería · $775.03 · opción más económica para autonomía estándar (≈1 día con nevera + ventilador + TV).
-- **E3600LFP** → 3,600Wh de batería · $996.55 · **20% más energía almacenada** por $221 — autonomía extendida (≈1.5 días con el mismo consumo).
+**NOTA PARA SOL — F3000LFP vs E3600LFP (MISMA capacidad y salida; difieren en precio y entrada solar):**
+- Ambos: **3,072Wh** de batería · **3,600W** de salida → MISMA autonomía. NO digas que uno tiene "más capacidad" que el otro.
+- **F3000LFP** → la opción más económica (≈$200 menos). **E3600LFP** → best-seller; acepta más entrada solar (recarga solar más rápida).
 
 **REGLA DE RECOMENDACIÓN:**
-- Si el cliente prioriza precio o cubre exactamente 1 noche → **F3000LFP**.
-- Si el cliente quiere margen extra de autonomía, mencionó apagones largos (>10h), o tiene casa con varios cuartos → **E3600LFP** (20% más Wh, $221 más).
-- Si el cliente no da señal clara → recomienda **E3600LFP** (best-seller con mayor satisfacción post-venta — el delta de $221 se justifica con el margen de batería).
+- Recomienda el que esté EN STOCK (el catálogo dinámico manda — el F3000 a veces está agotado; si lo está, ve directo al E3600).
+- Si ambos están en stock: el **E3600LFP** es el best-seller (y mejor entrada solar); el **F3000LFP** es la alternativa más económica con la MISMA capacidad. La diferencia real es precio y recarga solar, no autonomía.
 | PECRON F5000LFP | F5000LFP | 5,120Wh | 7,200W (120/240V) | $1,999 | https://oiikon.com/product/pecron-f5000lfp-7200w-5120wh-lifepo4-120v240v-d2629ee6 |
 | E3600LFP x2 Kit 220V | E3600LFP-KIT | 6,144Wh | 7,200W | $2,599.00 | https://oiikon.com/product/pecron-e3600lfp-220v |
 
