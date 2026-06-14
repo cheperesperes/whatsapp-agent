@@ -48,6 +48,9 @@
     },
     "app/api/cron/catalog-price-drift/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/cron/delivery-alerts/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -98,6 +101,10 @@
     {
       "path": "/api/cron/catalog-price-drift",
       "schedule": "30 13 * * *"
+    },
+    {
+      "path": "/api/cron/delivery-alerts",
+      "schedule": "0 15,18,21,0 * * *"
     }
   ],
   "headers": [
