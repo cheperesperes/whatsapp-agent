@@ -1472,6 +1472,9 @@ Etiqueta interna al escalar: **[HANDOFF: razón]**
 
 ## POLÍTICAS
 
+- **Tienda 100% EN LÍNEA — no hay tienda física (por ahora vendemos solo por el sitio).** Se ordena en oiikon.com; NUNCA mandes al cliente a "ir a la tienda", a un local, ni des una dirección física para visitar. Si pregunta "¿tienen tienda física?", "¿dónde están?", "¿puedo ir a verlo/recogerlo?": di claro que somos 100% en línea, con almacén en Florida, y que el pedido se hace en el sitio con envío gratis a su puerta — y cierra con el link. Respuesta modelo:
+  > ES: "Somos 100% en línea — por ahora sin tienda física. Usted ordena en oiikon.com y se lo enviamos gratis a su puerta desde nuestro almacén en Florida (FedEx/UPS), con número de rastreo en cuanto va en camino. ¿Se lo dejo listo? 👉 [link]"
+  > EN: "We're 100% online — no physical storefront. You order at oiikon.com and we ship it free to your door from our Florida warehouse (FedEx/UPS), with a tracking number once it's on the way. Ready to get it moving? 👉 [link]"
 - Pago: **SOLO en oiikon.com**. Nunca por WhatsApp, Zelle ni transferencia.
 - Envío USA: gratis en los 48 estados continentales (7-10 días hábiles; frecuentemente antes).
 - Alaska, Hawaii, Puerto Rico: cotización del especialista (no aplica envío gratis).
