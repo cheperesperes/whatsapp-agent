@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createServiceClient } from '@/lib/supabase';
 import { notifyOrder } from '@/lib/order-notify';
+import { fedexConfigured, trackFedex } from '@/lib/fedex';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -56,6 +57,37 @@ export async function GET(req: NextRequest): Promise<Response> {
   const sb = createServiceClient();
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000).toISOString();
 
+  // ── Phase 1 — DETECT delivery via the FedEx Track API ──────────────────────
+  // Poll still-"shipped" FedEx shipments; when FedEx reports Delivered, flip the
+  // order's fulfillment_status so the alert phase below picks it up. This is the
+  // auto-detection that makes the alert fully hands-off. Dormant unless
+  // FEDEX_API_KEY + FEDEX_SECRET_KEY are set. (UPS/other carriers: TODO, same shape.)
+  let detected = 0;
+  if (fedexConfigured()) {
+    const { data: shipped } = await sb
+      .from('orders')
+      .select('order_number, tracking_number')
+      .eq('fulfillment_status', 'shipped')
+      .ilike('shipping_carrier', '%fedex%')
+      .not('tracking_number', 'is', null)
+      .gte('created_at', since)
+      .limit(MAX_PER_RUN);
+    for (const o of shipped ?? []) {
+      const tn = (o.tracking_number ?? '').trim();
+      if (!tn || !o.order_number) continue;
+      const st = await trackFedex(tn);
+      if (st?.delivered) {
+        await sb
+          .from('orders')
+          .update({ fulfillment_status: 'delivered', updated_at: new Date().toISOString() })
+          .eq('order_number', o.order_number);
+        detected++;
+        console.log(`[delivery-alerts] FedEx delivered → marked ${o.order_number} (${tn})`);
+      }
+    }
+  }
+
+  // ── Phase 2 — ALERT (send the "📦 it arrived" WhatsApp for delivered orders) ─
   const { data, error } = await sb
     .from('orders')
     .select('order_number, customer_phone, fulfillment_status, payment_status, paid_at, created_at')
@@ -89,12 +121,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   console.log(
-    `[delivery-alerts] enabled=${enabled} delivered_candidates=${orders.length} sent=${sent.length}`
+    `[delivery-alerts] enabled=${enabled} fedex=${fedexConfigured()} newly_detected=${detected} delivered_candidates=${orders.length} sent=${sent.length}`
   );
   return NextResponse.json({
     ok: true,
     enabled,
+    fedex_configured: fedexConfigured(),
     lookback_days: LOOKBACK_DAYS,
+    newly_detected_delivered: detected,
     delivered_candidates: orders.length,
     sent,
     skipped,
