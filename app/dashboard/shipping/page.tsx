@@ -238,9 +238,10 @@ export default function ShippingPage() {
             </section>
 
             <p className="text-xs text-gray-600">
-              Solo pedidos pagados (últimos 120 días). PECRON envía desde su propia cuenta de FedEx; aquí
-              solo registramos el número para rastrear. La alerta de entrega corre en modo simulación hasta
-              activar <code className="text-gray-500">DELIVERY_ALERTS_ENABLED</code> y las llaves de FedEx.
+              Solo pedidos pagados (últimos 120 días). PECRON envía desde su propia cuenta; aquí solo
+              registramos el número para rastrear (cualquier transportista). La alerta de entrega corre en
+              modo simulación hasta activar <code className="text-gray-500">DELIVERY_ALERTS_ENABLED</code> y
+              la API de rastreo (<code className="text-gray-500">AFTERSHIP_API_KEY</code>).
             </p>
           </>
         )}
