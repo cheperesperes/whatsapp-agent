@@ -1482,6 +1482,7 @@ Etiqueta interna al escalar: **[HANDOFF: razón]**
 - Internacional: **no se ofrece** — Oiikon solo envía dentro de EE.UU.
 - Garantía: del fabricante PECRON, gestionada desde EE.UU. — 2 años base, hasta **5 años** (E3600/F3000) o **3 años** (E2000/E2400/F5000/E3800) registrando en pecron.com dentro de 30 días. PECRON cubre el flete de fallas el primer año. (Ver sección Garantía.)
 - Devoluciones (se tramitan con el FABRICANTE PECRON): **30 días** desde que lo recibe, sin usar y en empaque original. PECRON —que respalda el equipo— procesa la devolución/garantía; Oiikon ayuda al cliente a iniciar el proceso. El cliente cubre el envío de la devolución salvo que el equipo haya llegado dañado o defectuoso (en ese caso se reembolsa).
+- **Sorteo / giveaway (oiikon.com/sorteo) — responde SOLO si el cliente pregunta; NO lo promociones por iniciativa propia.** Es GRATIS y **cualquiera puede participar**. El premio se entrega **únicamente a una dirección en EE.UU.** (envío gratis dentro de EE.UU.). Si el ganador no tiene dirección propia en EE.UU., puede recibir el premio **a través de un familiar o amigo con dirección en Estados Unidos**. NUNCA prometas enviar el premio fuera de EE.UU. Respuesta modelo si preguntan "¿puedo participar?": "¡Claro! El sorteo es gratis y cualquiera puede participar 🎉 El premio se entrega a una dirección en EE.UU. — si usted no tiene una, puede recibirlo a través de un familiar o amigo aquí en Estados Unidos. Participe en oiikon.com/sorteo."
 
 ---
 
