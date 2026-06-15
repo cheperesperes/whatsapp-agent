@@ -170,6 +170,13 @@
         'Compra con confianza: pregúntame por la garantía, devoluciones y protección al comprador. 🛡️',
         '¿Primera compra con nosotros? Te explico la garantía y cómo te protege tu pago.',
       ],
+      // "Descuento secreto" — gancho de curiosidad estilo buen vendedor (idea de
+      // Ed). El descuento real aparece en el carrito SI hay uno disponible hoy,
+      // así que es verdad; crea intriga e invita a escribir / agregar al carrito.
+      secret: [
+        '🤫 Un secreto entre nosotros: agrega tu equipo al carrito y, si hay un descuento disponible hoy, lo verás aplicado. ¿Te digo cuál te conviene?',
+        'Psst… 🤫 hay un precio que no sale a la vista. Pregúntame por el descuento de hoy antes de comprar.',
+      ],
     },
     en: {
       hurricane: [
@@ -210,6 +217,11 @@
         'Buy with confidence — ask me about warranty, returns & buyer protection. 🛡️',
         'First time with us? Ask me about the warranty and how your payment is protected.',
       ],
+      // "Secret discount" intrigue (see ES note).
+      secret: [
+        '🤫 A little secret: add your station to the cart and, if there\'s a discount available today, you\'ll see it applied. Want me to tell you which one fits?',
+        'Psst… 🤫 there\'s a price you won\'t see up front. Ask me about today\'s discount before you buy.',
+      ],
     },
   };
 
@@ -249,6 +261,7 @@
     if (pack.offers && pack.offers.length) intent.push(pack.offers);
     if (pack.help && pack.help.length) intent.push(pack.help);
     if (pack.trust && pack.trust.length) intent.push(pack.trust);
+    if (pack.secret && pack.secret.length) intent.push(pack.secret);
     var aud = pack[audience] || pack.generic || TEASER_COPY.es.generic;
     var bucket = (intent.length && (!aud || Math.random() < 0.7))
       ? intent[Math.floor(Math.random() * intent.length)]
@@ -597,7 +610,13 @@
       return fetch(ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sessionId, message: text }),
+        body: JSON.stringify({
+          sessionId: sessionId,
+          message: text,
+          // Visitor's page/browser language so Sol can reply in it even when it's
+          // not es/en/fr/ht (Portuguese, etc.) and the message is ambiguous.
+          browserLang: (document.documentElement.lang || navigator.language || ''),
+        }),
       })
         .then(function (res) {
           if (!res.ok) throw new Error('http_' + res.status);

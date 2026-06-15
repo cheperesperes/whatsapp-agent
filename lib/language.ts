@@ -251,3 +251,80 @@ export function formatLanguageLockForPrompt(lang: LanguageCode): string {
     'Esta regla tiene prioridad sobre cualquier otra instrucción del prompt.',
   ].join('\n');
 }
+
+// ── Other browser languages (beyond the heuristic's es/en/fr/ht) ────────────
+// The keyword heuristic only knows es/en/fr/ht. When a visitor's MESSAGE gives
+// no language signal but their browser/page is set to another specific language
+// (Portuguese, Italian, German…), we reply in THAT language — the model writes
+// all of them fluently. es/en/fr/ht are omitted on purpose: the message
+// heuristic owns those, and a weak/ambiguous message shouldn't be overridden by
+// the browser locale.
+const OTHER_LANGUAGE_NAMES: Record<string, string> = {
+  pt: 'Portuguese', it: 'Italian', de: 'German', nl: 'Dutch', ru: 'Russian',
+  uk: 'Ukrainian', pl: 'Polish', ro: 'Romanian', tr: 'Turkish', ar: 'Arabic',
+  zh: 'Chinese', ja: 'Japanese', ko: 'Korean', hi: 'Hindi', vi: 'Vietnamese',
+  tl: 'Tagalog', th: 'Thai', id: 'Indonesian', el: 'Greek', sv: 'Swedish',
+};
+
+/** Map a browser/page language tag (e.g. "pt-BR") to a language NAME we should
+ *  reply in — only for languages the es/en/fr/ht heuristic doesn't own.
+ *  Returns null for es/en/fr/ht (handled by the message heuristic) and unknowns. */
+export function browserLanguageName(browserLang?: string | null): string | null {
+  if (!browserLang) return null;
+  const base = browserLang.toLowerCase().trim().split(/[-_]/)[0];
+  return OTHER_LANGUAGE_NAMES[base] || null;
+}
+
+/** Generic hard language lock for ANY language (browser-detected languages the
+ *  heuristic doesn't hand-code). The model is fluent in all of them. */
+export function formatGenericLanguageLockForPrompt(languageName: string): string {
+  const L = languageName;
+  return [
+    `=== LANGUAGE LOCK (${L.toUpperCase()} — CRITICAL) ===`,
+    `RESPOND ENTIRELY IN ${L}. The customer is browsing in ${L} — your whole reply must be in ${L}, warm and natural.`,
+    `Translate all catalog info (prices, capacities, recommendations) into ${L}.`,
+    `Keep product names, SKUs, USD prices and links EXACTLY as-is — never translate a link.`,
+    `Do NOT reply in Spanish or English unless the customer writes to you in it. This rule overrides any other prompt instruction.`,
+  ].join('\n');
+}
+
+export interface ResolvedLanguage {
+  /** Heuristic code for storage/validation (es/en/fr/ht). 'other' langs store as 'es'. */
+  code: LanguageCode;
+  /** Language-lock block to inject at the END of the system prompt. */
+  lock: string;
+  /** Set when replying in a browser-detected language outside es/en/fr/ht. */
+  otherName?: string;
+}
+
+/**
+ * Decide the reply language + lock from the message history, a persisted
+ * preference, and (web only) the visitor's browser/page language.
+ *
+ * Precedence:
+ *   1. A confident MESSAGE-language detection (es/en/fr/ht) always wins — it's
+ *      the strongest signal and those vocabularies don't false-collide.
+ *   2. If the message gives NO signal ('unknown') and the browser is set to a
+ *      specific OTHER language (pt/it/de/…), reply in that language.
+ *   3. Otherwise the persisted preference, else Spanish (Cuban-base default).
+ */
+export function resolveLanguage(
+  recentUserMessages: string[],
+  persistedLanguage?: string | null,
+  browserLang?: string | null
+): ResolvedLanguage {
+  const blob = recentUserMessages.slice(-5).join(' ');
+  const detected = detectLanguage(blob);
+  if (detected !== 'unknown') {
+    return { code: detected, lock: formatLanguageLockForPrompt(detected) };
+  }
+  const otherName = browserLanguageName(browserLang);
+  if (otherName) {
+    return { code: 'es', lock: formatGenericLanguageLockForPrompt(otherName), otherName };
+  }
+  const fallback: LanguageCode =
+    persistedLanguage === 'en' || persistedLanguage === 'fr' || persistedLanguage === 'ht'
+      ? persistedLanguage
+      : 'es';
+  return { code: fallback, lock: formatLanguageLockForPrompt(fallback) };
+}
