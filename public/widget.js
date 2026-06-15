@@ -598,14 +598,15 @@
     sendBtn.disabled = true;
     showTyping();
 
-    // One-shot retry on transient failure. Covers the two most common
-    // Sol error modes seen in the wild:
-    //   • Vercel cold-start: the serverless fn slept and the first request
-    //     times out before the LLM responds (no body returned).
-    //   • Network blip on the client side (wifi drop, VPN reconnect).
-    // Retry only ONCE after a 2s backoff — anything that fails twice in a
-    // row is a real server-side failure (LLM outage, rate limit, etc.) and
-    // we should show the fallback so the customer isn't left hanging.
+    // Retry transient failures before showing the scary "couldn't send" fallback.
+    // The web Sol endpoint is slow on a cold start + heavy first request
+    // (conversation create + intent-classify + Sol generation ≈ 9s), so the FIRST
+    // message of a session is the most failure-prone — a single blip (cold-start
+    // 5xx, network hiccup, momentary LLM rate-limit) shouldn't surface an error.
+    // Up to 3 attempts with progressive backoff; only fall back after the 3rd. The
+    // typing indicator stays up the whole time, so it reads as "still working".
+    var MAX_SEND_ATTEMPTS = 3;
+    var RETRY_BACKOFF_MS = [2000, 4000]; // wait before retry 1, then retry 2
     function attemptSend(attempt) {
       return fetch(ENDPOINT, {
         method: 'POST',
@@ -623,10 +624,11 @@
           return res.json();
         })
         .catch(function (err) {
-          if (attempt === 0) {
-            console.warn('[oiikon-sol] retry after', err && err.message);
-            return new Promise(function (resolve) { setTimeout(resolve, 2000); })
-              .then(function () { return attemptSend(1); });
+          if (attempt < MAX_SEND_ATTEMPTS - 1) {
+            var wait = RETRY_BACKOFF_MS[attempt] || 4000;
+            console.warn('[oiikon-sol] retry ' + (attempt + 1) + ' after', err && err.message);
+            return new Promise(function (resolve) { setTimeout(resolve, wait); })
+              .then(function () { return attemptSend(attempt + 1); });
           }
           throw err;
         });
