@@ -119,7 +119,7 @@
   // preference wins, otherwise navigator.language with Spanish kept as
   // a default for the Hispanic-American visitor segment.
 
-  var TEASER_DELAY_MS_GENERIC = 30000; // 30s on home / non-product pages
+  var TEASER_DELAY_MS_GENERIC = 15000; // 15s on home / non-product pages (catch visitors before they bounce)
   var TEASER_DELAY_MS_PRODUCT = 8000;  // 8s on product pages — higher intent
   var TEASER_REPEAT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 1 day between teasers
   var TEASER_AUTO_HIDE_MS = 12000;     // teaser disappears if not clicked
@@ -150,6 +150,14 @@
         '¿Comparas precio de generador vs solar? Te hago la cuenta gratis.',
         '¿Necesitas energía de respaldo? Te diseño la solución en 30 segundos.',
       ],
+      // Discount / offer curiosity hooks — pull the visitor into the chat to
+      // ASK about today's deal (Sol then presents the margin-safe offer server-side).
+      offers: [
+        '👀 Hay una oferta de bienvenida hoy — pregúntame cuál te toca.',
+        '💸 ¿Buscas descuento? Pregúntame qué oferta tienes hoy antes de comprar.',
+        '¿Te digo qué cupón aplica a tu equipo? Pregúntame, sin compromiso 😊',
+        'Pregúntame por las ofertas de hoy — quizá te ahorro en tu Pecron.',
+      ],
     },
     en: {
       hurricane: [
@@ -171,6 +179,13 @@
         '3 questions and I\'ll tell you which Pecron fits — no pressure.',
         'Comparing generator vs solar cost? I\'ll do the math, free.',
         'Need backup power? I\'ll design the solution in 30 seconds.',
+      ],
+      // Discount / offer curiosity hooks (see ES note above).
+      offers: [
+        '👀 There\'s a welcome offer today — ask me which one you get.',
+        '💸 Looking for a discount? Ask me what deal you\'ve got before you buy.',
+        'Want to know which coupon fits your station? Just ask — no pressure 😊',
+        'Ask me about today\'s offers — I might save you money on your Pecron.',
       ],
     },
   };
@@ -203,9 +218,12 @@
   function pickTeaserCopy() {
     var lang = detectLanguage();
     var audience = detectAudience();
-    var bucket = (TEASER_COPY[lang] || TEASER_COPY.es)[audience]
-      || TEASER_COPY[lang].generic
-      || TEASER_COPY.es.generic;
+    var pack = TEASER_COPY[lang] || TEASER_COPY.es;
+    var offers = pack.offers || [];
+    var aud = pack[audience] || pack.generic || TEASER_COPY.es.generic;
+    // Lead with a discount/offer hook ~half the time (Ed: spark curiosity so
+    // visitors write in to ASK about deals); otherwise the audience-tailored hook.
+    var bucket = (offers.length && Math.random() < 0.5) ? offers : aud;
     return bucket[Math.floor(Math.random() * bucket.length)];
   }
 
