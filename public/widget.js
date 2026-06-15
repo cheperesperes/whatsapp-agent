@@ -321,7 +321,7 @@
   // ── Inject styles ─────────────────────────────────────────
   var css = [
     '#oiikon-sol-bubble{',
-    '  position:fixed;right:20px;bottom:20px;width:60px;height:60px;',
+    '  position:fixed;right:20px;bottom:116px;width:60px;height:60px;',
     '  border-radius:50%;background:#f97316;color:white;border:none;',
     '  box-shadow:0 4px 16px rgba(0,0,0,.25);cursor:pointer;z-index:2147483647;',
     '  display:flex;align-items:center;justify-content:center;font-size:28px;',
@@ -331,7 +331,7 @@
     '#oiikon-sol-bubble[data-open="true"]{display:none;}',
     // ── Teaser tooltip (shown above the closed bubble) ──
     '#oiikon-sol-teaser{',
-    '  position:fixed;right:90px;bottom:32px;max-width:260px;',
+    '  position:fixed;right:90px;bottom:128px;max-width:260px;',
     '  background:white;color:#1f2937;border-radius:14px;',
     '  box-shadow:0 8px 24px rgba(0,0,0,.18);padding:12px 14px;',
     '  font:14px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;',
@@ -351,12 +351,12 @@
     '}',
     '#oiikon-sol-teaser-close:hover{color:#1f2937;}',
     '@media (max-width:480px){',
-    '  #oiikon-sol-teaser{right:14px;bottom:90px;max-width:calc(100vw - 28px);}',
+    '  #oiikon-sol-teaser{right:14px;bottom:184px;max-width:calc(100vw - 28px);}',
     '  #oiikon-sol-teaser::after{display:none;}',
     '}',
     '#oiikon-sol-panel{',
-    '  position:fixed;right:20px;bottom:20px;width:360px;max-width:calc(100vw - 40px);',
-    '  height:540px;max-height:calc(100vh - 40px);background:white;',
+    '  position:fixed;right:20px;bottom:116px;width:360px;max-width:calc(100vw - 40px);',
+    '  height:540px;max-height:calc(100vh - 136px);background:white;',
     '  border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.3);',
     '  display:none;flex-direction:column;overflow:hidden;z-index:2147483647;',
     '  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#1f2937;',
@@ -392,8 +392,8 @@
     '.oiikon-sol-send{background:#f97316;color:white;border:none;border-radius:50%;width:36px;height:36px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;}',
     '.oiikon-sol-send:disabled{opacity:.5;cursor:not-allowed;}',
     '@media (max-width:480px){',
-    '  #oiikon-sol-panel{right:10px;bottom:10px;left:10px;width:auto;height:80vh;}',
-    '  #oiikon-sol-bubble{right:14px;bottom:14px;}',
+    '  #oiikon-sol-panel{right:10px;bottom:106px;left:10px;width:auto;height:78vh;max-height:calc(100vh - 122px);}',
+    '  #oiikon-sol-bubble{right:14px;bottom:110px;}',
     '}',
   ].join('');
   var style = document.createElement('style');
