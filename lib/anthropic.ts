@@ -165,6 +165,24 @@ ${learnedBehaviors ? `\n${learnedBehaviors}\n` : ''}${intentHint ? `\n${intentHi
 FECHA ACTUAL: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${firstContactDirective}\n` : ''}${dynamicDirectives ? `\n${dynamicDirectives}\n` : ''}\n${payLinkBlock}\n${channelBlock}\n${styleBlock}\n${languageLock ? `\n${languageReassert}\n` : ''}`;
 
+  // ── Prompt caching ──────────────────────────────────────────────────────
+  // Cache the big STABLE prefix (base prompt + catalog + KB) — identical across
+  // every request — so during active traffic the shared prefix is READ from
+  // Anthropic's cache instead of re-processed each call. Big time-to-first-token
+  // + cost win, with ZERO change to what the model sees: the variable tail
+  // (profile, intent, date, language lock, directives, pay-link, channel, style)
+  // is appended fresh as a second, uncached block. Guarded — if the prefix isn't
+  // an exact head of systemPrompt (template drift), fall back to the plain string
+  // so caching can NEVER alter behavior.
+  const cacheablePrefix = `${basePrompt}\n\n${productCatalog}\n${knowledgeBase}`;
+  const systemParam: string | Anthropic.TextBlockParam[] =
+    cacheablePrefix.length > 4000 && systemPrompt.startsWith(cacheablePrefix)
+      ? [
+          { type: 'text', text: cacheablePrefix, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: systemPrompt.slice(cacheablePrefix.length) },
+        ]
+      : systemPrompt;
+
   const messages: Anthropic.MessageParam[] = conversationHistory.map((m) => ({
     role: m.role === 'user' ? 'user' : 'assistant',
     content: m.content,
@@ -176,7 +194,7 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
     {
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: systemPrompt,
+      system: systemParam,
       messages,
     },
     {
@@ -186,6 +204,12 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
       },
     }
   );
+
+  // Observability: confirm caching is firing (read > 0 ⇒ cache hit on the prefix).
+  const usage = response.usage;
+  if (usage && (((usage.cache_read_input_tokens ?? 0) > 0) || ((usage.cache_creation_input_tokens ?? 0) > 0))) {
+    console.log(`[sol] cache read=${usage.cache_read_input_tokens ?? 0} created=${usage.cache_creation_input_tokens ?? 0} input=${usage.input_tokens}`);
+  }
 
   const rawText =
     response.content[0]?.type === 'text' ? response.content[0].text : '';
