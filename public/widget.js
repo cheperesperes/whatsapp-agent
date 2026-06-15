@@ -158,6 +158,18 @@
         '¿Te digo qué cupón aplica a tu equipo? Pregúntame, sin compromiso 😊',
         'Pregúntame por las ofertas de hoy — quizá te ahorro en tu Pecron.',
       ],
+      // "Ayúdame a elegir" / sizing (idea de Ed) — mata la parálisis de elección
+      // e invita una pregunta concreta para que Sol dimensione el equipo correcto.
+      help: [
+        '¿No sabes cuál equipo elegir? Te ayudo a encontrar el correcto en 1 minuto.',
+        'Dime qué quieres mantener encendido (nevera, A/C, luces…) y te digo qué equipo te alcanza.',
+        '¿Dudando entre dos modelos? Te ayudo a decidir según tu uso real, sin compromiso.',
+      ],
+      // Confianza — el bloqueo #1 de pay-link→pagado es "¿es seguro comprar aquí?".
+      trust: [
+        'Compra con confianza: pregúntame por la garantía, devoluciones y protección al comprador. 🛡️',
+        '¿Primera compra con nosotros? Te explico la garantía y cómo te protege tu pago.',
+      ],
     },
     en: {
       hurricane: [
@@ -186,6 +198,17 @@
         '💸 Looking for a discount? Ask me what deal you\'ve got before you buy.',
         'Want to know which coupon fits your station? Just ask — no pressure 😊',
         'Ask me about today\'s offers — I might save you money on your Pecron.',
+      ],
+      // "Help me choose" / sizing (see ES note).
+      help: [
+        'Not sure which unit to get? I\'ll help you find the right one in a minute.',
+        'Tell me what you want to keep running (fridge, A/C, lights…) and I\'ll tell you which station fits.',
+        'Torn between two models? I\'ll help you decide based on your real usage — no pressure.',
+      ],
+      // Trust (see ES note).
+      trust: [
+        'Buy with confidence — ask me about warranty, returns & buyer protection. 🛡️',
+        'First time with us? Ask me about the warranty and how your payment is protected.',
       ],
     },
   };
@@ -217,13 +240,19 @@
 
   function pickTeaserCopy() {
     var lang = detectLanguage();
-    var audience = detectAudience();
     var pack = TEASER_COPY[lang] || TEASER_COPY.es;
-    var offers = pack.offers || [];
+    var audience = detectAudience();
+    // Conversion-INTENT buckets (offers / help-me-choose / trust) each pull the
+    // visitor into a concrete question. Lead with one of them ~70% of the time;
+    // the rest of the time use the audience-tailored hook (still names their case).
+    var intent = [];
+    if (pack.offers && pack.offers.length) intent.push(pack.offers);
+    if (pack.help && pack.help.length) intent.push(pack.help);
+    if (pack.trust && pack.trust.length) intent.push(pack.trust);
     var aud = pack[audience] || pack.generic || TEASER_COPY.es.generic;
-    // Lead with a discount/offer hook ~half the time (Ed: spark curiosity so
-    // visitors write in to ASK about deals); otherwise the audience-tailored hook.
-    var bucket = (offers.length && Math.random() < 0.5) ? offers : aud;
+    var bucket = (intent.length && (!aud || Math.random() < 0.7))
+      ? intent[Math.floor(Math.random() * intent.length)]
+      : aud;
     return bucket[Math.floor(Math.random() * bucket.length)];
   }
 
