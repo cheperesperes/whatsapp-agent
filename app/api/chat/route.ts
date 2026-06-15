@@ -61,10 +61,7 @@ import {
   formatCompetitorStatsForPrompt,
 } from '@/lib/competitors';
 import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-extractor';
-import {
-  detectLanguageFromHistory,
-  formatLanguageLockForPrompt,
-} from '@/lib/language';
+import { resolveLanguage } from '@/lib/language';
 import { buildFirstContactDirective } from '@/lib/ad-landing';
 import type { CustomerProfile, Message } from '@/lib/types';
 
@@ -79,6 +76,7 @@ interface ChatRequest {
   sessionId: string;
   message: string;
   displayName?: string | null;
+  browserLang?: string | null; // visitor's browser/page language tag, e.g. "pt-BR"
 }
 
 interface ChatImage {
@@ -102,6 +100,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const sessionId = body.sessionId?.trim();
   const message = body.message?.trim();
+  const browserLang = typeof body.browserLang === 'string' ? body.browserLang : null;
 
   if (!sessionId || !/^[a-zA-Z0-9_-]{8,64}$/.test(sessionId)) {
     return jsonWithCors(request, { error: 'invalid_session_id' }, { status: 400 });
@@ -178,8 +177,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...historyWithoutLast.filter((m) => m.role === 'user').slice(-4).map((m) => m.content),
       message,
     ];
-    const detectedLang = detectLanguageFromHistory(recentUserMsgs, customerProfile?.language);
-    const languageLock = formatLanguageLockForPrompt(detectedLang);
+    // es/en/fr/ht come from the message heuristic; any OTHER language the
+    // visitor's browser declares (Portuguese, etc.) is honored when the message
+    // itself is ambiguous, so Sol replies in the customer's real language.
+    const resolvedLang = resolveLanguage(recentUserMsgs, customerProfile?.language, browserLang);
+    const detectedLang = resolvedLang.code;
+    const languageLock = resolvedLang.lock;
 
     if (customerProfile?.language !== detectedLang) {
       waitUntil(
