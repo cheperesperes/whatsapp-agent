@@ -105,6 +105,10 @@
     {
       "path": "/api/cron/delivery-alerts",
       "schedule": "0 15,18,21,0 * * *"
+    },
+    {
+      "path": "/api/chat",
+      "schedule": "*/5 * * * *"
     }
   ],
   "headers": [
