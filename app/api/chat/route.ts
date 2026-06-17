@@ -385,3 +385,14 @@ async function runBackgroundLearning(
     await upsertLeadScore(conversationId, leadScore);
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Keep-warm ping. The Vercel cron (vercel.json → /api/chat, every 5 min)
+// GETs this so the serverless instance never goes cold. Without it, a
+// low-traffic stretch lets the instance sleep, and the next real visitor
+// eats a ~10s cold-start that the chat widget surfaces as "Couldn't send
+// your message." Intentionally does NO work (no DB, no LLM) — just
+// touching the route keeps its loaded module + warm instance alive.
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json({ ok: true, warm: true });
+}
