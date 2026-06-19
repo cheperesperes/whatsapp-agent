@@ -638,6 +638,9 @@ export default function MarketingPage() {
         {/* ───────  SEND OFFER TO LEADS ─────── */}
         <SendOfferPanel initialCouponCode={offerCoupon} />
 
+        {/* ───────  WEBSITE CONTENT: FAQ GENERATOR ─────── */}
+        <SiteFaqPanel />
+
         {/* ───────  PAYPAL PAY-LINK GENERATOR ─────── */}
         <PayLinkPanel products={products} />
 
@@ -1966,6 +1969,187 @@ function PayLinkPanel({ products }: { products: Product[] }) {
             </div>
             <p className="text-[10px] text-gray-500">Pega este link en WhatsApp. El cliente paga como invitado — sin cuenta.</p>
           </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+interface FaqCandidate {
+  question: string;
+  answer: string;
+  category: string;
+  tags: string[];
+}
+
+// Website-content generator (admin → oiikon.com storefront). v1 = FAQ.
+// Generates polished FAQ candidates from the REAL approved kb_suggestions; the
+// operator reviews/edits/selects, and only approved ones are published into the
+// live faq_articles table the storefront already renders.
+function SiteFaqPanel() {
+  const [cands, setCands] = useState<FaqCandidate[] | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function generate() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setCands(null);
+    try {
+      const res = await fetch('/api/marketing/site-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate', type: 'faq', count: 8 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error ? String(data.error) : `HTTP ${res.status}`);
+        return;
+      }
+      const list: FaqCandidate[] = data.candidates ?? [];
+      setCands(list);
+      setSelected(new Set(list.map((_, i) => i))); // all selected by default
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function update(i: number, patch: Partial<FaqCandidate>) {
+    setCands((prev) => (prev ? prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)) : prev));
+  }
+  function toggle(i: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+
+  async function publish() {
+    if (!cands) return;
+    const items = cands.filter((_, i) => selected.has(i));
+    if (items.length === 0) {
+      setError('Selecciona al menos una FAQ para publicar.');
+      return;
+    }
+    if (!confirm(`¿Publicar ${items.length} FAQ en el sitio (oiikon.com)? Quedan visibles de inmediato.`)) return;
+    setPublishing(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch('/api/marketing/site-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', type: 'faq', items }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.error ? String(data.error) : `HTTP ${res.status}`);
+        return;
+      }
+      setResult(`✓ Publicadas ${data.publishedCount} FAQ en el sitio.`);
+      setCands((prev) => (prev ? prev.filter((_, i) => !selected.has(i)) : prev));
+      setSelected(new Set());
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  return (
+    <details className="card">
+      <summary className="px-4 py-2.5 cursor-pointer text-sm font-medium text-gray-200 hover:bg-surface-800/50 flex items-center justify-between">
+        <span>❓ FAQ del sitio web (oiikon.com)</span>
+        <span className="text-xs text-gray-500">desde preguntas reales</span>
+      </summary>
+      <div className="px-4 py-3 space-y-3 border-t border-surface-700">
+        <p className="text-[11px] text-gray-500 leading-relaxed">
+          Genera preguntas frecuentes a partir de las dudas REALES ya aprobadas de clientes
+          (<code>kb_suggestions</code>), revísalas/edítalas y publica solo las que apruebes en{' '}
+          <code>faq_articles</code> — la página de FAQ del sitio las muestra de inmediato.
+        </p>
+
+        <button
+          type="button"
+          onClick={generate}
+          disabled={loading}
+          className="text-xs px-3 py-1.5 bg-brand-500 hover:bg-brand-600 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded"
+        >
+          {loading ? 'Generando…' : cands ? '↻ Generar más' : '✨ Generar borradores de FAQ'}
+        </button>
+
+        {error && (
+          <div className="text-xs text-red-400 bg-red-900/30 border border-red-800/50 rounded px-2 py-1.5">⚠ {error}</div>
+        )}
+        {result && (
+          <div className="text-xs text-green-300 bg-green-900/20 border border-green-800/50 rounded px-2 py-1.5">{result}</div>
+        )}
+
+        {cands && cands.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] uppercase tracking-wider text-gray-500">
+                {selected.size} de {cands.length} seleccionadas
+              </p>
+              <button
+                type="button"
+                onClick={publish}
+                disabled={publishing || selected.size === 0}
+                className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded"
+              >
+                {publishing ? 'Publicando…' : `Publicar seleccionadas (${selected.size})`}
+              </button>
+            </div>
+            {cands.map((c, i) => (
+              <div
+                key={i}
+                className={`rounded-lg border p-3 space-y-2 ${
+                  selected.has(i) ? 'border-brand-500/50 bg-surface-800' : 'border-surface-600 bg-surface-800/40 opacity-60'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(i)}
+                    onChange={() => toggle(i)}
+                    className="mt-1 shrink-0"
+                  />
+                  <div className="flex-1 space-y-2">
+                    <input
+                      value={c.question}
+                      onChange={(e) => update(i, { question: e.target.value })}
+                      className="w-full text-sm font-medium bg-surface-900 border border-surface-600 rounded px-2 py-1.5 text-gray-100"
+                    />
+                    <textarea
+                      value={c.answer}
+                      onChange={(e) => update(i, { answer: e.target.value })}
+                      rows={3}
+                      className="w-full text-xs bg-surface-900 border border-surface-600 rounded px-2 py-1.5 text-gray-300 resize-y"
+                    />
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-500 uppercase">Categoría:</span>
+                      <select
+                        value={c.category}
+                        onChange={(e) => update(i, { category: e.target.value })}
+                        className="text-[11px] bg-surface-900 border border-surface-600 rounded px-2 py-1 text-gray-300"
+                      >
+                        {['envio', 'producto', 'tecnico', 'garantia', 'pago', 'general'].map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {cands && cands.length === 0 && (
+          <p className="text-xs text-gray-500">No se generaron FAQ nuevas (quizás ya existen todas). Intenta de nuevo.</p>
         )}
       </div>
     </details>
