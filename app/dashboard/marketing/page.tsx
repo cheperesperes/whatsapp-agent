@@ -133,6 +133,7 @@ const PIPELINE_STEPS: Array<{ id: string; label: string }> = [
 
 const CATEGORIES: Array<{ value: string; label: string; desc: string }> = [
   { value: 'producto', label: '🔌 Producto', desc: 'Destacar un producto específico' },
+  { value: 'oferta', label: '🏷️ Oferta', desc: 'Descuento real + código de cupón' },
   { value: 'educacion', label: '📚 Educación', desc: 'Enseñar sobre energía solar' },
   { value: 'tips', label: '💡 Tips', desc: 'Consejos prácticos' },
   { value: 'instalacion', label: '🔧 Instalación', desc: 'Cómo conectar / instalar' },
@@ -323,6 +324,10 @@ export default function MarketingPage() {
   // "Publicando…") only shows on the card you clicked, not every card.
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Coupon chosen for the 🏷️ Oferta angle. Lifted here so the SAME coupon
+  // drives BOTH legs of an offer: the social post (FB/IG) and the WhatsApp
+  // "Enviar oferta" panel below (which receives it pre-filled).
+  const [offerCoupon, setOfferCoupon] = useState<string>('');
 
   const togglePreview = (id: string) =>
     setExpanded((prev) => {
@@ -515,9 +520,10 @@ export default function MarketingPage() {
       guidance?: string | null;
       language?: 'es' | 'en' | 'both';
       media?: 'image' | 'video' | 'both';
+      couponCode?: string | null;
     } = {}
   ) {
-    const { force = false, isNew = false, campaignId, category, productSku, guidance, language = 'es', media = 'image' } = options;
+    const { force = false, isNew = false, campaignId, category, productSku, guidance, language = 'es', media = 'image', couponCode } = options;
     if (force && !confirm('¿Regenerar esta campaña? La versión actual se perderá.')) return;
     setGenerating(true);
     if (campaignId) setBusyId(campaignId);
@@ -533,6 +539,7 @@ export default function MarketingPage() {
         if (category) qs.set('category', category);
         if (productSku) qs.set('product_sku', productSku);
         if (guidance && guidance.trim()) qs.set('guidance', guidance.trim());
+        if (couponCode) qs.set('coupon', couponCode);
         qs.set('language', lang);
         qs.set('media', media);
         await fetch(`/api/cron/marketing-daily?${qs.toString()}`, { cache: 'no-store' });
@@ -590,6 +597,8 @@ export default function MarketingPage() {
           products={products}
           onPick={(cat, opts) => generate({ isNew: true, category: cat, ...opts })}
           busy={generating}
+          coupon={offerCoupon}
+          onCouponChange={setOfferCoupon}
           heading={todays.length > 0 ? 'Crear otra campaña' : undefined}
         />
 
@@ -627,7 +636,7 @@ export default function MarketingPage() {
         {adData && <AdSpendStrip data={adData} />}
 
         {/* ───────  SEND OFFER TO LEADS ─────── */}
-        <SendOfferPanel />
+        <SendOfferPanel initialCouponCode={offerCoupon} />
 
         {/* ───────  PAYPAL PAY-LINK GENERATOR ─────── */}
         <PayLinkPanel products={products} />
@@ -692,7 +701,7 @@ function CampaignHero({
   generating: boolean;
   busy: boolean;
   onApprove: (approved: boolean, options?: { text_only?: boolean }) => void;
-  onRegenerate: (cat: string, opts?: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both'; media?: 'image' | 'video' | 'both' }) => void;
+  onRegenerate: (cat: string, opts?: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both'; media?: 'image' | 'video' | 'both'; couponCode?: string | null }) => void;
   onDeletePublished: () => void;
   onDelete: () => void;
   onEdit: (fields: Record<string, string>) => void;
@@ -706,6 +715,7 @@ function CampaignHero({
     (campaign.language as 'es' | 'en' | 'both') ?? 'es',
   );
   const [regenMedia, setRegenMedia] = useState<'image' | 'video' | 'both'>('image');
+  const [regenCoupon, setRegenCoupon] = useState<string>('');
   const [editing, setEditing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
@@ -1003,6 +1013,8 @@ function CampaignHero({
           onGuidanceChange={setGuidance}
         />
 
+        <CouponPicker value={regenCoupon} onChange={setRegenCoupon} disabled={generating} />
+
         {/* Language for the regenerated post (es / en / both). */}
         <div>
           <label className="block text-[10px] text-gray-500 uppercase tracking-wider mb-1">Idioma</label>
@@ -1068,6 +1080,7 @@ function CampaignHero({
                     guidance: guidance || null,
                     language: regenLang,
                     media: regenMedia,
+                    couponCode: c.value === 'oferta' ? (regenCoupon || null) : null,
                   })
                 }
                 disabled={generating}
@@ -1091,14 +1104,18 @@ function CategoryLauncher({
   products,
   onPick,
   busy,
+  coupon,
+  onCouponChange,
   heading,
 }: {
   products: Product[];
   onPick: (
     cat: string,
-    opts: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both'; media?: 'image' | 'video' | 'both' },
+    opts: { productSku?: string | null; guidance?: string | null; language?: 'es' | 'en' | 'both'; media?: 'image' | 'video' | 'both'; couponCode?: string | null },
   ) => void;
   busy: boolean;
+  coupon: string;
+  onCouponChange: (code: string) => void;
   heading?: string;
 }) {
   const [productSku, setProductSku] = useState<string>('');
@@ -1129,6 +1146,10 @@ function CategoryLauncher({
           onProductChange={setProductSku}
           onGuidanceChange={setGuidance}
         />
+      </div>
+
+      <div className="mb-4">
+        <CouponPicker value={coupon} onChange={onCouponChange} disabled={busy} />
       </div>
 
       <div className="mb-4">
@@ -1192,7 +1213,7 @@ function CategoryLauncher({
           <button
             key={c.value}
             type="button"
-            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null, language, media })}
+            onClick={() => onPick(c.value, { productSku: productSku || null, guidance: guidance || null, language, media, couponCode: c.value === 'oferta' ? (coupon || null) : null })}
             disabled={busy}
             className="text-left p-3 rounded-lg bg-surface-800 hover:bg-surface-700 border border-surface-600 hover:border-brand-500/50 transition-colors disabled:opacity-50"
           >
@@ -1211,6 +1232,53 @@ function CategoryLauncher({
         </p>
       )}
     </details>
+  );
+}
+
+// Coupon selector for the 🏷️ Oferta angle. The chosen code is fed
+// (server-resolved + margin-gated) to the content generator AND pre-fills the
+// WhatsApp "Enviar oferta" panel, so one pick drives both legs of an offer.
+// Loads from the SHARED discount_codes table via /api/marketing/coupons.
+function CouponPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  disabled?: boolean;
+}) {
+  const [coupons, setCoupons] = useState<CouponRow[]>([]);
+  useEffect(() => {
+    fetch('/api/marketing/coupons', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setCoupons(d.coupons ?? []))
+      .catch(() => setCoupons([]));
+  }, []);
+
+  return (
+    <div>
+      <label className="block text-[11px] text-gray-500 mb-1">
+        🏷️ Cupón para la oferta (opcional)
+      </label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="w-full px-2 py-1.5 rounded bg-surface-800 border border-surface-600 text-xs text-gray-200 focus:outline-none focus:border-brand-500 disabled:opacity-50"
+      >
+        <option value="">Sin cupón — usar el descuento del producto</option>
+        {coupons.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.code} · {c.discount_type === 'percentage' ? `${c.discount_value}%` : `$${c.discount_value}`}
+            {c.eligible_brand ? ` · ${c.eligible_brand}` : ''}
+          </option>
+        ))}
+      </select>
+      <p className="text-[10px] text-gray-600 mt-0.5">
+        Solo se aplica con el ángulo 🏷️ Oferta (se valida margen/marca/mínimo). El mismo cupón queda listo para enviar por WhatsApp más abajo.
+      </p>
+    </div>
   );
 }
 
@@ -1904,7 +1972,7 @@ function PayLinkPanel({ products }: { products: Product[] }) {
   );
 }
 
-function SendOfferPanel() {
+function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string }) {
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   // No default name: the old 'oiikon_offer_v1' was DELETED in Meta — a
   // pre-filled dead name silently made every blast fail template-not-found
@@ -1928,6 +1996,12 @@ function SendOfferPanel() {
       .then((d) => setCoupons(d.coupons ?? []))
       .catch(() => setCoupons([]));
   }, []);
+
+  // Pre-fill the coupon chosen for the 🏷️ Oferta social post so the operator
+  // blasts the SAME deal to WhatsApp leads without re-picking it.
+  useEffect(() => {
+    if (initialCouponCode) setCouponCode(initialCouponCode);
+  }, [initialCouponCode]);
 
   async function runDryRun() {
     setPlanError(null);

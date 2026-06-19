@@ -43,12 +43,14 @@ export type MarketingCategory =
   | 'baterias'
   | 'apagones'
   | 'familia'
-  | 'producto';
+  | 'producto'
+  | 'oferta';
 
 export type ContentLanguage = 'es' | 'en' | 'bilingual';
 
 export const CATEGORIES: Array<{ value: MarketingCategory; label: string; angle: string }> = [
   { value: 'producto', label: '🔌 Producto', angle: 'Destaca un producto específico (specs, precio, beneficio concreto).' },
+  { value: 'oferta', label: '🏷️ Oferta', angle: 'Post de OFERTA directa: destaca el descuento/cupón REAL y vigente y cómo canjearlo en oiikon.com. Lidera con el ahorro. Solo datos reales — sin urgencia falsa.' },
   { value: 'educacion', label: '📚 Educación', angle: 'Educa sobre energía solar básica — qué es Wh, cómo funciona, por qué LiFePO4. Informativo, no vendedor.' },
   { value: 'tips', label: '💡 Tips', angle: 'Consejos prácticos: cómo ahorrar energía, qué cargar primero en apagón, mantenimiento del equipo.' },
   { value: 'instalacion', label: '🔧 Instalación', angle: 'Cómo conectar paneles, cómo recargar con solar, montaje en hogar. Práctico pero sin riesgo eléctrico.' },
@@ -72,6 +74,9 @@ export async function generateMarketingContent(
     // used ONLY server-side to gate margin — never goes into the prompt).
     offers?: Offer[];
     costBySku?: Record<string, number>;
+    // Operator-chosen coupon (the 🏷️ Oferta angle). Still passes the same
+    // margin/min-order/brand gate as the auto-pick — never bypasses margin.
+    couponCode?: string | null;
   }
 ): Promise<GeneratedContent> {
   const language: ContentLanguage = options?.language ?? 'es';
@@ -104,8 +109,23 @@ ${recent.map((r) => `• [${r.category ?? '—'}] ${r.theme}${r.hook ? ` — "${
 ${top.length ? `\nLO QUE MÁS ENGAGEMENT GENERÓ CON NUESTRA AUDIENCIA (emula el ESTILO y el FORMATO, no las palabras):\n${top.map((t) => `• ${t.theme}${t.hook ? ` — "${t.hook}"` : ''}`).join('\n')}\n` : ''}`
     : '';
 
-  // ── Engagement-first format menu (70/30) ─────────────────────────────────
-  const formatBlock = `\n═══════════════════════════════════════════════════════════════════════════════
+  // ── Format menu ──────────────────────────────────────────────────────────
+  // The 🏷️ Oferta angle FORCES a sales/offer post (overrides the 70/30 menu);
+  // every other angle keeps the engagement-first 70/30 mix.
+  const isOfferAngle = category === 'oferta';
+  const formatBlock = isOfferAngle
+    ? `\n═══════════════════════════════════════════════════════════════════════════════
+ENFOQUE DE HOY — OFERTA (post de venta directa)
+═══════════════════════════════════════════════════════════════════════════════
+Hoy SÍ es un post de OFERTA (no engagement). Lidera con el VALOR y el AHORRO:
+• Incluye el precio (SOLO el de PRODUCTO DEL DÍA). Si hay un CUPÓN validado abajo,
+  menciónalo con su CÓDIGO EXACTO y di claramente que se usa al pagar en oiikon.com.
+• CTA fuerte y claro (link al producto + WhatsApp).
+• Tono cálido y honesto. PROHIBIDA la urgencia falsa: nada de "solo hoy",
+  "últimas unidades", "última oportunidad", contadores ni escasez inventada. Una
+  fecha de validez REAL puede mencionarse de forma factual ("válido hasta …").
+`
+    : `\n═══════════════════════════════════════════════════════════════════════════════
 ENFOQUE DE HOY — ENGAGEMENT PRIMERO (mezcla 70/30)
 ═══════════════════════════════════════════════════════════════════════════════
 La MAYORÍA de los posts deben CONSTRUIR COMUNIDAD (comentarios, compartidos,
@@ -150,10 +170,24 @@ REGLAS POR FORMATO:
   // what stops it surfacing an unusable code like SUMMER100 from research/memory).
   const offers = options?.offers ?? [];
   const cost = options?.costBySku?.[product.sku.toLowerCase()] ?? null;
-  const validatedOffer =
-    offers.length > 0 && sellPrice > 0
-      ? selectBestOffer(sellPrice, product.brand ?? null, cost, offers)
+  // Operator-chosen coupon (🏷️ Oferta angle) takes priority, but passes the
+  // SAME margin/min-order/brand gate as the auto-pick — margin safety is never
+  // bypassed. If the chosen code doesn't qualify for THIS product (wrong brand,
+  // under min-order, or below margin floor), fall back to the auto-best
+  // margin-safe coupon so the offer post still has a usable code.
+  const requestedCode = options?.couponCode?.trim().toUpperCase() || null;
+  let validatedOffer =
+    offers.length > 0 && sellPrice > 0 && requestedCode
+      ? selectBestOffer(
+          sellPrice,
+          product.brand ?? null,
+          cost,
+          offers.filter((o) => o.code.toUpperCase() === requestedCode),
+        )
       : null;
+  if (!validatedOffer && offers.length > 0 && sellPrice > 0) {
+    validatedOffer = selectBestOffer(sellPrice, product.brand ?? null, cost, offers);
+  }
   const couponBlock = validatedOffer
     ? `\n═══════════════════════════════════════════════════════════════════════════════
 CUPÓN — YA VALIDADO (margen + pedido mínimo + marca)

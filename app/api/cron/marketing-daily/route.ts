@@ -75,12 +75,17 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const force = req.nextUrl.searchParams.get('force') === 'true';
   const categoryParam = req.nextUrl.searchParams.get('category');
-  const validCategories = ['educacion', 'tips', 'instalacion', 'baterias', 'apagones', 'familia', 'producto'] as const;
+  const validCategories = ['educacion', 'tips', 'instalacion', 'baterias', 'apagones', 'familia', 'producto', 'oferta'] as const;
   const category = validCategories.find((v) => v === categoryParam) ?? null;
   const productSkuParam = req.nextUrl.searchParams.get('product_sku')?.trim() ?? '';
   const productSku = productSkuParam ? productSkuParam.toUpperCase() : null;
   const guidanceParam = req.nextUrl.searchParams.get('guidance')?.trim() ?? '';
   const guidance = guidanceParam ? guidanceParam.slice(0, 2000) : null;
+  // Operator-chosen coupon for the 🏷️ Oferta angle. The generator validates it
+  // margin-safely against the active offers (and falls back to the auto-best if
+  // it doesn't qualify), so an arbitrary client value can never bypass margin.
+  const couponParam = req.nextUrl.searchParams.get('coupon')?.trim() ?? '';
+  const couponCode = couponParam ? couponParam : null;
 
   // Language of THIS campaign. Default 'es' so the scheduled cron and any
   // legacy callers behave exactly as before. The dashboard sends 'en' for the
@@ -221,6 +226,7 @@ export async function GET(req: NextRequest) {
       top: learning.top,
       offers,
       costBySku,
+      couponCode,
     });
 
     const warnings = validateContent(content);
