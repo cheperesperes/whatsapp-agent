@@ -638,8 +638,10 @@ export default function MarketingPage() {
         {/* ───────  SEND OFFER TO LEADS ─────── */}
         <SendOfferPanel initialCouponCode={offerCoupon} />
 
-        {/* ───────  WEBSITE CONTENT: FAQ GENERATOR ─────── */}
+        {/* ───────  WEBSITE CONTENT GENERATORS (admin → oiikon.com) ─────── */}
         <SiteFaqPanel />
+        <SiteArticlePanel products={products} />
+        <SiteComparisonPanel products={products} />
 
         {/* ───────  PAYPAL PAY-LINK GENERATOR ─────── */}
         <PayLinkPanel products={products} />
@@ -2150,6 +2152,205 @@ function SiteFaqPanel() {
         )}
         {cands && cands.length === 0 && (
           <p className="text-xs text-gray-500">No se generaron FAQ nuevas (quizás ya existen todas). Intenta de nuevo.</p>
+        )}
+      </div>
+    </details>
+  );
+}
+
+// Blog / sizing-guide generator → articles (bilingual). Operator reviews the
+// ES + EN draft, edits, and publishes to the live blog.
+function SiteArticlePanel({ products }: { products: Product[] }) {
+  const [subtype, setSubtype] = useState<'blog' | 'sizing'>('blog');
+  const [topic, setTopic] = useState('');
+  const [productSku, setProductSku] = useState('');
+  const [cands, setCands] = useState<any[] | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function generate() {
+    setLoading(true); setError(null); setResult(null); setCands(null);
+    try {
+      const res = await fetch('/api/marketing/site-content', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate', type: subtype, topic: topic || null, productSku: productSku || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data?.error ? String(data.error) : `HTTP ${res.status}`); return; }
+      const list = data.candidates ?? [];
+      setCands(list);
+      setSelected(new Set(list.map((_: any, i: number) => i)));
+    } finally { setLoading(false); }
+  }
+  function update(i: number, patch: any) {
+    setCands((prev) => prev ? prev.map((c, idx) => idx === i ? { ...c, ...patch } : c) : prev);
+  }
+  function toggle(i: number) {
+    setSelected((prev) => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  }
+  async function publish() {
+    if (!cands) return;
+    const items = cands.filter((_, i) => selected.has(i));
+    if (!items.length) { setError('Selecciona al menos un artículo.'); return; }
+    if (!confirm(`¿Publicar ${items.length} artículo(s) en el blog de oiikon.com?`)) return;
+    setPublishing(true); setError(null); setResult(null);
+    try {
+      const res = await fetch('/api/marketing/site-content', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', type: subtype, items }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data?.error ? String(data.error) : `HTTP ${res.status}`); return; }
+      setResult(`✓ Publicado(s) ${data.publishedCount} artículo(s) en el blog.`);
+      setCands((prev) => prev ? prev.filter((_, i) => !selected.has(i)) : prev);
+      setSelected(new Set());
+    } finally { setPublishing(false); }
+  }
+
+  return (
+    <details className="card">
+      <summary className="px-4 py-2.5 cursor-pointer text-sm font-medium text-gray-200 hover:bg-surface-800/50 flex items-center justify-between">
+        <span>📰 Blog / Guías del sitio web</span>
+        <span className="text-xs text-gray-500">→ articles (ES + EN)</span>
+      </summary>
+      <div className="px-4 py-3 space-y-3 border-t border-surface-700">
+        <div className="flex gap-2">
+          {([['blog', '📰 Artículo'], ['sizing', '🧮 Guía de dimensionamiento']] as const).map(([v, l]) => (
+            <button key={v} type="button" onClick={() => setSubtype(v)}
+              className={`flex-1 text-xs px-2 py-1.5 rounded border ${subtype === v ? 'bg-brand-500 border-brand-500 text-white' : 'bg-surface-800 border-surface-600 text-gray-300'}`}>{l}</button>
+          ))}
+        </div>
+        <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={subtype === 'sizing' ? 'Ej: cuánta batería para un apagón de 3 días' : 'Tema del artículo (ej: preparación para huracanes)'}
+          className="w-full text-sm bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-200" />
+        <select value={productSku} onChange={(e) => setProductSku(e.target.value)}
+          className="w-full text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-300">
+          <option value="">Producto a destacar (opcional)</option>
+          {products.map((p) => (<option key={p.sku} value={p.sku}>{p.sku} — {p.name}</option>))}
+        </select>
+        <button type="button" onClick={generate} disabled={loading}
+          className="text-xs px-3 py-1.5 bg-brand-500 hover:bg-brand-600 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded">
+          {loading ? 'Generando…' : '✨ Generar borrador (ES + EN)'}
+        </button>
+        {error && <div className="text-xs text-red-400 bg-red-900/30 border border-red-800/50 rounded px-2 py-1.5">⚠ {error}</div>}
+        {result && <div className="text-xs text-green-300 bg-green-900/20 border border-green-800/50 rounded px-2 py-1.5">{result}</div>}
+        {cands && cands.length > 0 && (
+          <div className="space-y-2">
+            <button type="button" onClick={publish} disabled={publishing || selected.size === 0}
+              className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded">
+              {publishing ? 'Publicando…' : `Publicar seleccionados (${selected.size})`}
+            </button>
+            {cands.map((c, i) => (
+              <div key={i} className={`rounded-lg border p-3 space-y-2 ${selected.has(i) ? 'border-brand-500/50 bg-surface-800' : 'border-surface-600 bg-surface-800/40 opacity-60'}`}>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} />
+                  <span className="text-[10px] uppercase tracking-wider text-gray-500">{c.lang === 'es' ? '🇪🇸 Español' : '🇺🇸 English'} · {c.category}</span>
+                </div>
+                <input value={c.title} onChange={(e) => update(i, { title: e.target.value })}
+                  className="w-full text-sm font-medium bg-surface-900 border border-surface-600 rounded px-2 py-1.5 text-gray-100" />
+                <input value={c.excerpt} onChange={(e) => update(i, { excerpt: e.target.value })} placeholder="Resumen"
+                  className="w-full text-xs bg-surface-900 border border-surface-600 rounded px-2 py-1.5 text-gray-400" />
+                <details>
+                  <summary className="text-[11px] text-gray-500 cursor-pointer">Ver/editar contenido HTML</summary>
+                  <textarea value={c.content} onChange={(e) => update(i, { content: e.target.value })} rows={6}
+                    className="mt-1 w-full text-[11px] font-mono bg-surface-900 border border-surface-600 rounded px-2 py-1.5 text-gray-300 resize-y" />
+                </details>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+// Product comparison generator → product_comparisons (bilingual; winners
+// computed from real specs, not the model). NOTE: needs a storefront comparison
+// page to be visible to customers; the data is ready either way.
+function SiteComparisonPanel({ products }: { products: Product[] }) {
+  const [skuA, setSkuA] = useState('');
+  const [skuB, setSkuB] = useState('');
+  const [cand, setCand] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function generate() {
+    if (!skuA || !skuB) { setError('Elige dos productos.'); return; }
+    setLoading(true); setError(null); setResult(null); setCand(null);
+    try {
+      const res = await fetch('/api/marketing/site-content', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate', type: 'comparison', skuA, skuB }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data?.error ? String(data.error) : `HTTP ${res.status}`); return; }
+      setCand(data.candidate);
+    } finally { setLoading(false); }
+  }
+  async function publish() {
+    if (!cand) return;
+    if (!confirm('¿Guardar esta comparativa en el sitio?')) return;
+    setPublishing(true); setError(null); setResult(null);
+    try {
+      const res = await fetch('/api/marketing/site-content', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', type: 'comparison', item: cand }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data?.error ? String(data.error) : `HTTP ${res.status}`); return; }
+      setResult('✓ Comparativa guardada.'); setCand(null);
+    } finally { setPublishing(false); }
+  }
+
+  return (
+    <details className="card">
+      <summary className="px-4 py-2.5 cursor-pointer text-sm font-medium text-gray-200 hover:bg-surface-800/50 flex items-center justify-between">
+        <span>⚖️ Comparativa de productos</span>
+        <span className="text-xs text-gray-500">→ product_comparisons</span>
+      </summary>
+      <div className="px-4 py-3 space-y-3 border-t border-surface-700">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[10px] text-gray-500 uppercase mb-1">Producto A</label>
+            <select value={skuA} onChange={(e) => setSkuA(e.target.value)}
+              className="w-full text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-300">
+              <option value="">Elegir…</option>
+              {products.map((p) => (<option key={p.sku} value={p.sku}>{p.sku} — {p.name}</option>))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] text-gray-500 uppercase mb-1">Producto B</label>
+            <select value={skuB} onChange={(e) => setSkuB(e.target.value)}
+              className="w-full text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-300">
+              <option value="">Elegir…</option>
+              {products.map((p) => (<option key={p.sku} value={p.sku}>{p.sku} — {p.name}</option>))}
+            </select>
+          </div>
+        </div>
+        <button type="button" onClick={generate} disabled={loading}
+          className="text-xs px-3 py-1.5 bg-brand-500 hover:bg-brand-600 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded">
+          {loading ? 'Generando…' : '✨ Generar comparativa'}
+        </button>
+        {error && <div className="text-xs text-red-400 bg-red-900/30 border border-red-800/50 rounded px-2 py-1.5">⚠ {error}</div>}
+        {result && <div className="text-xs text-green-300 bg-green-900/20 border border-green-800/50 rounded px-2 py-1.5">{result}</div>}
+        <p className="text-[10px] text-amber-300/80">⚠ La comparativa se guarda en la base de datos; para mostrarla a clientes hace falta una página de comparativas en oiikon.com.</p>
+        {cand && (
+          <div className="rounded-lg border border-brand-500/50 bg-surface-800 p-3 space-y-2 text-xs">
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">💵 Presupuesto: {cand.labels?.budget}</span>
+              <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">🔋 Capacidad: {cand.labels?.capacity}</span>
+              <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-300">⚡ Potencia: {cand.labels?.power}</span>
+            </div>
+            <div className="text-gray-300" dangerouslySetInnerHTML={{ __html: cand.comparison_text_es || '' }} />
+            <button type="button" onClick={publish} disabled={publishing}
+              className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 text-white rounded">
+              {publishing ? 'Guardando…' : 'Guardar comparativa'}
+            </button>
+          </div>
         )}
       </div>
     </details>
