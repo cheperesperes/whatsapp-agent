@@ -134,6 +134,7 @@ const PIPELINE_STEPS: Array<{ id: string; label: string }> = [
 const CATEGORIES: Array<{ value: string; label: string; desc: string }> = [
   { value: 'producto', label: '🔌 Producto', desc: 'Destacar un producto específico' },
   { value: 'oferta', label: '🏷️ Oferta', desc: 'Descuento real + código de cupón' },
+  { value: 'personalizado', label: '✏️ Personalizado', desc: 'Tu propio texto (cuadro de arriba) — sin IA, editable' },
   { value: 'educacion', label: '📚 Educación', desc: 'Enseñar sobre energía solar' },
   { value: 'tips', label: '💡 Tips', desc: 'Consejos prácticos' },
   { value: 'instalacion', label: '🔧 Instalación', desc: 'Cómo conectar / instalar' },
@@ -1340,18 +1341,18 @@ function CustomBriefPanel({
 
       <div>
         <label className="block text-[11px] text-gray-500 mb-1">
-          Guía para la IA (opcional)
+          Guía para la IA — o texto del post ✏️ Personalizado
         </label>
         <textarea
           value={guidance}
           onChange={(e) => onGuidanceChange(e.target.value)}
           rows={3}
           maxLength={2000}
-          placeholder="Ej: Habla sobre la nueva oferta de envío gratis, enfócate en familias con niños pequeños, menciona que es ideal para apagones nocturnos..."
+          placeholder="Para la IA: 'enfócate en apagones nocturnos…'. Para ✏️ Personalizado: escribe AQUÍ el post completo tal como quieres publicarlo."
           className="w-full px-2 py-1.5 rounded bg-surface-800 border border-surface-600 text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-brand-500 resize-y"
         />
         <p className="text-[10px] text-gray-600 mt-0.5">
-          La IA respetará esta guía siempre que no choque con el código de conducta. Máx 2000 caracteres.
+          Con cualquier categoría de IA, esto es una guía. Con <strong className="text-gray-400">✏️ Personalizado</strong>, este texto se publica TAL CUAL (sin IA) y queda editable. Máx 2000 caracteres.
         </p>
       </div>
     </div>

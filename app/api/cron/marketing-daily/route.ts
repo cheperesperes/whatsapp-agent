@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
   const startedAt = Date.now();
   const force = req.nextUrl.searchParams.get('force') === 'true';
   const categoryParam = req.nextUrl.searchParams.get('category');
-  const validCategories = ['educacion', 'tips', 'instalacion', 'baterias', 'apagones', 'familia', 'producto', 'oferta'] as const;
+  const validCategories = ['educacion', 'tips', 'instalacion', 'baterias', 'apagones', 'familia', 'producto', 'oferta', 'personalizado'] as const;
   const category = validCategories.find((v) => v === categoryParam) ?? null;
   const productSkuParam = req.nextUrl.searchParams.get('product_sku')?.trim() ?? '';
   const productSku = productSkuParam ? productSkuParam.toUpperCase() : null;
@@ -159,6 +159,50 @@ export async function GET(req: NextRequest) {
         product_sku: null,
         research_brief: null,
         category,
+      });
+    }
+
+    // ── Personalizado: operator-authored post — NO research, NO AI rewrite ──
+    // The operator's EXACT text (passed as `guidance`) becomes the Facebook +
+    // Instagram post. Used for announcements / notices where wording must be
+    // verbatim. The post lands as `pending_approval`, immediately editable from
+    // the dashboard (✏️ Editar) and publishable via the normal approve flow;
+    // the operator can also attach their own image with the card's upload button.
+    if (category === 'personalizado') {
+      const postText = (guidance ?? '').trim();
+      if (!postText) {
+        await updateCampaign(campaignId, {
+          status: 'failed',
+          error_message: 'Post personalizado vacío: escribe el texto del post en el cuadro de texto.',
+        });
+        return NextResponse.json(
+          { ok: false, error: 'Post personalizado vacío — escribe el texto del post en el cuadro de texto.', campaign_id: campaignId },
+          { status: 400 },
+        );
+      }
+      const theme = (postText.split('\n').find((l) => l.trim()) || 'Post personalizado').trim().slice(0, 80);
+      await createContent(campaignId, {
+        facebook_post: postText,
+        instagram_caption: postText,
+        video_status: 'skipped',
+      });
+      await updateCampaign(campaignId, {
+        status: 'pending_approval',
+        daily_theme: theme,
+        error_message: null,
+      });
+      try {
+        const { sendMarketingPreview } = await import('@/lib/marketing/notify');
+        await sendMarketingPreview(campaignId, null);
+      } catch {}
+      return NextResponse.json({
+        ok: true,
+        run_id: runId,
+        campaign_id: campaignId,
+        status: 'pending_approval',
+        mode: 'personalizado',
+        theme,
+        duration_ms: Date.now() - startedAt,
       });
     }
 
