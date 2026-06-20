@@ -787,8 +787,10 @@ function CampaignHero({
           </div>
         </div>
 
-        {/* Per-card actions: upload/clear media + edit text + delete. */}
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
+        {/* Per-card actions: upload/clear media + edit text + delete.
+            Mobile: left-aligned + larger tap targets so they're thumb-friendly;
+            inline-right on tablet+. */}
+        <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
           <input
             ref={fileRef}
             type="file"
@@ -804,7 +806,7 @@ function CampaignHero({
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={busy}
-            className="px-2.5 py-1.5 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs transition-colors disabled:opacity-50"
+            className="px-3 py-2 min-h-[40px] rounded-lg bg-surface-700 hover:bg-surface-600 active:bg-surface-500 text-gray-200 text-sm sm:text-xs transition-colors disabled:opacity-50"
             title="Sube tu propia imagen (p.ej. un render de Nano Banana / Flow) — reemplaza la imagen generada"
           >
             {busy ? '…' : '📤 Subir imagen'}
@@ -824,7 +826,7 @@ function CampaignHero({
             type="button"
             onClick={() => videoRef.current?.click()}
             disabled={busy}
-            className="px-2.5 py-1.5 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs transition-colors disabled:opacity-50"
+            className="px-3 py-2 min-h-[40px] rounded-lg bg-surface-700 hover:bg-surface-600 active:bg-surface-500 text-gray-200 text-sm sm:text-xs transition-colors disabled:opacity-50"
             title="Sube tu propio video — se publicará en Facebook/Instagram/YouTube en vez del generado"
           >
             {busy ? '…' : '🎬 Subir video'}
@@ -861,7 +863,7 @@ function CampaignHero({
                 setEditing((v) => !v);
               }}
               disabled={busy}
-              className="px-2.5 py-1.5 rounded-lg bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs transition-colors disabled:opacity-50"
+              className="px-3 py-2 min-h-[40px] rounded-lg bg-surface-700 hover:bg-surface-600 active:bg-surface-500 text-gray-200 text-sm sm:text-xs transition-colors disabled:opacity-50"
               title="Editar el texto del post a mano"
             >
               {editing ? '✕ Cerrar' : '✏️ Editar'}
