@@ -109,6 +109,10 @@
     {
       "path": "/api/chat",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/comment-responder",
+      "schedule": "0 */4 * * *"
     }
   ],
   "headers": [
