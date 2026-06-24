@@ -34,22 +34,24 @@ for row in rows:
     img_paths[sku] = (out, img.size)
 print("Decoded images:", ", ".join(sorted(img_paths)))
 
-# Each item: (sku, full name, capacity, output, cost USD @ LA pickup, MOQ, stock)
+# Each item: (sku, full name, capacity, output, cost USD @ LA pickup, MOQ, stock, profit_margin)
+# profit_margin is the retail profit margin from the source price list; the retail
+# Sale Price is reconstructed as cost / (1 - profit_margin).
 DATA = [
     ("Portable Power Stations (LiFePO4)", [
-        ("E2000LFP", "PECRON E2000LFP", "1,920 Wh", "2,000 W",            465, 24, 15),
-        ("E3600LFP", "PECRON E3600LFP", "3,072 Wh", "3,600 W",            772, 25, 261),
-        ("E3800LFP", "PECRON E3800LFP", "3,840 Wh", "4,200 W",            872, 25, 400),
-        ("F3000LFP", "PECRON F3000LFP", "3,072 Wh", "3,600 W",            595, 30, 853),
-        ("F5000LFP", "PECRON F5000LFP", "5,120 Wh", "7,200 W (120/240V)", 1100, 30, 139),
+        ("E2000LFP", "PECRON E2000LFP", "1,920 Wh", "2,000 W",            465, 24, 15,  0.2237),
+        ("E3600LFP", "PECRON E3600LFP", "3,072 Wh", "3,600 W",            772, 25, 261, 0.3000),
+        ("E3800LFP", "PECRON E3800LFP", "3,840 Wh", "4,200 W",            872, 25, 400, 0.2700),
+        ("F3000LFP", "PECRON F3000LFP", "3,072 Wh", "3,600 W",            595, 30, 853, 0.2992),
+        ("F5000LFP", "PECRON F5000LFP", "5,120 Wh", "7,200 W (120/240V)", 1100, 30, 139, 0.4497),
     ]),
     ("Expansion Batteries (LiFePO4)", [
-        ("EP3800-48V", "PECRON EP3800-48V Expansion", "3,840 Wh", "48 V — pairs E3800/E3600/F3000/E2400", 490, 25, 600),
-        ("FP5000-48V", "PECRON FP5000-48V Expansion", "5,120 Wh", "48 V — doubles F5000LFP autonomy",     850, 24, 438),
+        ("EP3800-48V", "PECRON EP3800-48V Expansion", "3,840 Wh", "48 V — pairs E3800/E3600/F3000/E2400", 490, 25, 600, 0.3200),
+        ("FP5000-48V", "PECRON FP5000-48V Expansion", "5,120 Wh", "48 V — doubles F5000LFP autonomy",     850, 24, 438, 0.3457),
     ]),
     ("Portable Solar Panels", [
-        ("PV200", "PECRON Flexible Monocrystalline 200W", "—", "200 W", 120, 40, 657),
-        ("PV300", "PECRON Flexible Monocrystalline 300W", "—", "300 W", 180, 33, 171),
+        ("PV200", "PECRON Flexible Monocrystalline 200W", "—", "200 W", 120, 40, 657, 0.3000),
+        ("PV300", "PECRON Flexible Monocrystalline 300W", "—", "300 W", 180, 33, 171, 0.3400),
     ]),
 ]
 MARKUP = 1.05  # +5% margin on LA-pickup cost
@@ -63,7 +65,7 @@ thin = Side(style="thin", color="B8C2D9")
 border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
 headers = ["Photo", "SKU", "Product", "Capacity", "Output", "List Price\n(LA Pickup)",
-           "Wholesale\n(+5%)", "MOQ", "Min. Order\nValue", "Stock"]
+           "Wholesale\n(+5%)", "Sale Price\n(Retail)", "MOQ", "Min. Order\nValue", "Stock"]
 NCOL = len(headers)
 last_col = get_column_letter(NCOL)
 
@@ -98,7 +100,7 @@ for j, h in enumerate(headers, start=1):
     cell.border = border
 ws.row_dimensions[hrow].height = 30
 
-money_cols = {6, 7, 9}
+money_cols = {6, 7, 8, 10}   # List, Wholesale, Sale, Min.Order Value
 PHOTO_ROW_H = 84          # points
 EMU_PER_PX = 9525
 r = hrow + 1
@@ -112,12 +114,13 @@ for category, items in DATA:
     ws.row_dimensions[r].height = 22
     r += 1
 
-    for i, (sku, name, cap, out, cost, moq, stock) in enumerate(items):
+    for i, (sku, name, cap, out, cost, moq, stock, margin) in enumerate(items):
         wholesale = round(cost * MARKUP, 2)
+        sale = round(cost / (1 - margin))            # retail price from profit margin
         moq_value = round(wholesale * moq, 2)
         band = WHITE if i % 2 == 0 else BAND
         # col 1 left blank for the photo
-        row_vals = [None, sku, name, cap, out, cost, wholesale, moq, moq_value, stock]
+        row_vals = [None, sku, name, cap, out, cost, wholesale, sale, moq, moq_value, stock]
         for j, val in enumerate(row_vals, start=1):
             cell = ws.cell(row=r, column=j, value=val)
             cell.border = border
@@ -132,6 +135,8 @@ for category, items in DATA:
                 cell.alignment = Alignment(horizontal="right", vertical="center")
                 if j == 7:
                     cell.font = Font(bold=True, color=BLUE)
+                elif j == 8:
+                    cell.font = Font(bold=True, color="2E7D32")   # green retail price
             else:
                 cell.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[r].height = PHOTO_ROW_H
@@ -156,7 +161,7 @@ cell.font = Font(size=9, italic=True, color="606060")
 cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 ws.row_dimensions[r].height = 40
 
-widths = [16, 13, 32, 11, 26, 13, 12, 7, 13, 9]
+widths = [16, 13, 30, 11, 25, 12, 12, 12, 7, 13, 9]
 for j, w in enumerate(widths, start=1):
     ws.column_dimensions[get_column_letter(j)].width = w
 
