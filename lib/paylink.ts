@@ -22,6 +22,8 @@ import {
   selectBestOffer,
   createServiceClient,
   getOrCreateConversation,
+  getConversationByPhone,
+  markConversationWon,
   storeMessage,
   type Offer,
 } from './supabase';
@@ -565,6 +567,25 @@ export async function recordPayLinkOrder(
         }
       } catch (e) {
         console.error('[PAYLINK] thank-you send failed (non-blocking):', e);
+      }
+    }
+
+    // Attribution: a captured pay-link payment is GROUND TRUTH that this
+    // WhatsApp conversation converted — a real PayPal capture, NOT model
+    // inference, so it's a legitimate auto-win (distinct from the Claude path
+    // markConversationWon's doc warns against). Until now only the operator's
+    // manual /won stamped converted_at, so almost no sales were attributed and
+    // /dashboard/ads + the overview CR were effectively blind (1 of ~19 linked).
+    // Best-effort: an attribution miss must NEVER block or undo a captured order.
+    if (waPhone) {
+      try {
+        const conv = await getConversationByPhone(waPhone);
+        if (conv && !conv.converted_at) await markConversationWon(conv.id);
+      } catch (attrErr) {
+        console.error(
+          '[PAYLINK] conversion attribution failed (non-blocking):',
+          attrErr instanceof Error ? attrErr.message : attrErr,
+        );
       }
     }
 
