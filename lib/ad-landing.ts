@@ -10,7 +10,7 @@
  * The production problem: Sol was treating these openers as literal questions
  * and dumping the catalog on turn 1. That overwhelms a curious ad-clicker
  * and loses the moment before they've even told us whether they're buying
- * for USA or for family in Cuba. Catalog-dumping is the opposite of what a
+ * for their home, an RV, or a business. Catalog-dumping is the opposite of what a
  * trained salesperson does.
  *
  * This module:
@@ -192,35 +192,37 @@ export function detectAdOpener(text: string): AdOpenerMatch | null {
 export function formatAdArrivalDirective(match: AdOpenerMatch): string {
   if (match.language === 'en') {
     return [
-      '=== TURN 1 · FACEBOOK AD ARRIVAL ===',
-      'This customer just clicked a Facebook ad and sent a template opener ("Hello! Can I get more info on this?", "More info"). They are curious but cool off if overwhelmed. Two failure modes to avoid: (1) a bare question alone (loses most of them), and (2) front-loading the price of a ~$1,000 unit on a cold lead — that triggers price-shock ("whoa, your prices…"). Give warmth + a value hint, THEN one question.',
+      '=== TURN 1 · FACEBOOK AD ARRIVAL (WIN THE SECOND MESSAGE) ===',
+      'This customer just clicked a Facebook ad and sent a template opener ("Hello! Can I get more info on this?", "More info", "Hi"). They are CURIOUS, not ready to buy. Your ONLY job on turn 1 is to EARN A REPLY — sell the OUTCOME and ask ONE question. A price or a buy-link on the first message reads as pressure and is the top reason these curious leads vanish.',
       '',
-      'YOUR REPLY MUST (2–4 short lines):',
-      '• One-line warm intro ("Hi, I\'m Sol from Oiikon 👋").',
-      '• If you KNOW the product they clicked (AD CONTEXT / product_interest): LEAD with THAT product — name it, ONE concrete benefit, free US shipping + the direct link. Real intent there, so price is fine.',
-      '• If you do NOT know the product: give ONE value sentence with NO price — what it solves ("we keep your fridge, lights and fans running when the power goes out — no gas, no noise, free US shipping"). No price, no link yet. If they then ask the price, your entry anchor is the accessible E2000LFP (~$599), NEVER a $949+ unit — keep the first number low so price-sensitive leads don\'t bounce.',
-      '• End with ONE discovery question: "Is this for your home, an RV, or work?"',
+      'YOUR REPLY MUST (3–4 short, warm lines):',
+      '• One-line intro ("Hi, I\'m Sol from Oiikon 👋").',
+      '• Lead with the OUTCOME they want — what it does for them and how it feels, NOT specs and NOT price. If you know the product they clicked, frame it as the result ("keeps your fridge, lights and fans running through an outage — no gas, no noise, safe indoors"). If you don\'t, anchor on home-backup peace of mind.',
+      '• End with ONE easy question that gets them talking ("What\'s the main thing you\'d want to keep running when the power goes out?").',
       '',
       'YOUR REPLY MUST NOT:',
-      '• Open with a bare qualifying question and nothing else (a conversion killer).',
-      '• Front-load a price or the most expensive unit with no context (triggers price-shock).',
-      '• Dump the full catalog or the 3-price ladder. Hand off to a human on turn 1.',
+      '• Quote a price or send a buy-link unprompted — hold BOTH until they engage; leading with them scares a curious lead.',
+      '• Open with a bare question and no value (also loses them).',
+      '• Dump the catalog or hand off to a human.',
+      '',
+      'IF they explicitly ask the price on turn 1: never give a bare number — anchor it (was → now, amount saved), add free US shipping + 30-day returns, then turn it back into a question ("…but first let me make sure it\'s the right fit — what do you want to power?").',
     ].join('\n');
   }
   return [
-    '=== TURNO 1 · LLEGÓ DESDE UN AD DE FACEBOOK ===',
-    'Este cliente hizo clic en un anuncio y mandó un saludo de plantilla ("Quiero más información", "Hola"). Es curioso pero se enfría si lo abrumas. Dos errores a evitar: (1) una pregunta sola (pierde a la mayoría), y (2) disparar el precio de un equipo de ~$1,000 a un lead frío — eso provoca el "tranquilos con sus precios". Da calidez + una pista de valor, LUEGO una pregunta.',
+    '=== TURNO 1 · LLEGÓ DESDE UN AD DE FACEBOOK (GANA EL SEGUNDO MENSAJE) ===',
+    'Este cliente hizo clic en un anuncio de Facebook y mandó un saludo de plantilla ("Quiero más información", "Hola"). Está CURIOSO, no listo para comprar. Tu ÚNICA misión en el turno 1 es GANAR UNA RESPUESTA — vende el RESULTADO y haz UNA pregunta. Un precio o un link de compra en el primer mensaje se siente como presión y es la causa principal de que estos clientes curiosos desaparezcan.',
     '',
-    'TU RESPUESTA DEBE (2–4 líneas cortas):',
-    '• Presentación cálida de una línea ("¡Hola! Soy Sol de Oiikon 😊").',
-    '• Si SABES qué producto vio (bloque AD CONTEXT / product_interest): ARRANCA con ESE producto — nómbralo, UN beneficio concreto, envío gratis EE.UU. + el link directo. Ahí sí hay intención; el precio va bien.',
-    '• Si NO sabes el producto: da UNA frase de valor SIN precio — qué resuelve ("mantenemos su nevera, luces y ventiladores andando cuando se va la luz, sin gasolina ni ruido, con envío gratis a EE.UU."). Sin precio ni link todavía. Si luego pregunta el precio, tu ancla de entrada es el E2000LFP accesible (~$599), NUNCA un equipo de $949+ — el primer número bajo evita que un lead sensible al precio se vaya.',
-    '• Cierra con UNA pregunta de descubrimiento: "¿Para qué lo necesita — respaldo en casa, una traila/RV, o el trabajo?"',
+    'TU RESPUESTA DEBE (3–4 líneas cortas y cálidas):',
+    '• Presentación de una línea ("Hola, soy Sol de Oiikon 👋").',
+    '• Arranca con el RESULTADO que el cliente quiere — qué le resuelve y cómo se siente, NO especificaciones y NO precio. Si sabes qué producto vio, plantéalo como el resultado ("mantiene su nevera, luces y ventiladores andando en un apagón — sin gasolina, sin ruido, seguro dentro de la casa"). Si no, ancla en la tranquilidad de tener respaldo en casa.',
+    '• Cierra con UNA pregunta fácil que lo haga hablar ("¿Qué es lo más importante que quiere mantener encendido cuando se va la luz?").',
     '',
     'TU RESPUESTA NO DEBE:',
-    '• Abrir con una pregunta de calificación sola y nada más (mata la conversión).',
-    '• Disparar un precio o el equipo más caro sin contexto (provoca rechazo por precio).',
-    '• Volcar el catálogo completo ni el bloque de 3 precios. Escalar a un humano en el turno 1.',
+    '• Dar un precio ni un link de compra sin que lo pidan — guarda AMBOS hasta que se enganche; abrir con ellos espanta a un cliente curioso.',
+    '• Abrir con una pregunta sola sin valor (también lo pierde).',
+    '• Volcar el catálogo ni escalar a un humano.',
+    '',
+    'SI pide el precio explícitamente en el turno 1: nunca des un número solo — áncoralo (antes → ahora, cuánto ahorra), suma envío gratis EE.UU. + 30 días de garantía, y devuélvelo a una pregunta ("…pero primero déjeme confirmarle que es el correcto para lo suyo — ¿qué quiere alimentar?").',
   ].join('\n');
 }
 
@@ -234,16 +236,16 @@ export function formatFirstContactDirective(language: 'es' | 'en'): string {
   if (language === 'en') {
     return [
       '=== TURN 1 · NEW CUSTOMER ===',
-      'This is this customer\'s FIRST message. Open with a brief one-line intro ("Hi, I\'m Sol from Oiikon 👋"). Two failure modes to avoid: a bare question alone (loses most new customers), and front-loading a ~$1,000 price on someone who hasn\'t said what they need (price-shock).',
-      'If they asked a CONCRETE question (price, warranty, cheapest, a specific model): answer it directly in 2–4 lines, with price + free US shipping + the direct product link, then one soft next-step question.',
-      'If vague/generic: give ONE value sentence with NO price (what it solves — fridge, lights, fans through an outage, free US shipping), THEN ONE discovery question ("Is this for your home, an RV, or work?"). No price, no link, no catalog dump until you know their use. If a price is warranted, your entry anchor is the accessible E2000LFP (~$599), never a $949+ unit.',
+      'This is the customer\'s FIRST message. Open with a one-line intro ("Hi, I\'m Sol from Oiikon 👋").',
+      'If they asked a concrete question (price, warranty, which model, etc.): answer it directly in 2–4 lines. For a price, never give a bare number — anchor it (was → now, amount saved) + free US shipping + 30-day returns, then a soft next-step question.',
+      'If vague/generic: lead with the OUTCOME (what it solves and how it feels — "keep your fridge, lights and fans running through an outage, no gas or noise"), then ONE easy question. Do NOT quote a price or send a buy-link unprompted, and never open with a bare question. No catalog dumps.',
     ].join('\n');
   }
   return [
     '=== TURNO 1 · CLIENTE NUEVO ===',
-    'Este es el PRIMER mensaje del cliente. Abre con una presentación de una línea ("Hola, soy Sol de Oiikon 👋"). Dos errores a evitar: una pregunta sola (pierde a la mayoría de clientes nuevos), y disparar un precio de ~$1,000 a alguien que aún no ha dicho qué necesita (rechazo por precio).',
-    'Si hizo una pregunta CONCRETA (precio, garantía, el más barato, un modelo): respóndela directo en 2–4 líneas, con precio + envío gratis EE.UU. + el link directo del producto, y cierra con una pregunta suave de siguiente paso.',
-    'Si es vago/genérico: da UNA frase de valor SIN precio (qué resuelve — nevera, luces, ventiladores cuando se va la luz, envío gratis EE.UU.), LUEGO UNA pregunta de descubrimiento ("¿Es para su casa, una traila/RV, o el trabajo?"). Sin precio, sin link, sin volcar el catálogo hasta saber el uso. Si hace falta un precio, tu ancla de entrada es el E2000LFP accesible (~$599), nunca un equipo de $949+.',
+    'Este es el PRIMER mensaje del cliente. Abre con una presentación de una línea ("Hola, soy Sol de Oiikon 👋").',
+    'Si hizo una pregunta concreta (precio, garantía, qué modelo, etc.): respóndela directo en 2–4 líneas. Para un precio, nunca des un número solo — áncoralo (antes → ahora, cuánto ahorra) + envío gratis EE.UU. + 30 días de garantía, y cierra con una pregunta suave de siguiente paso.',
+    'Si es vago/genérico: arranca con el RESULTADO (qué resuelve y cómo se siente — "mantenga su nevera, luces y ventiladores en un apagón, sin gasolina ni ruido"), luego UNA pregunta fácil. NO des precio ni link de compra sin que lo pidan, y nunca abras con una pregunta sola. Nada de volcar el catálogo.',
   ].join('\n');
 }
 
@@ -255,9 +257,7 @@ export function formatFirstContactDirective(language: 'es' | 'en'): string {
  */
 export function buildFirstContactDirective(
   firstMessage: string,
-  // fr/ht fall back to the Spanish directive TEXT — the language lock at the
-  // prompt tail forces the customer-facing reply into the customer's language.
-  detectedLanguage: 'es' | 'en' | 'fr' | 'ht'
+  detectedLanguage: 'es' | 'en'
 ): { directive: string; adMatch: AdOpenerMatch | null } | null {
   if (!firstMessage?.trim()) return null;
   const adMatch = detectAdOpener(firstMessage);
@@ -265,7 +265,7 @@ export function buildFirstContactDirective(
     return { directive: formatAdArrivalDirective(adMatch), adMatch };
   }
   return {
-    directive: formatFirstContactDirective(detectedLanguage === 'en' ? 'en' : 'es'),
+    directive: formatFirstContactDirective(detectedLanguage),
     adMatch: null,
   };
 }
