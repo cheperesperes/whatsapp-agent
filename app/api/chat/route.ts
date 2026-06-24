@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { getLearnedBehaviorsBlock } from '@/lib/learning';
+import { replaceProofVideoTags } from '@/lib/proof-videos';
 
 export const dynamic = 'force-dynamic';
 
@@ -229,7 +230,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Extract `[SEND_IMAGE:SKU]` tags into a structured image list the
     // frontend renders inline (instead of sending separate WhatsApp media).
-    const { text: rawCleanText, skus } = extractImageTags(aiMessage);
+    const { text: extractedText, skus } = extractImageTags(aiMessage);
+    const rawCleanText = replaceProofVideoTags(extractedText);
 
     // Pre-send validation gate (lib/validate-reply.ts). The web widget has
     // no pay-link builder, so ANY checkout URL here is model-invented.
