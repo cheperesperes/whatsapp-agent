@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { getLearnedBehaviorsBlock } from '@/lib/learning';
+import { replaceProofVideoTags } from '@/lib/proof-videos';
 
 // Always process webhook requests dynamically — never cache
 export const dynamic = 'force-dynamic';
@@ -909,8 +910,8 @@ async function processWebhookLocked(
     // Defense-in-depth: strip any residual internal tag the downstream
     // extractors could miss (a malformed [SEND_IMAGE...] without a valid SKU,
     // or a leftover [[PAYLINK...]]) so it can NEVER reach the customer.
-    cleanMessage = cleanMessage
-      .replace(/\[\[?\s*(SEND_IMAGE|PAYLINK|PRICEMATCH)\b[^\]]*\]\]?/gi, '')
+    cleanMessage = replaceProofVideoTags(cleanMessage)
+      .replace(/\[\[?\s*(SEND_IMAGE|PAYLINK|PRICEMATCH|PROOF_VIDEO)\b[^\]]*\]\]?/gi, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
