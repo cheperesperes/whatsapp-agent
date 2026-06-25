@@ -252,7 +252,7 @@ export function buildQuoteNudgeDraft(input: QuoteNudgeInput): string {
   const g = first ? `Hola ${first}, ` : 'Hola, ';
   const what = model ? `el ${model}` : 'el equipo que le recomendé';
   return v === 0
-    ? `${g}¿qué le pareció ${what}? Cualquier duda se la respondo al momento — y si ya se decidió, le preparo su link de pago seguro y queda listo en 2 minutos. 😊`
+    ? `${g}¿qué le pareció ${what}? Cualquier duda se la respondo al momento — y si ya se decidió, se lo dejo listo y queda ordenado en 2 minutos. 😊`
     : `${g}quedé pendiente con ${what}. ¿Le quedó alguna duda que le pueda aclarar? Cuando me diga, se lo dejo listo para ordenar — sin compromiso. 😊`;
 }
 
