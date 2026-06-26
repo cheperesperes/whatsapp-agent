@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/api/paypal/',                   // PayPal webhook calls this directly — signature-verified, no user session
   '/api/marketing/heygen-webhook', // HeyGen calls this directly — no user session
   '/api/cron/',                     // Vercel cron calls with CRON_SECRET, not cookies
+  '/api/admin/send-product-email',  // token-gated lead-email endpoint — auth is the shared token, no user session
   '/api/chat',                      // Website chat endpoint — anonymous browser sessions
   '/api/web-leads/',                // Widget email opt-in + one-click unsubscribe — anonymous by design
   '/widget.js',                     // Embeddable widget script for oiikon.com
