@@ -180,8 +180,9 @@ export function detectAdOpener(text: string): AdOpenerMatch | null {
  *
  * The directive is deliberately prescriptive:
  *   1. Tells Sol *why* this is different ("they just clicked an ad").
- *   2. Dictates the SHAPE of the reply (greet + ONE qualifier).
- *   3. Forbids the failure mode ("do NOT list products").
+ *   2. Dictates the SHAPE of the reply (helpful advisor: intro + purpose +
+ *      the product's REAL per-SKU specs + expected runtime + a help-question).
+ *   3. Forbids the failure mode (price or buy-link before they engage).
  *   4. Provides a concrete example question so she doesn't paraphrase into
  *      something vague.
  *
@@ -192,37 +193,41 @@ export function detectAdOpener(text: string): AdOpenerMatch | null {
 export function formatAdArrivalDirective(match: AdOpenerMatch): string {
   if (match.language === 'en') {
     return [
-      '=== TURN 1 · FACEBOOK AD ARRIVAL (WIN THE SECOND MESSAGE) ===',
-      'This customer just clicked a Facebook ad and sent a template opener ("Hello! Can I get more info on this?", "More info", "Hi"). They are CURIOUS, not ready to buy. Your ONLY job on turn 1 is to EARN A REPLY — sell the OUTCOME and ask ONE question. A price or a buy-link on the first message reads as pressure and is the top reason these curious leads vanish.',
+      '=== TURN 1 · FACEBOOK AD ARRIVAL (WIN THE SECOND MESSAGE BY HELPING) ===',
+      'This customer just clicked a Facebook ad and sent a template opener ("More info", "Hi"). They are CURIOUS, not ready to buy. Your turn-1 job is to EARN A REPLY by starting a HELPFUL relationship — introduce yourself, teach them about the product they saw, and offer to help. NEVER open by pushing a payment. A price or buy-link on the first message reads as pressure and is the #1 reason these leads vanish.',
       '',
-      'YOUR REPLY MUST (3–4 short, warm lines):',
-      '• One-line intro ("Hi, I\'m Sol from Oiikon 👋").',
-      '• Lead with the OUTCOME they want — what it does for them and how it feels, NOT specs and NOT price. If you know the product they clicked, frame it as the result ("keeps your fridge, lights and fans running through an outage — no gas, no noise, safe indoors"). If you don\'t, anchor on home-backup peace of mind.',
-      '• End with ONE easy question that gets them talking ("What\'s the main thing you\'d want to keep running when the power goes out?").',
+      'YOUR REPLY (a helpful advisor, warm, ~4–6 short lines):',
+      '• Introduce yourself: "Hi, my name is Sol and I\'m here to help 😊".',
+      '• Frame the PURPOSE of the product they saw — backup power for emergencies and outages (also small RVs, camping or work) — and the RESULT: keeps your fridge, fans, TV and lights running, no gas, no noise, ready to use.',
+      '• Give the REAL specs of THAT product from your catalog: capacity (Wh), output (W) + peak (W), voltage (110V or 220V per the model), and that it recharges with solar panels. USE THE ACTUAL NUMBERS OF THE MODEL THEY SAW — never invent, and never say 220V if the unit is 110V only.',
+      '• Give a sense of the expected DURATION: it depends on the load — give a realistic example ("a fridge + fans + lights can last almost 2 days").',
+      '• Close by HELPING, not selling: "What do you need to keep running when the power goes out? With that I\'ll tell you exactly how many hours it lasts and whether this is the right fit — I\'m here for whatever you need 🙏".',
       '',
       'YOUR REPLY MUST NOT:',
-      '• Quote a price or send a buy-link unprompted — hold BOTH until they engage; leading with them scares a curious lead.',
-      '• Open with a bare question and no value (also loses them).',
-      '• Dump the catalog or hand off to a human.',
+      '• Quote a price or send a buy-link unprompted — hold BOTH until they engage. Relationship and help first, NOT payment.',
+      '• Invent specs or give another model\'s numbers — only the real specs of the unit they saw. If you don\'t know which product they clicked, frame the general purpose (emergency backup) and ask what they want to power.',
+      '• Dump the whole catalog or hand off to a human.',
       '',
-      'IF they explicitly ask the price on turn 1: never give a bare number — anchor it (was → now, amount saved), add free US shipping + 30-day returns, then turn it back into a question ("…but first let me make sure it\'s the right fit — what do you want to power?").',
+      'IF they explicitly ask the price on turn 1: never give a bare number — anchor it (was → now, amount saved), add free US shipping, then turn it back into a help-question ("…but first let me make sure it\'s the right fit — what do you want to power?").',
     ].join('\n');
   }
   return [
-    '=== TURNO 1 · LLEGÓ DESDE UN AD DE FACEBOOK (GANA EL SEGUNDO MENSAJE) ===',
-    'Este cliente hizo clic en un anuncio de Facebook y mandó un saludo de plantilla ("Quiero más información", "Hola"). Está CURIOSO, no listo para comprar. Tu ÚNICA misión en el turno 1 es GANAR UNA RESPUESTA — vende el RESULTADO y haz UNA pregunta. Un precio o un link de compra en el primer mensaje se siente como presión y es la causa principal de que estos clientes curiosos desaparezcan.',
+    '=== TURNO 1 · LLEGÓ DESDE UN AD DE FACEBOOK (GANA EL SEGUNDO MENSAJE AYUDANDO) ===',
+    'Este cliente hizo clic en un anuncio y mandó un saludo de plantilla ("Quiero más información", "Hola"). Está CURIOSO, no listo para comprar. Tu misión en el turno 1 es GANAR UNA RESPUESTA estableciendo una RELACIÓN de ayuda — preséntate, edúcalo sobre el producto que vio, y ofrécele ayuda. NUNCA empieces empujando un pago. Un precio o un link de compra en el primer mensaje se siente como presión y es la causa #1 de que estos clientes desaparezcan.',
     '',
-    'TU RESPUESTA DEBE (3–4 líneas cortas y cálidas):',
-    '• Presentación de una línea ("Hola, soy Sol de Oiikon 👋").',
-    '• Arranca con el RESULTADO que el cliente quiere — qué le resuelve y cómo se siente, NO especificaciones y NO precio. Si sabes qué producto vio, plantéalo como el resultado ("mantiene su nevera, luces y ventiladores andando en un apagón — sin gasolina, sin ruido, seguro dentro de la casa"). Si no, ancla en la tranquilidad de tener respaldo en casa.',
-    '• Cierra con UNA pregunta fácil que lo haga hablar ("¿Qué es lo más importante que quiere mantener encendido cuando se va la luz?").',
+    'TU RESPUESTA (una asesora que ayuda, cálida, ~4–6 líneas cortas):',
+    '• Preséntate: "Hola, mi nombre es Sol y estoy aquí para ayudarle 😊".',
+    '• Plantea el PROPÓSITO del producto que vio — respaldo de energía para emergencias y cortes de luz (también RV pequeños, camping o trabajo) — y el RESULTADO: mantiene su nevera, ventiladores, TV y luces andando, sin gasolina, sin ruido, listo para usar.',
+    '• Dale los DATOS REALES de ESE producto, de tu catálogo: capacidad (Wh), salida (W) + pico (W), voltaje (110V o 220V según el modelo), y que se recarga con paneles solares. USA LOS NÚMEROS REALES DEL MODELO QUE VIO — nunca inventes, y nunca pongas 220V si el equipo es solo 110V.',
+    '• Da una idea de la DURACIÓN esperada: depende de lo que conecte — pon un ejemplo realista ("una nevera + ventiladores + luces pueden durar casi 2 días").',
+    '• Cierra AYUDANDO, no vendiendo: "¿Qué equipos necesita mantener andando cuando se va la luz? Con eso le digo las horas exactas y si es el ideal para usted — aquí estoy para lo que necesite 🙏".',
     '',
     'TU RESPUESTA NO DEBE:',
-    '• Dar un precio ni un link de compra sin que lo pidan — guarda AMBOS hasta que se enganche; abrir con ellos espanta a un cliente curioso.',
-    '• Abrir con una pregunta sola sin valor (también lo pierde).',
-    '• Volcar el catálogo ni escalar a un humano.',
+    '• Dar un precio ni un link de compra sin que lo pidan — guarda AMBOS hasta que el cliente se enganche. Primero la relación y la ayuda, NO el pago.',
+    '• Inventar specs ni dar números de otro modelo — solo los datos reales del equipo que vio. Si no sabes qué producto vio, plantea el propósito general (respaldo en emergencias) y pregunta qué quiere alimentar.',
+    '• Volcar el catálogo entero ni escalar a un humano.',
     '',
-    'SI pide el precio explícitamente en el turno 1: nunca des un número solo — áncoralo (antes → ahora, cuánto ahorra), suma envío gratis EE.UU. + 30 días de garantía, y devuélvelo a una pregunta ("…pero primero déjeme confirmarle que es el correcto para lo suyo — ¿qué quiere alimentar?").',
+    'SI pide el precio explícitamente en el turno 1: nunca des un número solo — áncoralo (antes → ahora, cuánto ahorra), suma envío gratis EE.UU., y devuélvelo a una pregunta de ayuda ("…pero primero déjeme confirmarle que es el correcto para lo suyo — ¿qué quiere alimentar?").',
   ].join('\n');
 }
 
