@@ -304,26 +304,33 @@ export async function GET(req: NextRequest) {
 
   // ── Apply changes (one upsert per SKU + one log batch) ──
   if (changesBySku.size > 0) {
-    const upsertRows: Array<Record<string, unknown>> = [];
+    // UPDATE existing rows by sku — never upsert. `.upsert({onConflict:'sku'})`
+    // failed to match the existing row and attempted an INSERT (new id, no
+    // `name` → NOT-NULL violation → 500), so the cron fired every 10 min for
+    // months but never applied a single change. The cron only ever touches rows
+    // that ALREADY exist (new website products are reported via missingInAgent,
+    // never auto-inserted), so a plain per-sku UPDATE is correct and cannot
+    // create duplicates. cs[0].sku carries the row's original casing.
+    const now = new Date().toISOString();
     for (const cs of changesBySku.values()) {
-      // cs[0].sku carries the agent row's ORIGINAL casing (the map key is
-      // uppercased for matching) — required so the upsert hits the existing
-      // row instead of inserting a duplicate.
-      const row: Record<string, unknown> = { sku: cs[0].sku };
-      for (const c of cs) row[c.field] = c.newValue;
-      row.updated_at = new Date().toISOString();
-      upsertRows.push(row);
-    }
-
-    const { error: upsertErr } = await supabase
-      .from('agent_product_catalog')
-      .upsert(upsertRows, { onConflict: 'sku' });
-
-    if (upsertErr) {
-      return NextResponse.json(
-        { error: `upsert failed: ${upsertErr.message}`, summary },
-        { status: 500 }
-      );
+      const patch: Record<string, unknown> = { updated_at: now };
+      for (const c of cs) patch[c.field] = c.newValue;
+      const { error: updErr } = await supabase
+        .from('agent_product_catalog')
+        .update(patch)
+        .eq('sku', cs[0].sku);
+      if (updErr) {
+        // Surface the error where we can see it (Vercel cron logs aren't
+        // reachable) so a future failure is diagnosable, not silent.
+        await supabase.from('app_config').upsert(
+          { key: 'inventory_sync_last_error', value: `update ${cs[0].sku}: ${updErr.message}`.slice(0, 500) },
+          { onConflict: 'key' }
+        );
+        return NextResponse.json(
+          { error: `update failed (${cs[0].sku}): ${updErr.message}`, summary },
+          { status: 500 }
+        );
+      }
     }
 
     // Audit log — one row per (sku, field) change. Best-effort: a log
