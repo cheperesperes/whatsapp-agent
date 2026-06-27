@@ -69,11 +69,11 @@ export interface ValidateOptions {
   language?: 'es' | 'en' | 'fr' | 'ht';
 }
 
-/** Discontinued models (no resupply — Ed's 2026-06-11 warehouse update).
- * Belt-and-braces duplicate of the prompt + catalog: even if these rows are
- * deleted from the catalog (and stop carrying in_stock=false), they can
- * never be pitched. Keep in sync with AGENT_PROMPT "MODELOS DESCONTINUADOS". */
-const DISCONTINUED_SKUS = ['E1000LFP', 'E1500LFP', 'F1000LFP'];
+/** Permanently discontinued models — NONE right now. Ed (2026-06-27) reversed
+ * the earlier E1000/E1500/F1000 "no resupply" call: they're just temporarily
+ * out of stock and DO restock. OOS protection comes from the catalog
+ * in_stock=false rows below (notify-me flow, no pay-link), not a hard list. */
+const DISCONTINUED_SKUS: string[] = [];
 
 /** Big fixed-system categories we drop-ship from suppliers. When OOS these are a
  * consultative SPECIAL ORDER (Sol sizes them, quotes an indicative price, routes
