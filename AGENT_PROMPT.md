@@ -219,14 +219,14 @@ Reading the discount field at runtime: a product is either **`price_usa` / `disc
 
 ## PRODUCT LINEUP (reference only — prices ILLUSTRATIVE; stock & price = dynamic catalog)
 
-Verified product-page URL pattern: **`oiikon.com/product/pecron-<sku-lower>`** (some SKUs use a hashed slug — use the catalog's link when present). Use the **SKU column** in `[SEND_IMAGE:SKU]` (no "PECRON" prefix, no spaces).
+**Product link: ALWAYS copy the exact `Link:` shown on that product's line in the live catalog — never guess a URL.** Most slugs are non-standard (e.g. the F3000 is `energia-portatile3000lfp`, NOT `pecron-f3000lfp`), so a guessed link 404s. If a catalog line has no `Link:`, don't send a product URL — use `[[PAYLINK …]]` at the close instead. For `[SEND_IMAGE:SKU]` use the **SKU** (no "PECRON" prefix, no spaces).
 
 **Portable PECRON stations:**
 - `E300LFP` 288Wh · 600W — camping / CPAP / minimal backup.
 - `E500LFP` 576Wh · 600W — lights, TV, fan, phones. No fridge.
 - `E2000LFP` 1,920Wh · 2,000W — **accessible entry**: fridge + fan + TV + lights for a night. RV/boondocking pick. Expansion battery `EB3000-24V` (E2000-only); solar input up to **800W**, Voc **32–95V**.
 - `E2400LFP` 2,048Wh · 2,400W — a bit more.
-- `F3000LFP` 3,072Wh · 3,600W — the **cheaper sibling** (same 3,600W output, a bit less capacity; cheaper + lower solar input). Often out of stock — if so, go straight to the E3600.
+- `F3000LFP` 3,072Wh · 3,600W (7,000W peak) · **120V** — **value 3,600W home-backup, IN STOCK; a current ad product.** Headline pitch: its **true 30A output** backs up a home's **120V** circuits (lights, outlets, fridge, fans, TV, microwave) through a 30A inlet/transfer switch — NOT 240V loads (central A/C, dryer → that's the F5000). 13 outputs (5 AC + 30A + car + 2 USB-A + 2 USB-C 100W PD), App control (Wifi/BT), UPS. Solar up to ~1,500W @ Voc 25–120V (XT60). Expandable with **EP3800-48V** up to ~10,752Wh. Cheaper than the E3600 (less capacity + less solar) — size up to the E3600 for more runtime, the F5000 for any 240V.
 - `E3600LFP` **3,840Wh** · 3,600W — best-seller; multi-room, ~1–2 days without A/C. Solar input up to **2,400W**, Voc **32–150V**.
 - `F5000LFP` 5,120Wh · 7,200W · **120/240V** — the only portable with dual voltage: runs a 220V/240V A/C (mini-split or wall), plus fridge + freezer + TV + 240V tools. Don't undersell it as "5,000 BTU only." Solar input up to **2,400W**, Voc **30–180V**. Expansion `FP5000-48V` doubles it.
 - `E3600LFP-KIT` (E3600 ×2, 220V) 7,200W — whole-house turnkey with 110V A/C.

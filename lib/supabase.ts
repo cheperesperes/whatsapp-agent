@@ -633,7 +633,27 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
 
   if (error) throw new Error(`Failed to load agent catalog: ${error.message}`);
 
-  return data ?? [];
+  const products = data ?? [];
+  // The catalog has no slug/link, and the URL pattern (pecron-<sku>) is wrong for
+  // almost every SKU (e.g. F3000 = energia-portatile3000lfp). Attach the REAL
+  // storefront slug so Sol gives a working product link instead of a 404.
+  if (products.length) {
+    try {
+      const { data: slugRows } = await supabase
+        .from('products')
+        .select('sku, slug')
+        .in('sku', products.map((p) => p.sku));
+      const slugBySku = new Map(
+        (slugRows ?? []).map((r) => [r.sku as string, (r.slug as string | null) ?? null])
+      );
+      for (const p of products) {
+        (p as AgentProduct & { slug?: string | null }).slug = slugBySku.get(p.sku) ?? null;
+      }
+    } catch (err) {
+      console.warn('[loadAgentCatalog] slug attach failed:', err instanceof Error ? err.message : err);
+    }
+  }
+  return products;
 }
 
 /**
@@ -733,6 +753,13 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
           ? ' 🔧 POR ENCARGO (no en stock) — puedes asesorarlo y dimensionarlo con normalidad; es un pedido especial que traemos del proveedor. NO des link de pago ni prometas fecha exacta de entrega. Captura la necesidad (carga, ciudad, uso) y escala con [HANDOFF: pedido por encargo — SKU + necesidad] para que el especialista cotice (tiempo + flete) y gestione el anticipo.'
           : ' ⛔ AGOTADO TEMPORALMENTE — no lo vendas ni des link de pago; informa con honestidad, ofrece la alternativa en stock más cercana y pregunta si quiere que le avisemos cuando regrese';
       lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}${oosTag}`);
+      // Real storefront link (slug attached in loadAgentCatalog). The pecron-<sku>
+      // URL pattern is wrong for most SKUs (e.g. F3000), so Sol MUST use this exact
+      // link. Only for in-stock items (OOS/special-order never get a buy link).
+      if (p.in_stock) {
+        const slug = (p as AgentProduct & { slug?: string | null }).slug;
+        if (slug) lines.push(`  Link: https://oiikon.com/product/${slug}`);
+      }
       if (p.ideal_for) lines.push(`  Ideal para: ${p.ideal_for}`);
       // Real expansion/compatibility pairings (source: pecron.com) so Sol names
       // the correct battery instead of guessing. Only present when populated.
