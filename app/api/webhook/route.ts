@@ -564,10 +564,12 @@ async function processWebhookLocked(
     // the softer organic-first-contact directive that still forces an
     // intro but lets her answer the question.
     let firstContactDirective = '';
+    let isTurn1AdArrival = false;
     if (historyWithoutLast.length === 0) {
       const built = buildFirstContactDirective(messageText, detectedLang);
       if (built) {
         firstContactDirective = built.directive;
+        isTurn1AdArrival = built.adMatch != null;
         console.log(
           `[WEBHOOK] Turn-1 directive for ${senderPhone}: ` +
             (built.adMatch
@@ -924,6 +926,7 @@ async function processWebhookLocked(
     {
       const v = validateSolReply(cleanMessage, products, {
         hallucinatedPaymentUrls: extractCheckoutUrls(normalizedMessage),
+        holdPriceAndLink: isTurn1AdArrival,
         language: detectedLang === 'en' || detectedLang === 'fr' || detectedLang === 'ht' ? detectedLang : 'es',
       });
       if (v.violations.length > 0) {

@@ -38,7 +38,8 @@ export type ViolationRule =
   | 'oos_product_pitch'
   | 'fake_payment_link'
   | 'residual_marker'
-  | 'delivery_promise';
+  | 'delivery_promise'
+  | 'turn1_price_held';
 
 export interface ReplyViolation {
   rule: ViolationRule;
@@ -60,6 +61,11 @@ export interface ValidateOptions {
   /** Treat ANY checkout URL as fake. For channels where no pay-link builder
    * runs (web widget, nudge crons) a checkout URL can only be invented. */
   forbidAllPaymentUrls?: boolean;
+  /** Turn-1 ad arrival: HOLD price + buy-link until the lead engages. Drops any
+   * paragraph quoting a price or a product buy-link, and strips a residual link.
+   * The model keeps the warm helpful opener; this guarantees no price/link goes
+   * out on the first message (the prompt directive alone doesn't hold reliably). */
+  holdPriceAndLink?: boolean;
   language?: 'es' | 'en' | 'fr' | 'ht';
 }
 
@@ -177,6 +183,31 @@ export function validateSolReply(
       }
       if (violations.some((v) => v.rule === 'oos_product_pitch')) {
         text = kept.join('\n\n');
+      }
+    }
+
+    // 5. Turn-1 ad arrival — HOLD price + buy-link until the lead engages. The
+    // opener directive tells the model to wait, but when it names a known product
+    // it often appends "$949 · 👉 link" anyway; this guarantees neither goes out
+    // on the first message. Drop any paragraph quoting a price or a product link
+    // (an honest OOS disclosure paragraph is exempt — turn 1 won't have one).
+    if (opts.holdPriceAndLink) {
+      const keptParas: string[] = [];
+      let held = false;
+      for (const para of text.split(/\n{2,}/)) {
+        if ((PRICE_RE.test(para) || PRODUCT_LINK_RE.test(para)) && !DISCLOSURE_RE.test(para)) {
+          held = true;
+          continue;
+        }
+        keptParas.push(para);
+      }
+      if (held) {
+        violations.push({ rule: 'turn1_price_held', detail: 'turn-1 ad arrival: price/buy-link held until engaged' });
+        text = keptParas.join('\n\n')
+          // strip any residual inline product link (👉 + url) that survived in a kept paragraph
+          .replace(/\s*👉?\s*https?:\/\/(?:www\.)?oiikon\.com\/product\/\S+/gi, '')
+          .trim();
+        if (!text) text = FALLBACK_LINE[lang];
       }
     }
 
