@@ -132,6 +132,17 @@ export async function GET(req: NextRequest) {
   const runId = randomUUID();
   const startedAt = Date.now();
 
+  // Heartbeat — record every authorized invocation so the cron's liveness is
+  // observable, independent of whether there were changes to apply. This is how
+  // we tell "Vercel isn't firing the cron" apart from "nothing to sync".
+  {
+    const { error: hbErr } = await supabase.from('app_config').upsert(
+      { key: 'inventory_sync_last_invoked', value: new Date(startedAt).toISOString() },
+      { onConflict: 'key' }
+    );
+    if (hbErr) console.warn('[sync-inventory] heartbeat failed:', hbErr.message);
+  }
+
   // ── Load both sides (only the columns we actually sync, plus join key) ──
   // NO is_active filter: we need inactive/hidden products too, so Sol stops
   // selling a product the moment Ed deactivates or hides it on the website.
@@ -188,7 +199,11 @@ export async function GET(req: NextRequest) {
     // or hidden products count as out of stock. The mass-flip guard below
     // still protects against an accidental bulk delete/deactivation upstream.
     const sellable =
-      !!web && !!web.in_stock && web.is_active !== false && web.is_publicly_visible !== false;
+      !!web && !!web.in_stock && web.is_active !== false && web.is_publicly_visible !== false &&
+      // A TRACKED quantity of 0 is not sellable even if in_stock=true (catches
+      // "coming soon"/phantom rows where in_stock was never cleared). A null
+      // quantity = untracked → fall back to the in_stock flag.
+      (web.stock_quantity == null || web.stock_quantity > 0);
     const effective: Record<SyncedField, unknown> = {
       in_stock: sellable,
       stock_quantity: sellable ? web?.stock_quantity ?? 0 : 0,
