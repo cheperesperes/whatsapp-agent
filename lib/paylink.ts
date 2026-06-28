@@ -85,7 +85,6 @@ export async function buildPayLink(
   waPhone?: string,
   lang: 'es' | 'en' = 'es',
 ): Promise<BuildPayLinkResult> {
-  if (!isPayPalConfigured()) return { ok: false, error: 'paypal_not_configured' };
   if (!lines.length) return { ok: false, error: 'no_items' };
 
   const [catalog, offers, costs] = await Promise.all([
@@ -100,11 +99,12 @@ export async function buildPayLink(
   type ResolvedProduct = {
     sku: string; name: string; sell_price: number;
     discount_percentage: number | null; in_stock: boolean; brand: string | null;
+    slug: string | null;
   };
   const bySku = new Map<string, ResolvedProduct>(
     catalog.map((p) => [
       p.sku.toLowerCase(),
-      { sku: p.sku, name: p.name, sell_price: p.sell_price, discount_percentage: p.discount_percentage, in_stock: p.in_stock, brand: p.brand },
+      { sku: p.sku, name: p.name, sell_price: p.sell_price, discount_percentage: p.discount_percentage, in_stock: p.in_stock, brand: p.brand, slug: (p as { slug?: string | null }).slug ?? null },
     ]),
   );
   const missingSkus = lines
@@ -115,6 +115,7 @@ export async function buildPayLink(
       bySku.set(fp.sku.toLowerCase(), {
         sku: fp.sku, name: fp.name, sell_price: fp.sell_price,
         discount_percentage: fp.discount_percentage, in_stock: fp.in_stock, brand: fp.brand,
+        slug: (fp as { slug?: string | null }).slug ?? null,
       });
     }
   }
@@ -171,21 +172,25 @@ export async function buildPayLink(
   const taxableSubtotal = items.reduce((s, it) => s + it.unit_price * it.qty, 0);
   const tax = isFlorida ? Math.round(taxableSubtotal * FL_SALES_TAX_RATE * 100) / 100 : 0;
 
-  const res = await createPayLink(items, {
-    shippingFlat: 0, // free shipping to lower-48 US
-    tax,
-    appUrl: process.env.NEXT_PUBLIC_APP_URL ?? 'https://oiikon.com',
-    note: couponCode ?? undefined,
-    waPhone,
-    lang,
-  });
-  if (!res.ok || !res.url) return { ok: false, error: res.error ?? 'paypal_failed' };
+  // PAYMENT LINK = the storefront PRODUCT PAGE (Stripe checkout: card / Affirm /
+  // Apple Pay / Google Pay / PayPal — the buyer picks). We no longer mint a
+  // PayPal-only pay-link (it lacked Affirm + Apple/Google Pay). A price-match
+  // override price can't be honored by a fixed-price product page, so it degrades.
+  if (lines.some((l) => l.overrideUnitPrice != null)) {
+    return { ok: false, error: 'pricematch_unsupported_on_product_link' };
+  }
+  const primary = bySku.get((lines[0]?.sku || '').toLowerCase());
+  if (!primary?.slug) return { ok: false, error: `no_product_slug:${lines[0]?.sku ?? '?'}` };
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://oiikon.com').replace(/\/+$/, '');
+  const promo = (couponCode ?? '').trim();
+  const url = `${appUrl}/product/${primary.slug}${promo ? `?promo=${encodeURIComponent(promo)}` : ''}`;
+  const grand = Math.round((taxableSubtotal + tax) * 100) / 100;
 
   return {
     ok: true,
-    url: res.url,
-    total: res.total,
-    summary: `${summaryParts.join(' + ')}${tax > 0 ? ` + imp. FL $${tax.toFixed(2)}` : ''} — total $${(res.total ?? 0).toFixed(2)}`,
+    url,
+    total: grand,
+    summary: `${summaryParts.join(' + ')}${tax > 0 ? ` + imp. FL ~$${tax.toFixed(2)}` : ''} — ~$${grand.toFixed(2)} (storefront checkout)`,
   };
 }
 
@@ -251,8 +256,8 @@ export async function applyPayLinkMarkers(
         details.push(`ok ${r.summary}`);
         replacement =
           lang === 'en'
-            ? `💳 Secure pay link (card / PayPal / Apple Pay — no account needed):\n${r.url}`
-            : `💳 Tu link de pago seguro (tarjeta / PayPal / Apple Pay — sin cuenta):\n${r.url}`;
+            ? `💳 Secure checkout — pick how you pay (card / Affirm monthly / Apple Pay / Google Pay / PayPal, no account):\n${r.url}`
+            : `💳 Pago seguro — elija cómo pagar (tarjeta / Affirm a meses / Apple Pay / Google Pay / PayPal, sin cuenta):\n${r.url}`;
       } else {
         failed++;
         details.push(`fail ${r.error}`);
