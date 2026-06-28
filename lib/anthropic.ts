@@ -251,7 +251,52 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
     metrics.push('cuba_leak_filtered');
   }
 
+  // Deterministic product-link corrector. The model auto-generates a guessed
+  // `oiikon.com/product/pecron-<sku>` URL even when told not to, and most real
+  // storefront slugs are non-standard (e.g. F3000LFP -> energia-portatile3000lfp),
+  // so the guess 404s — killing live ad leads. Rewrite any guessed link to the
+  // REAL slug parsed from the catalog. Same defense-in-depth as the Cuba filter:
+  // the model's instruction-following can't be trusted for this.
+  customerMessage = correctProductLinks(customerMessage, productCatalog);
+
   return { message: customerMessage, handoffReason, metrics };
+}
+
+/**
+ * Deterministic product-link corrector (exported for testing). The catalog text
+ * (from formatProductCatalogForPrompt) lists each product as a `SKU <sku>` line
+ * followed by a `Link: .../product/<real-slug>` line. We build sku->real-slug,
+ * then rewrite any `/product/<slug>` in the reply whose slug isn't a real slug
+ * but embeds a known SKU token (e.g. `pecron-f3000lfp` contains `f3000lfp`) to
+ * the real slug. A `?promo=` query is preserved (not captured). No-op if the
+ * reply has no product link or the catalog yielded no slugs.
+ */
+export function correctProductLinks(reply: string, catalogText: string): string {
+  if (!reply.includes('/product/')) return reply;
+  const skuToSlug = new Map<string, string>();
+  let lastSku: string | null = null;
+  for (const line of catalogText.split('\n')) {
+    const skuM = line.match(/\bSKU\s+([A-Za-z0-9._-]+)/);
+    if (skuM) lastSku = skuM[1].toLowerCase();
+    const linkM = line.match(/\/product\/([a-z0-9._-]+)/i);
+    if (linkM && lastSku) {
+      skuToSlug.set(lastSku, linkM[1]);
+      lastSku = null;
+    }
+  }
+  if (skuToSlug.size === 0) return reply;
+  const realSlugs = new Set(skuToSlug.values());
+  return reply.replace(
+    /(https?:\/\/(?:www\.)?oiikon\.com\/product\/)([a-z0-9._-]+)/gi,
+    (full: string, prefix: string, slug: string) => {
+      const s = slug.toLowerCase();
+      if (realSlugs.has(s)) return full;
+      for (const [skuToken, realSlug] of skuToSlug) {
+        if (s.includes(skuToken)) return prefix + realSlug;
+      }
+      return full;
+    }
+  );
 }
 
 // ============================================================
