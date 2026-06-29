@@ -641,13 +641,18 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
     try {
       const { data: slugRows } = await supabase
         .from('products')
-        .select('sku, slug')
+        .select('sku, slug, availability_status')
         .in('sku', products.map((p) => p.sku));
-      const slugBySku = new Map(
-        (slugRows ?? []).map((r) => [r.sku as string, (r.slug as string | null) ?? null])
+      const metaBySku = new Map(
+        (slugRows ?? []).map((r) => [
+          r.sku as string,
+          { slug: (r.slug as string | null) ?? null, availability: (r.availability_status as string | null) ?? null },
+        ])
       );
       for (const p of products) {
-        (p as AgentProduct & { slug?: string | null }).slug = slugBySku.get(p.sku) ?? null;
+        const meta = metaBySku.get(p.sku);
+        (p as AgentProduct & { slug?: string | null }).slug = meta?.slug ?? null;
+        (p as AgentProduct & { availability_status?: string | null }).availability_status = meta?.availability ?? null;
       }
     } catch (err) {
       console.warn('[loadAgentCatalog] slug attach failed:', err instanceof Error ? err.message : err);
@@ -747,16 +752,19 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
       // data but is intentionally NOT formatted into the prompt.
       const priceParts: string[] = [`SKU ${p.sku}`, `Precio $${effectiveUsa.toFixed(2)} (envío gratis en EE.UU.)`];
 
+      const isPreOrder = (p as AgentProduct & { availability_status?: string | null }).availability_status === 'pre_order';
       const oosTag = p.in_stock
         ? ''
-        : SPECIAL_ORDER_CATEGORIES.has(p.category)
-          ? ' 🔧 POR ENCARGO (no en stock) — puedes asesorarlo y dimensionarlo con normalidad; es un pedido especial que traemos del proveedor. NO des link de pago ni prometas fecha exacta de entrega. Captura la necesidad (carga, ciudad, uso) y escala con [HANDOFF: pedido por encargo — SKU + necesidad] para que el especialista cotice (tiempo + flete) y gestione el anticipo.'
-          : ' ⛔ AGOTADO TEMPORALMENTE — no lo vendas ni des link de pago; informa con honestidad, ofrece la alternativa en stock más cercana y pregunta si quiere que le avisemos cuando regrese';
+        : isPreOrder
+          ? ' 🛒 PRE-ORDEN — disponible por reserva; se envía apenas regrese al stock. Preséntalo con normalidad y DA el link del producto (el cliente reserva pagando en el checkout seguro; reembolso completo en cualquier momento antes de que se envíe). NO prometas fecha exacta — di "se lo enviamos apenas regrese". NO es "agotado".'
+          : SPECIAL_ORDER_CATEGORIES.has(p.category)
+            ? ' 🔧 POR ENCARGO (no en stock) — puedes asesorarlo y dimensionarlo con normalidad; es un pedido especial que traemos del proveedor. NO des link de pago ni prometas fecha exacta de entrega. Captura la necesidad (carga, ciudad, uso) y escala con [HANDOFF: pedido por encargo — SKU + necesidad] para que el especialista cotice (tiempo + flete) y gestione el anticipo.'
+            : ' ⛔ AGOTADO TEMPORALMENTE — no lo vendas ni des link de pago; informa con honestidad, ofrece la alternativa en stock más cercana y pregunta si quiere que le avisemos cuando regrese';
       lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}${oosTag}`);
       // Real storefront link (slug attached in loadAgentCatalog). The pecron-<sku>
       // URL pattern is wrong for most SKUs (e.g. F3000), so Sol MUST use this exact
       // link. Only for in-stock items (OOS/special-order never get a buy link).
-      if (p.in_stock) {
+      if (p.in_stock || isPreOrder) {
         const slug = (p as AgentProduct & { slug?: string | null }).slug;
         if (slug) lines.push(`  Link: https://oiikon.com/product/${slug}`);
       }
