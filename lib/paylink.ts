@@ -17,6 +17,7 @@
 import {
   loadAgentCatalog,
   loadActiveOffers,
+  loadOffersByCode,
   loadProductCosts,
   loadStorefrontProductsBySku,
   selectBestOffer,
@@ -87,10 +88,24 @@ export async function buildPayLink(
 ): Promise<BuildPayLinkResult> {
   if (!lines.length) return { ok: false, error: 'no_items' };
 
-  const [catalog, offers, costs] = await Promise.all([
+  // VOLUME AUTO-OFFER (Ed 2026-06-30): a multi-unit cart earns a deeper discount,
+  // tiered by TOTAL quantity — 2 units → up to 8% off, 3+ → up to 12% off. We offer a
+  // LADDER (VOL5/VOL8/VOL12) capped by quantity and let selectBestOffer pick the
+  // LARGEST tier each SKU's margin can safely absorb: thin-margin units auto-cap to a
+  // smaller tier (or none) while healthy-margin units get the full ceiling. Loaded by
+  // quantity and OUTSIDE the presentable allowlist, so Sol never auto-pitches a multi-
+  // unit price to a single-unit buyer. Margin is re-checked per SKU below, so the
+  // discount can never breach the floor (cost stays server-side, never in the prompt).
+  const totalQty = lines.reduce((s, l) => s + clampQty(l.qty), 0);
+  const volumeCodes = totalQty >= 3 ? ['VOL12', 'VOL8', 'VOL5']
+                    : totalQty >= 2 ? ['VOL8', 'VOL5']
+                    : [];
+
+  const [catalog, offers, costs, volumeOffers] = await Promise.all([
     loadAgentCatalog(),
     loadActiveOffers(),
     loadProductCosts(),
+    volumeCodes.length ? loadOffersByCode(volumeCodes) : Promise.resolve([] as Offer[]),
   ]);
   // agent_product_catalog is the source of truth. For any requested SKU NOT in
   // it, fall back to the storefront `products` table (read-only) so Sol can
@@ -129,12 +144,18 @@ export async function buildPayLink(
     .split(',')
     .map((c) => c.trim().toLowerCase())
     .filter(Boolean);
-  const couponOffers: Offer[] = requestedCodes.length
-    ? offers.filter((o) => requestedCodes.includes(o.code.toLowerCase()))
-    : [];
+  const couponOffers: Offer[] = [
+    ...(requestedCodes.length
+      ? offers.filter((o) => requestedCodes.includes(o.code.toLowerCase()))
+      : []),
+    // Quantity-earned volume code (empty for a single unit). Already margin-gated
+    // per-SKU by selectBestOffer below — it wins over a smaller requested code.
+    ...volumeOffers,
+  ];
 
   const items: PayLinkItem[] = [];
   const summaryParts: string[] = [];
+  let appliedCode: string | null = null; // promo actually applied to the primary item
 
   for (const ln of lines) {
     const p = bySku.get((ln.sku || '').toLowerCase());
@@ -155,10 +176,14 @@ export async function buildPayLink(
       }
       unit = ln.overrideUnitPrice; // coupon does NOT stack on a match
     } else if (couponOffers.length) {
-      // Apply the requested coupon ONLY if it is margin-safe for this product
-      // (selectBestOffer enforces brand, min-order and the per-code margin floor).
+      // Apply the best margin-safe coupon for this product (selectBestOffer enforces
+      // brand, min-order and the per-code margin floor). For a multi-unit cart this
+      // is where VOL2/VOL3 win over any smaller requested code.
       const best = selectBestOffer(unit, p.brand ?? '', cost, couponOffers);
-      if (best) unit = best.finalPrice;
+      if (best) {
+        unit = best.finalPrice;
+        if (appliedCode == null) appliedCode = best.code;
+      }
     }
 
     unit = Math.round(unit * 100) / 100;
@@ -182,8 +207,15 @@ export async function buildPayLink(
   const primary = bySku.get((lines[0]?.sku || '').toLowerCase());
   if (!primary?.slug) return { ok: false, error: `no_product_slug:${lines[0]?.sku ?? '?'}` };
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://oiikon.com').replace(/\/+$/, '');
-  const promo = (couponCode ?? '').trim();
-  const url = `${appUrl}/product/${primary.slug}${promo ? `?promo=${encodeURIComponent(promo)}` : ''}`;
+  // Prefer the code we actually validated (incl. the volume tier); fall back to the
+  // raw quoted code for backward-compat. Carry quantity so a multi-unit order opens
+  // pre-loaded at checkout (harmless query param if the storefront ignores it).
+  const promo = (appliedCode ?? couponCode ?? '').trim();
+  const params = [
+    promo ? `promo=${encodeURIComponent(promo)}` : '',
+    totalQty > 1 ? `qty=${totalQty}` : '',
+  ].filter(Boolean).join('&');
+  const url = `${appUrl}/product/${primary.slug}${params ? `?${params}` : ''}`;
   const grand = Math.round((taxableSubtotal + tax) * 100) / 100;
 
   return {
