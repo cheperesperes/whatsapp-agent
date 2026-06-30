@@ -837,6 +837,30 @@ export async function loadActiveOffers(): Promise<Offer[]> {
 }
 
 /**
+ * Load specific discount codes by exact code (active + unexpired), BYPASSING the
+ * presentable allowlist. Used by buildPayLink for the server-applied VOLUME codes
+ * (VOL2 / VOL3): they must reach the same margin gate as any coupon, but must NOT
+ * live in `presentableCouponCodes()` — otherwise Sol's proactive smart-offer would
+ * pitch a multi-unit discount to a single-unit buyer. Here they attach ONLY when
+ * the cart quantity earns them. Codes are matched upper-cased.
+ */
+export async function loadOffersByCode(codes: string[]): Promise<Offer[]> {
+  const wanted = codes.map((c) => c.trim().toUpperCase()).filter(Boolean);
+  if (!wanted.length) return [];
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from('discount_codes')
+    .select('code, description, discount_type, discount_value, min_order_total, max_discount, eligible_brand, min_margin_pct, valid_until')
+    .eq('is_active', true)
+    .in('code', wanted);
+  if (error || !data) return [];
+  const now = Date.now();
+  return (data as Offer[]).filter(
+    (o) => !o.valid_until || new Date(o.valid_until).getTime() >= now,
+  );
+}
+
+/**
  * Map of lower-cased SKU → wholesale cost, read from the Oiikon-owned
  * `products` table. Used ONLY server-side to gate offers on margin; cost is
  * never placed in Sol's prompt. Missing rows just omit the SKU.
