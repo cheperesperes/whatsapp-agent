@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   createServiceClient,
   escalateConversation,
+  deescalateConversation,
   storeMessage,
   OPERATOR_REPLY_REASON,
 } from '@/lib/supabase';
@@ -42,12 +43,12 @@ export async function POST(
     );
   }
 
-  const shouldEscalate = body.escalate !== false; // default: true
+  const explicitTakeover = body.escalate === true; // opt-in only; default = auto-return to Sol
 
   const supabase = createServiceClient();
   const { data: conv, error: convErr } = await supabase
     .from('conversations')
-    .select('id, phone_number, escalated, channel')
+    .select('id, phone_number, escalated, channel, escalation_reason')
     .eq('id', id)
     .maybeSingle();
   if (convErr || !conv) {
@@ -105,15 +106,20 @@ export async function POST(
     console.error('[send] persist-after-send failed (non-fatal):', e instanceof Error ? e.message : e);
   }
 
-  // Use the OPERATOR_REPLY_REASON sentinel — the webhook recognizes this and
-  // auto-resumes Sol on the customer's next reply, so a one-off operator text
-  // doesn't permanently take Sol offline. Real "take over" handoffs use a
-  // different reason and stay escalated until manually de-escalated.
-  // Pass '' as last-customer-message: this is the OPERATOR's outbound text, not
-  // the customer's — recording it as the customer message mislabels the audit row.
-  if (shouldEscalate && !conv.escalated) {
-    await escalateConversation(id, OPERATOR_REPLY_REASON, '');
+  // AUTO-RETURN to Sol after a one-off operator text (Ed 2026-06-29). The operator's
+  // message is sent + recorded as an assistant turn; Sol keeps ownership and handles
+  // the customer's next reply — no manual "Devolver a Sol" is needed, so a lead can't
+  // be orphaned by a forgotten hand-back. A REAL takeover (escalated via "Escalar a
+  // operador" with any reason other than OPERATOR_REPLY_REASON) is left escalated so the
+  // operator keeps the floor; an explicit { escalate: true } still parks the chat (opt-in).
+  if (explicitTakeover) {
+    if (!conv.escalated) await escalateConversation(id, OPERATOR_REPLY_REASON, '');
+    return NextResponse.json({ ok: true, escalated: true });
   }
-
-  return NextResponse.json({ ok: true, escalated: shouldEscalate });
+  const inRealTakeover =
+    conv.escalated && conv.escalation_reason !== OPERATOR_REPLY_REASON;
+  if (conv.escalated && !inRealTakeover) {
+    await deescalateConversation(id); // hand a prior operator-parked chat back to Sol
+  }
+  return NextResponse.json({ ok: true, escalated: inRealTakeover, autoReturned: !inRealTakeover });
 }
