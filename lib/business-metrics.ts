@@ -248,11 +248,12 @@ export async function getBusinessMetrics(windowDays = 30): Promise<BusinessMetri
       .from('email_logs')
       .select('created_at')
       .gte('created_at', prevStartISO),
-    // Facebook / social engagement (populated by the social-stats fetch).
+    // Facebook / social engagement — daily rows written by the social-stats cron.
     sb
-      .from('marketing_performance')
-      .select('facebook_likes, facebook_comments, facebook_shares, facebook_reach, instagram_likes, instagram_comments, youtube_views, youtube_likes, fetched_at')
-      .gte('fetched_at', curStartISO),
+      .from('analytics_metrics')
+      .select('metric_name, metric_value, date_recorded')
+      .eq('metric_type', 'social_engagement')
+      .gte('date_recorded', ymd(curStart)),
     // Marketing content produced by the daily marketing routine.
     sb
       .from('marketing_content')
@@ -407,9 +408,10 @@ export async function getBusinessMetrics(windowDays = 30): Promise<BusinessMetri
   const lifetimeSales = ((lifetime.data ?? []) as { total: number | string | null }[])
     .reduce((s, r) => s + num(r.total), 0);
 
-  // ---- Social engagement (marketing_performance, current window) ----
-  const socData = (socialRows.data ?? []) as Record<string, number | string | null>[];
-  const sumSoc = (k: string) => socData.reduce((s, r) => s + num(r[k]), 0);
+  // ---- Social engagement (analytics_metrics social_engagement, current window) ----
+  const socData = (socialRows.data ?? []) as { metric_name: string; metric_value: number | string | null }[];
+  const sumSoc = (name: string) =>
+    socData.filter((r) => r.metric_name === name).reduce((s, r) => s + num(r.metric_value), 0);
   const social: SocialBlock = {
     facebook: {
       likes: sumSoc('facebook_likes'),

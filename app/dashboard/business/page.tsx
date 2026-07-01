@@ -147,6 +147,12 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
 }
 
 const WINDOWS = [7, 30, 90];
+/** Sunday of the current week, YYYY-MM-DD — matches how spend weeks are keyed. */
+function currentSunday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - d.getDay());
+  return d.toISOString().slice(0, 10);
+}
 const timeAgo = (iso: string | null) => {
   if (!iso) return 'nunca';
   const h = (Date.now() - new Date(iso).getTime()) / 3_600_000;
@@ -176,6 +182,49 @@ export default function BusinessPage() {
   }, []);
 
   useEffect(() => { load(days); }, [days, load]);
+
+  // ── Ad-spend logging (Facebook / Google / WhatsApp) ──────
+  interface SpendRow {
+    id: string; week_start: string; channel: string; campaign: string | null;
+    spend: number; note: string | null;
+  }
+  const [spendRows, setSpendRows] = useState<SpendRow[]>([]);
+  const [form, setForm] = useState({ week_start: currentSunday(), channel: 'google', spend: '', note: '' });
+  const [spendMsg, setSpendMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const loadSpend = useCallback(async () => {
+    try {
+      const res = await fetch('/api/business/ad-spend', { cache: 'no-store' });
+      const json = await res.json();
+      if (res.ok) setSpendRows(json.rows ?? []);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { loadSpend(); }, [loadSpend]);
+
+  async function addSpend() {
+    setSpendMsg(null);
+    setSaving(true);
+    try {
+      const res = await fetch('/api/business/ad-spend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, spend: Number(form.spend) }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setSpendMsg(json.error ?? 'Error'); return; }
+      setForm((f) => ({ ...f, spend: '', note: '' }));
+      await Promise.all([loadSpend(), load(days)]);
+    } catch (e) {
+      setSpendMsg(e instanceof Error ? e.message : 'Error de red');
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function deleteSpend(id: string) {
+    await fetch(`/api/business/ad-spend?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await Promise.all([loadSpend(), load(days)]);
+  }
 
   const r = data?.revenue;
   const c = data?.costs;
@@ -340,6 +389,76 @@ export default function BusinessPage() {
                     : ' Conecta Meta/Google/WhatsApp Ads o registra el gasto semanal para medir el ROAS.'}
                 </div>
               )}
+
+              {/* Manual ad-spend logging */}
+              <div className="bg-surface-800 border border-surface-600 rounded-xl p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-100">Registrar gasto de anuncios</p>
+                  <p className="text-xs text-gray-500">
+                    Facebook se sincroniza solo desde Meta. Registra aquí el gasto semanal de Google
+                    y WhatsApp Ads para activar el ROAS por canal.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                  <select
+                    value={form.channel}
+                    onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))}
+                    className="bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-sm text-gray-200"
+                  >
+                    <option value="google">Google</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="facebook">Facebook</option>
+                    <option value="instagram">Instagram</option>
+                    <option value="tiktok">TikTok</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                  <input
+                    type="date"
+                    value={form.week_start}
+                    onChange={(e) => setForm((f) => ({ ...f, week_start: e.target.value }))}
+                    className="bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-sm text-gray-200"
+                  />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={form.spend}
+                    onChange={(e) => setForm((f) => ({ ...f, spend: e.target.value }))}
+                    placeholder="Gasto $"
+                    className="bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600"
+                  />
+                  <input
+                    value={form.note}
+                    onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+                    placeholder="Nota (opcional)"
+                    className="bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={addSpend}
+                    disabled={saving || !form.spend}
+                    className="px-3 py-2 rounded-lg bg-whatsapp-500/15 text-whatsapp-600 border border-whatsapp-500/30
+                               text-sm font-medium hover:bg-whatsapp-500/25 disabled:opacity-40"
+                  >
+                    {saving ? 'Guardando…' : 'Agregar'}
+                  </button>
+                </div>
+                {spendMsg && <p className="text-xs text-red-400">{spendMsg}</p>}
+                {spendRows.length > 0 && (
+                  <div className="space-y-1">
+                    {spendRows.slice(0, 8).map((s) => (
+                      <div key={s.id} className="flex items-center gap-3 text-xs bg-surface-700/40 rounded-lg px-3 py-2">
+                        <span className="w-20 shrink-0 text-gray-400">{s.week_start}</span>
+                        <span className="w-24 shrink-0 capitalize text-gray-300">{s.channel}</span>
+                        <span className="w-20 shrink-0 text-gray-200">{usd2(s.spend)}</span>
+                        <span className="flex-1 min-w-0 truncate text-gray-600">{s.campaign ?? s.note ?? ''}</span>
+                        <button type="button" onClick={() => deleteSpend(s.id)} className="shrink-0 text-gray-500 hover:text-red-400">
+                          Quitar
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Section>
 
             {/* Traffic */}
