@@ -209,6 +209,30 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
   );
 }
 
+// A big headline number — the 3 that matter, sized to read at a glance.
+function BigStat({
+  label, value, delta, hint,
+}: { label: string; value: string; delta?: Delta; hint: string }) {
+  return (
+    <div className="bg-surface-800 border border-surface-600 rounded-xl p-5">
+      <p className="text-sm text-gray-500">{label}</p>
+      <p className="text-3xl md:text-4xl font-bold text-gray-100 mt-1 leading-none">{value}</p>
+      <div className="mt-2 flex items-center gap-2">
+        {delta && <DeltaBadge d={delta} />}
+        <span className="text-xs text-gray-600">{hint}</span>
+      </div>
+    </div>
+  );
+}
+
+// Plain-language one-liner for the health verdict, keyed by the success label.
+const VERDICT: Record<string, { emoji: string; title: string; text: string }> = {
+  saludable: { emoji: '🟢', title: 'Tu negocio va bien', text: 'Buena ganancia y creciendo. Sigue así.' },
+  estable: { emoji: '🟢', title: 'Tu negocio está estable', text: 'Vas por buen camino. Hay espacio para crecer.' },
+  en_riesgo: { emoji: '🟡', title: 'Cuidado: hay señales de riesgo', text: 'Revisa las sugerencias de abajo.' },
+  critico: { emoji: '🔴', title: 'El negocio necesita atención', text: 'Actúa sobre las sugerencias urgentes.' },
+};
+
 const WINDOWS = [7, 30, 90];
 /** Sunday of the current week, YYYY-MM-DD — matches how spend weeks are keyed. */
 function currentSunday(): string {
@@ -293,6 +317,9 @@ export default function BusinessPage() {
   const [runningTask, setRunningTask] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<{ label: string; ok: boolean; text: string } | null>(null);
 
+  // Simple by default; power-user detail is one click away.
+  const [showDetail, setShowDetail] = useState(false);
+
   async function runTask(key: string) {
     setRunningTask(key);
     setRunResult(null);
@@ -332,8 +359,7 @@ export default function BusinessPage() {
           <div>
             <h1 className="text-xl font-semibold text-gray-100">Negocio</h1>
             <p className="text-sm text-gray-500">
-              Salud del e-commerce de oiikon.com — ingresos, ganancia, anuncios, tráfico y el agente
-              de WhatsApp, con probabilidad de éxito y sugerencias. Últimos {data?.window_days ?? days} días.
+              ¿Cómo va oiikon.com? Últimos {data?.window_days ?? days} días.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -372,43 +398,51 @@ export default function BusinessPage() {
 
         {data && r && c && t && a && (
           <>
-            {/* Probability of success */}
-            <div className="bg-surface-800 border border-surface-600 rounded-xl p-5">
-              <div className="flex flex-col md:flex-row md:items-center gap-5">
+            {/* ── SIMPLE VIEW — always visible ── */}
+
+            {/* Health verdict, in plain words */}
+            <div className="bg-surface-800 border border-surface-600 rounded-xl p-5 md:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-5">
                 <ScoreGauge score={data.success.score} label={data.success.label} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-gray-500">Probabilidad de éxito</p>
-                  <p className={`text-lg font-semibold ${SCORE_LABELS[data.success.label]?.color ?? 'text-gray-200'}`}>
-                    {SCORE_LABELS[data.success.label]?.text ?? data.success.label}
+                  <p className={`text-xl md:text-2xl font-bold ${SCORE_LABELS[data.success.label]?.color ?? 'text-gray-100'}`}>
+                    {(VERDICT[data.success.label] ?? VERDICT.critico).emoji}{' '}
+                    {(VERDICT[data.success.label] ?? VERDICT.critico).title}
                   </p>
-                  <div className="mt-3 grid sm:grid-cols-2 gap-2">
-                    {data.success.drivers.map((d) => (
-                      <div key={d.key} className="bg-surface-700/40 rounded-lg px-3 py-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-400">{d.label}</span>
-                          <span className="text-xs font-medium text-gray-200">
-                            {d.value == null ? 's/d' : d.value}
-                            <span className="text-gray-600"> · {Math.round(d.weight * 100)}%</span>
-                          </span>
-                        </div>
-                        <div className="mt-1 h-1.5 bg-surface-600 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-whatsapp-500/70"
-                            style={{ width: `${d.value ?? 0}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-gray-600 mt-1">{d.detail}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {(VERDICT[data.success.label] ?? VERDICT.critico).text}
+                  </p>
+                  <p className="text-sm text-gray-400 mt-3">
+                    En {data.window_days} días ganaste{' '}
+                    <strong className="text-gray-100">{usd2(r.net_profit.current)}</strong> netos
+                    {r.net_profit.change_pct != null
+                      ? ` (${r.net_profit.change_pct >= 0 ? '+' : ''}${r.net_profit.change_pct}% vs. antes)`
+                      : ''}{' '}
+                    de <strong className="text-gray-100">{usd2(r.gross_sales.current)}</strong> en ventas
+                    y {intFmt(r.orders.current)} pedidos.
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Suggestions */}
-            <Section title="Sugerencias" subtitle="Generadas automáticamente a partir de tus datos.">
+            {/* The three numbers that matter */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <BigStat label="Ganancia neta" value={usd2(r.net_profit.current)} delta={r.net_profit} hint="lo que te queda" />
+              <BigStat label="Ventas" value={usd2(r.gross_sales.current)} delta={r.gross_sales} hint="dinero que entró" />
+              <BigStat label="Pedidos" value={intFmt(r.orders.current)} delta={r.orders} hint="ventas pagadas" />
+            </div>
+
+            {/* Daily trend */}
+            <Section title="Tendencia diaria" subtitle="Ventas y visitas por día (pasa el cursor para ver el detalle).">
+              <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
+                <DailyChart points={data.daily} />
+              </div>
+            </Section>
+
+            {/* Top 3 suggestions */}
+            <Section title="Qué revisar" subtitle="Lo más importante primero.">
               <div className="space-y-2">
-                {data.insights.map((ins, i) => {
+                {data.insights.slice(0, 3).map((ins, i) => {
                   const styles = {
                     risk: 'bg-red-500/10 border-red-500/30 text-red-200',
                     warn: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-100',
@@ -425,30 +459,50 @@ export default function BusinessPage() {
               </div>
             </Section>
 
-            {/* Money headline */}
-            <Section title="Dinero" subtitle="Solo pedidos pagados. Ganancia neta incluye COGS, envío y gastos del pedido.">
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <Stat label="Ganancia neta" value={usd2(r.net_profit.current)} delta={r.net_profit} />
-                <Stat label="Ventas (bruto)" value={usd2(r.gross_sales.current)} delta={r.gross_sales} />
-                <Stat label="Ganancia bruta" value={usd2(r.gross_profit.current)} delta={r.gross_profit} />
-                <Stat label="Pedidos pagados" value={intFmt(r.orders.current)} delta={r.orders} />
-                <Stat label="Ticket promedio" value={usd2(r.avg_order_value.current)} delta={r.avg_order_value} />
-                <Stat label="Margen promedio" value={`${r.avg_margin_pct}%`} sub="del período" />
-                <Stat label="Reembolsos" value={usd2(r.refunds)} sub="devueltos" />
-                <Stat
-                  label="ROAS"
-                  value={c.roas == null ? 's/d' : `${c.roas}×`}
-                  sub={c.roas == null ? 'sin gasto registrado' : 'ingreso ÷ anuncios'}
-                />
-              </div>
-            </Section>
+            {/* Show/hide everything else */}
+            <button
+              type="button"
+              onClick={() => setShowDetail((s) => !s)}
+              className="w-full py-3 rounded-xl border border-surface-600 bg-surface-800 text-sm font-medium
+                         text-gray-400 hover:bg-surface-700 transition-colors"
+            >
+              {showDetail ? '▲ Ocultar detalle' : '▼ Ver todo el detalle'}
+            </button>
 
-            {/* Daily trend */}
-            <Section title="Tendencia diaria" subtitle="Ventas y visitas por día (pasa el cursor para ver el detalle).">
-              <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
-                <DailyChart points={data.daily} />
-              </div>
-            </Section>
+            {/* ── DETAIL VIEW — collapsed by default ── */}
+            {showDetail && (
+              <div className="space-y-8">
+                {/* How the health score is built */}
+                <Section title="Cómo se calcula la salud" subtitle="Cada factor, de 0 a 100, con su peso.">
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {data.success.drivers.map((d) => (
+                      <div key={d.key} className="bg-surface-800 border border-surface-600 rounded-lg px-3 py-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-400">{d.label}</span>
+                          <span className="text-xs font-medium text-gray-200">
+                            {d.value == null ? 's/d' : d.value}
+                            <span className="text-gray-600"> · {Math.round(d.weight * 100)}%</span>
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 bg-surface-600 rounded-full overflow-hidden">
+                          <div className="h-full bg-whatsapp-500/70" style={{ width: `${d.value ?? 0}%` }} />
+                        </div>
+                        <p className="text-[10px] text-gray-600 mt-1">{d.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+
+                {/* Money — detail */}
+                <Section title="Dinero — detalle" subtitle="Solo pedidos pagados. Ganancia neta incluye COGS, envío y gastos.">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <Stat label="Ganancia bruta" value={usd2(r.gross_profit.current)} delta={r.gross_profit} />
+                    <Stat label="Ticket promedio" value={usd2(r.avg_order_value.current)} delta={r.avg_order_value} />
+                    <Stat label="Margen promedio" value={`${r.avg_margin_pct}%`} sub="del período" />
+                    <Stat label="ROAS" value={c.roas == null ? 's/d' : `${c.roas}×`} sub={c.roas == null ? 'sin gasto' : 'ingreso ÷ anuncios'} />
+                    <Stat label="Reembolsos" value={usd2(r.refunds)} sub="devueltos" />
+                  </div>
+                </Section>
 
             {/* Marketing / ad cost */}
             <Section title="Anuncios y costos" subtitle="Facebook, Google y WhatsApp Ads + gastos operativos.">
@@ -650,10 +704,34 @@ export default function BusinessPage() {
               </div>
             </Section>
 
-            <p className="text-[11px] text-gray-600">
-              Actualizado {new Date(data.generated_at).toLocaleString('es-US')}. Una instantánea diaria
-              se guarda automáticamente (cron <code>business-snapshot</code>) para construir el histórico.
-            </p>
+                {/* Any suggestions beyond the top 3 */}
+                {data.insights.length > 3 && (
+                  <Section title="Más sugerencias">
+                    <div className="space-y-2">
+                      {data.insights.slice(3).map((ins, i) => {
+                        const styles = {
+                          risk: 'bg-red-500/10 border-red-500/30 text-red-200',
+                          warn: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-100',
+                          good: 'bg-green-500/10 border-green-500/30 text-green-100',
+                        }[ins.level];
+                        const icon = { risk: '⛔', warn: '⚠️', good: '✅' }[ins.level];
+                        return (
+                          <div key={i} className={`border rounded-lg px-4 py-3 ${styles}`}>
+                            <p className="text-sm font-medium">{icon} {ins.title}</p>
+                            <p className="text-xs opacity-80 mt-0.5">{ins.detail}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Section>
+                )}
+
+                <p className="text-[11px] text-gray-600">
+                  Actualizado {new Date(data.generated_at).toLocaleString('es-US')}. Una instantánea diaria
+                  se guarda automáticamente (cron <code>business-snapshot</code>) para construir el histórico.
+                </p>
+              </div>
+            )}
           </>
         )}
       </div>
