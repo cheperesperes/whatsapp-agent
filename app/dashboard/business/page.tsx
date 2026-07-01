@@ -226,6 +226,36 @@ export default function BusinessPage() {
     await Promise.all([loadSpend(), load(days)]);
   }
 
+  // ── Run a daily background task on demand ────────────────
+  const [runningTask, setRunningTask] = useState<string | null>(null);
+  const [runResult, setRunResult] = useState<{ label: string; ok: boolean; text: string } | null>(null);
+
+  async function runTask(key: string) {
+    setRunningTask(key);
+    setRunResult(null);
+    try {
+      const res = await fetch('/api/business/run-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: key }),
+      });
+      const json = await res.json();
+      setRunResult({
+        label: json.label ?? key,
+        ok: Boolean(json.ok),
+        text: json.ok
+          ? `Listo en ${json.duration_ms ?? '?'}ms`
+          : json.error ?? `Error (${json.status ?? res.status})`,
+      });
+      // Snapshot/social change the numbers — refresh the board.
+      if (json.ok && (key === 'snapshot' || key === 'social')) await load(days);
+    } catch (e) {
+      setRunResult({ label: key, ok: false, text: e instanceof Error ? e.message : 'Error de red' });
+    } finally {
+      setRunningTask(null);
+    }
+  }
+
   const r = data?.revenue;
   const c = data?.costs;
   const t = data?.traffic;
@@ -503,7 +533,39 @@ export default function BusinessPage() {
             </Section>
 
             {/* Daily automations */}
-            <Section title="Automatización diaria" subtitle="Los procesos que corren solos y mantienen el negocio.">
+            <Section title="Automatización diaria" subtitle="Los procesos que corren solos y mantienen el negocio. Puedes ejecutarlos ahora mismo.">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: 'snapshot', label: 'Instantánea de negocio' },
+                  { key: 'social', label: 'Engagement + gasto FB' },
+                  { key: 'marketing', label: 'Contenido de marketing' },
+                  { key: 'followups', label: 'Seguimientos' },
+                  { key: 'inventory', label: 'Inventario' },
+                  { key: 'competitors', label: 'Competencia' },
+                ].map((task) => (
+                  <button
+                    key={task.key}
+                    type="button"
+                    onClick={() => runTask(task.key)}
+                    disabled={runningTask !== null}
+                    className="px-3 py-1.5 rounded-lg bg-surface-700 border border-surface-600 text-xs text-gray-300
+                               hover:bg-surface-600 disabled:opacity-40"
+                  >
+                    {runningTask === task.key ? '⏳ Ejecutando…' : `▶ ${task.label}`}
+                  </button>
+                ))}
+              </div>
+              {runResult && (
+                <div
+                  className={`rounded-lg px-3 py-2 text-xs border ${
+                    runResult.ok
+                      ? 'bg-green-500/10 border-green-500/30 text-green-200'
+                      : 'bg-red-500/10 border-red-500/30 text-red-200'
+                  }`}
+                >
+                  {runResult.ok ? '✅' : '⛔'} {runResult.label}: {runResult.text}
+                </div>
+              )}
               <div className="bg-surface-800 border border-surface-600 rounded-xl divide-y divide-surface-700">
                 <div className="flex items-center justify-between px-4 py-3">
                   <span className="text-sm text-gray-300">Correos enviados</span>
