@@ -112,24 +112,87 @@ function ScoreGauge({ score, label }: { score: number; label: string }) {
   );
 }
 
+// Validated chart hues (see dataviz validator, light surface #FFFFFF):
+// teal #008069 for money, blue #2563eb for traffic — CVD-safe, ≥3:1 contrast.
+const C_REVENUE = '#008069';
+const C_SESSIONS = '#2563eb';
+
+// A single-series daily bar chart. Revenue and sessions are different scales,
+// so they render as SMALL MULTIPLES (two of these) — never a dual-axis chart.
+// Single series → the title names it, no legend. Baseline-anchored 4px-rounded
+// bars, 2px gaps, exact values on hover (the secondary encoding that satisfies
+// the sub-3:1 relief rule) and a direct y-max label.
+function MiniBars({
+  points, color, title, valueOf, format, tip,
+}: {
+  points: DailyPoint[];
+  color: string;
+  title: string;
+  valueOf: (p: DailyPoint) => number;
+  format: (n: number) => string;
+  tip: (p: DailyPoint) => string;
+}) {
+  const max = Math.max(1, ...points.map(valueOf));
+  const total = points.reduce((s, p) => s + valueOf(p), 0);
+  const first = points[0]?.date.slice(5) ?? '';
+  const last = points[points.length - 1]?.date.slice(5) ?? '';
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-gray-300">
+          <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+          {title}
+        </span>
+        <span className="text-[10px] text-gray-600">máx {format(max)}</span>
+      </div>
+      <div
+        className="relative flex items-end gap-[2px] h-28 border-b border-surface-500"
+        role="img"
+        aria-label={`${title}: total ${format(total)} entre ${first} y ${last}`}
+      >
+        {points.map((p) => (
+          <div key={p.date} className="group relative flex-1 min-w-0 h-full flex items-end">
+            <div
+              className="w-full rounded-t-[4px] transition-opacity group-hover:opacity-80"
+              style={{ height: `${Math.max(2, (valueOf(p) / max) * 100)}%`, backgroundColor: color }}
+            />
+            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block
+                            bg-gray-100 text-surface-800 rounded px-2 py-1 text-[10px] whitespace-nowrap z-10 shadow">
+              {p.date.slice(5)} · {tip(p)}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+        <span>{first}</span>
+        <span>{last}</span>
+      </div>
+    </div>
+  );
+}
+
 function DailyChart({ points }: { points: DailyPoint[] }) {
   if (points.length === 0) {
     return <p className="text-sm text-gray-500">Sin datos diarios en el período.</p>;
   }
-  const maxRev = Math.max(1, ...points.map((p) => p.revenue));
   return (
-    <div className="flex items-end gap-1 h-32 overflow-x-auto">
-      {points.map((p) => (
-        <div key={p.date} className="flex flex-col items-center gap-1 min-w-[10px] flex-1 group relative">
-          <div
-            className="w-full bg-whatsapp-500/70 rounded-t hover:bg-whatsapp-500 transition-colors"
-            style={{ height: `${Math.max(2, (p.revenue / maxRev) * 100)}%` }}
-          />
-          <div className="absolute bottom-full mb-1 hidden group-hover:block bg-surface-900 border border-surface-600 rounded px-2 py-1 text-[10px] text-gray-200 whitespace-nowrap z-10">
-            {p.date.slice(5)} · {usd(p.revenue)} · {p.orders} ped.
-          </div>
-        </div>
-      ))}
+    <div className="grid md:grid-cols-2 gap-6">
+      <MiniBars
+        points={points}
+        color={C_REVENUE}
+        title="Ventas por día"
+        valueOf={(p) => p.revenue}
+        format={usd}
+        tip={(p) => `${usd(p.revenue)} · ${p.orders} ped.`}
+      />
+      <MiniBars
+        points={points}
+        color={C_SESSIONS}
+        title="Sesiones por día"
+        valueOf={(p) => p.sessions}
+        format={intFmt}
+        tip={(p) => `${intFmt(p.sessions)} sesiones`}
+      />
     </div>
   );
 }
@@ -381,7 +444,7 @@ export default function BusinessPage() {
             </Section>
 
             {/* Daily trend */}
-            <Section title="Tendencia diaria" subtitle="Ventas pagadas por día (pasa el cursor para ver el detalle).">
+            <Section title="Tendencia diaria" subtitle="Ventas y visitas por día (pasa el cursor para ver el detalle).">
               <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
                 <DailyChart points={data.daily} />
               </div>
