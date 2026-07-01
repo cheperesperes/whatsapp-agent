@@ -24,6 +24,7 @@ day-to-day tracker that points at those when needed.
 ## 🟢 Done
 
 <!-- Move finished cards here, newest first. Date them. -->
+- 2026-07-01 — Business dashboard ("Negocio"): unified revenue/profit, ad spend (FB/Google/WhatsApp), web traffic, Sol agent, social engagement + daily automations, probability-of-success score, auto-suggestions, and a daily snapshot cron.
 - 2026-06-29 — Rebuilt 3-tier menu around in-stock heroes + generalized sizing example (#299)
 - 2026-06-29 — Value-led diaspora answer; auto-return to Sol after operator text (#297, #298)
 - 2026-06-28 — Close link now routes to storefront Stripe checkout; retired PayPal pay-links (#290)
