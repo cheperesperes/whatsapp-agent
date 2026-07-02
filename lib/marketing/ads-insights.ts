@@ -71,6 +71,23 @@ export async function fetchAdSpend(): Promise<AdSpend> {
     )
   );
 
+  // A failed insights call is an ERROR, never $0 — mapping rejections to zero
+  // spend made the weekly ad_spend sync silently log $0 while campaigns were
+  // live (real incident 2026-07-02: token/permission failure → fake $0 row).
+  // Every caller already handles a throw (allSettled or try/catch), so the
+  // error surfaces in the cron result / spend_error instead of fake numbers.
+  const failures = presets
+    .map((p, i) => {
+      const r = results[i];
+      return r.status === 'rejected'
+        ? `${p}: ${(r.reason instanceof Error ? r.reason.message : String(r.reason)).slice(0, 180)}`
+        : null;
+    })
+    .filter((f): f is string => f !== null);
+  if (failures.length > 0) {
+    throw new Error(`Meta insights failed (${failures.length}/${presets.length}): ${failures.join(' · ')}`);
+  }
+
   const extract = (r: PromiseSettledResult<unknown>): { spend: number; currency: string } => {
     if (r.status !== 'fulfilled') return { spend: 0, currency: 'USD' };
     const data = (r.value as { data?: MetaInsightRow[]; account_currency?: string }).data ?? [];
