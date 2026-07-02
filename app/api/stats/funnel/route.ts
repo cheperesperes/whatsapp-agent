@@ -24,7 +24,13 @@ export const runtime = 'nodejs';
 const LOOKBACK_DAYS = 30;
 const MAX_CONVERSATIONS = 600;
 
-const PAYLINK_RE = /paypal\.com\/checkoutnow/i;
+// "Reached pay-link" = Sol sent a CLOSE-checkout message. Two generations:
+//  - legacy PayPal pay-links (retired 2026-06-28, #290);
+//  - storefront Stripe close links — the URL is a plain product page, so we
+//    detect the fixed close-message templates from lib/paylink.ts instead
+//    (applyPayLinkMarkers + framePriceMatch). Keep in sync with those strings.
+const PAYLINK_RE =
+  /paypal\.com\/checkoutnow|pago seguro — elija cómo pagar|secure checkout — pick how you pay|pague seguro \(tarjeta|secure checkout \(card/i;
 const PRODUCT_LINK_RE = /oiikon\.com\/product\//i;
 
 function phoneKey(raw: string | null | undefined): string {

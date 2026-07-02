@@ -25,6 +25,7 @@ day-to-day tracker that points at those when needed.
 ## 🟢 Done
 
 <!-- Move finished cards here, newest first. Date them. -->
+- 2026-07-02 — Judge ground truth + funnel close-link fix: sol-learning judge now grades prices/coupons against the live catalog (Pecron-mirror discounts no longer flagged as "invented"), a poisoned "never share prices" auto-learning was retired and its class is now regex-blocked, and the funnel dashboard detects the post-#290 storefront close links (7d pay-links: 1 → 5).
 - 2026-07-01 — Negocio board: connected the empty feeds — live Facebook engagement + weekly FB spend auto-sync (social-stats cron) and a manual ad-spend logger (Google/WhatsApp) that activates ROAS.
 - 2026-07-01 — Business dashboard ("Negocio"): unified revenue/profit, ad spend (FB/Google/WhatsApp), web traffic, Sol agent, social engagement + daily automations, probability-of-success score, auto-suggestions, and a daily snapshot cron.
 - 2026-06-29 — Rebuilt 3-tier menu around in-stock heroes + generalized sizing example (#299)

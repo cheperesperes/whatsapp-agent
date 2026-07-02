@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createServiceClient } from '@/lib/supabase';
 import {
   reviewInteraction,
+  loadReviewGroundTruth,
   consolidateLearnings,
   syncLearnings,
   invalidateLearningsCache,
@@ -111,6 +112,12 @@ export async function GET(req: NextRequest) {
 
   const toReview = conversations.filter((c) => !alreadyReviewed.has(c.id));
 
+  // Live catalog prices + house coupon codes, loaded ONCE and given to every
+  // review so the judge grades "confianza" against real data instead of
+  // guessing which discounts are invented (the Pecron-mirror pricing looks
+  // too aggressive to be real without this).
+  const groundTruth = toReview.length > 0 ? await loadReviewGroundTruth() : null;
+
   // 3) Review each conversation (chunks of 4 to stay inside maxDuration).
   let reviewed = 0;
   let tooShort = 0;
@@ -155,11 +162,15 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          const review = await reviewInteraction(history, {
-            customerName: conv.customer_name,
-            language,
-            channel: conv.channel ?? 'whatsapp',
-          });
+          const review = await reviewInteraction(
+            history,
+            {
+              customerName: conv.customer_name,
+              language,
+              channel: conv.channel ?? 'whatsapp',
+            },
+            groundTruth
+          );
           if (!review) {
             failed++;
             return;

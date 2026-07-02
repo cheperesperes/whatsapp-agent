@@ -286,6 +286,9 @@ export async function applyPayLinkMarkers(
       if (r.ok && r.url) {
         built++;
         details.push(`ok ${r.summary}`);
+        // NOTE: the funnel dashboard detects "reached pay-link" by matching
+        // this template text (app/api/stats/funnel/route.ts PAYLINK_RE) —
+        // if you reword it, update that regex too.
         replacement =
           lang === 'en'
             ? `💳 Secure checkout — pick how you pay (card / Affirm monthly / Apple Pay / Google Pay / PayPal, no account):\n${r.url}`
@@ -332,6 +335,8 @@ function framePriceMatch(
   matchedPrice: number,
   url: string,
 ): string {
+  // NOTE: matched by the funnel dashboard's PAYLINK_RE (app/api/stats/funnel/
+  // route.ts) as a close attempt — keep that regex in sync if rewording.
   const link = lang === 'en'
     ? `👉 Secure checkout (card / PayPal / Apple Pay — no account):\n${url}`
     : `👉 Pague seguro (tarjeta / PayPal / Apple Pay — sin cuenta):\n${url}`;
