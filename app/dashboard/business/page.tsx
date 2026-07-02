@@ -46,6 +46,8 @@ interface Metrics {
   insights: Insight[];
   meta_ads_live: { today: number; yesterday: number; this_week: number; this_month: number; currency: string } | null;
   meta_ads_configured: boolean;
+  google_ads_live: { today: number; this_week: number; this_month: number; currency: string } | null;
+  google_ads_configured: boolean;
 }
 
 // ── Formatting helpers ──────────────────────────────────────
@@ -511,8 +513,14 @@ export default function BusinessPage() {
                 <Stat label="Gastos operativos" value={usd2(c.expenses.current)} delta={c.expenses} invert />
                 {data.meta_ads_live && (
                   <>
-                    <Stat label="Meta — este mes" value={usd2(data.meta_ads_live.this_month)} sub="en vivo (API)" />
-                    <Stat label="Meta — hoy" value={usd2(data.meta_ads_live.today)} sub="en vivo (API)" />
+                    <Stat label="Facebook — este mes" value={usd2(data.meta_ads_live.this_month)} sub="en vivo (API)" />
+                    <Stat label="Facebook — hoy" value={usd2(data.meta_ads_live.today)} sub="en vivo (API)" />
+                  </>
+                )}
+                {data.google_ads_live && (
+                  <>
+                    <Stat label="Google — este mes" value={usd2(data.google_ads_live.this_month)} sub="en vivo (API)" />
+                    <Stat label="Google — hoy" value={usd2(data.google_ads_live.today)} sub="en vivo (API)" />
                   </>
                 )}
               </div>

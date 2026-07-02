@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { getBusinessMetrics } from '@/lib/business-metrics';
 import { fetchAdSpend } from '@/lib/marketing/ads-insights';
+import { fetchGoogleAdSpend, hasGoogleAds } from '@/lib/marketing/google-ads';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -35,10 +36,12 @@ export async function GET(req: NextRequest) {
 
   const hasMeta =
     Boolean(process.env.META_AD_ACCOUNT_ID) && Boolean(process.env.META_PAGE_ACCESS_TOKEN);
+  const hasGoogle = hasGoogleAds();
 
-  const [metricsRes, metaRes] = await Promise.allSettled([
+  const [metricsRes, metaRes, googleRes] = await Promise.allSettled([
     getBusinessMetrics(days),
     hasMeta ? fetchAdSpend() : Promise.resolve(null),
+    hasGoogle ? fetchGoogleAdSpend() : Promise.resolve(null),
   ]);
 
   if (metricsRes.status === 'rejected') {
@@ -54,6 +57,9 @@ export async function GET(req: NextRequest) {
       meta_ads_live:
         metaRes.status === 'fulfilled' && metaRes.value ? metaRes.value : null,
       meta_ads_configured: hasMeta,
+      google_ads_live:
+        googleRes.status === 'fulfilled' && googleRes.value ? googleRes.value : null,
+      google_ads_configured: hasGoogle,
     },
     { headers: NO_CACHE },
   );

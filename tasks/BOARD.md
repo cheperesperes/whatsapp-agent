@@ -15,7 +15,6 @@ day-to-day tracker that points at those when needed.
 
 <!-- Add new tasks here. Most important at the top. -->
 - [ ] GCLID/FBCLID attribution system — Meta CAPI + Google Ads offline conversions. Full spec in CLAUDE_CODE_PROMPTS.md → TASK 2. Prereq: 10+ "venta ganada" marked first.
-- [ ] Live Google Ads API spend sync — needs developer token + OAuth. Until then, spend is logged manually in the Negocio board (ad_spend table).
 
 ## 🔵 In progress
 
@@ -25,6 +24,7 @@ day-to-day tracker that points at those when needed.
 ## 🟢 Done
 
 <!-- Move finished cards here, newest first. Date them. -->
+- 2026-07-02 — Live Google Ads spend sync (google-ads.ts + social-stats cron) — auto-logs weekly Google spend into ad_spend like Facebook; board shows live Google spend. Needs GOOGLE_ADS_* env vars.
 - 2026-07-01 — Negocio board: connected the empty feeds — live Facebook engagement + weekly FB spend auto-sync (social-stats cron) and a manual ad-spend logger (Google/WhatsApp) that activates ROAS.
 - 2026-07-01 — Business dashboard ("Negocio"): unified revenue/profit, ad spend (FB/Google/WhatsApp), web traffic, Sol agent, social engagement + daily automations, probability-of-success score, auto-suggestions, and a daily snapshot cron.
 - 2026-06-29 — Rebuilt 3-tier menu around in-stock heroes + generalized sizing example (#299)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
 import { fetchPageEngagement, fetchAdSpend } from '@/lib/marketing/ads-insights';
+import { fetchGoogleAdSpend, hasGoogleAds } from '@/lib/marketing/google-ads';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -103,6 +104,28 @@ export async function GET(req: NextRequest) {
     }
   } else {
     result.facebook_spend = 'skipped — META_AD_ACCOUNT_ID not set';
+  }
+
+  // ── 3. Google Ads weekly spend → ad_spend ─────────────────────────────────
+  if (hasGoogleAds()) {
+    try {
+      const g = await fetchGoogleAdSpend();
+      const week = weekStartSunday(new Date());
+      await sb.from('ad_spend').delete().eq('channel', 'google').eq('week_start', week);
+      const { error } = await sb.from('ad_spend').insert({
+        week_start: week,
+        channel: 'google',
+        campaign: 'Google Ads (auto-sync)',
+        spend: g.this_week,
+        currency: g.currency,
+        note: `Auto-sincronizado desde Google el ${today}`,
+      });
+      result.google_spend = error ? { error: error.message } : { week_start: week, spend: g.this_week };
+    } catch (e) {
+      result.google_spend = { error: String(e) };
+    }
+  } else {
+    result.google_spend = 'skipped — Google Ads env vars not set';
   }
 
   result.duration_ms = Date.now() - startedAt;
