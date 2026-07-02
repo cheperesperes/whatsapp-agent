@@ -71,7 +71,30 @@ export async function fetchAdSpend(): Promise<AdSpend> {
     )
   );
 
+  // Surface Meta failures instead of masking them as $0. A REJECTED call is a
+  // real problem (token missing ads_read, wrong ad-account id, rate limit) — NOT
+  // zero spend. Log every failure; if EVERY window failed the account/token is
+  // broken → THROW so the caller records the actual Meta error. (A silent $0 hid
+  // a broken sync here — this is the fix.)
+  const rejected = results.filter(
+    (r): r is PromiseRejectedResult => r.status === 'rejected',
+  );
+  if (rejected.length > 0) {
+    const reasons = rejected.map((r) =>
+      r.reason instanceof Error ? r.reason.message : String(r.reason),
+    );
+    console.error(
+      `[fetchAdSpend] ${rejected.length}/${results.length} Meta insight calls failed:`,
+      reasons,
+    );
+    if (rejected.length === results.length) {
+      throw new Error(`Meta ad-spend sync failed (all windows): ${reasons[0]}`);
+    }
+  }
+
   const extract = (r: PromiseSettledResult<unknown>): { spend: number; currency: string } => {
+    // Partial-only failure reaches here: this window is unknown but others
+    // succeeded (already logged above); treat it as 0 so the rest still show.
     if (r.status !== 'fulfilled') return { spend: 0, currency: 'USD' };
     const data = (r.value as { data?: MetaInsightRow[]; account_currency?: string }).data ?? [];
     const currency = (r.value as { account_currency?: string }).account_currency ?? 'USD';
