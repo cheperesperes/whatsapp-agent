@@ -82,7 +82,9 @@ interface AdData {
   configured: boolean;
   message?: string;
   spend: AdSpend | null;
+  spend_error?: string | null;
   campaigns: CampaignSpend[];
+  campaigns_error?: string | null;
 }
 
 interface DashboardData {
@@ -1619,7 +1621,25 @@ function AdSpendStrip({ data }: { data: AdData }) {
       </div>
     );
   }
-  if (!data.spend) return null;
+  if (!data.spend) {
+    // Sync error (Meta call failed) — SHOW it instead of hiding as $0, so a
+    // broken token / wrong ad-account id is visible and fixable, not masked.
+    if (data.spend_error) {
+      return (
+        <div className="card p-3 border border-amber-800/50 bg-amber-900/20 space-y-1">
+          <p className="text-[11px] text-amber-300">
+            ⚠ No se pudo leer el gasto de Facebook Ads (no es $0 — la sincronización falló):
+          </p>
+          <p className="text-[10px] text-amber-200/80 font-mono break-words">{data.spend_error}</p>
+          <p className="text-[10px] text-gray-500">
+            Suele ser el token sin permiso <span className="font-mono">ads_read</span> o un{' '}
+            <span className="font-mono">META_AD_ACCOUNT_ID</span> incorrecto.
+          </p>
+        </div>
+      );
+    }
+    return null;
+  }
   const allZero =
     data.spend.today === 0 &&
     data.spend.yesterday === 0 &&
