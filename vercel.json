@@ -51,6 +51,12 @@
     },
     "app/api/cron/delivery-alerts/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/business-snapshot/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/social-stats/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -113,6 +119,14 @@
     {
       "path": "/api/cron/comment-responder",
       "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/cron/business-snapshot",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/social-stats",
+      "schedule": "0 4 * * *"
     }
   ],
   "headers": [

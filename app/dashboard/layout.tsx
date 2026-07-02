@@ -68,6 +68,17 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    href: '/dashboard/business',
+    label: 'Negocio',
+    primary: false,
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+          d="M3 3v18h18M7 15l3-3 3 3 5-6M17 9h2v2" />
+      </svg>
+    ),
+  },
+  {
     href: '/dashboard/products',
     label: 'Productos',
     primary: false,

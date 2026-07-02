@@ -44,3 +44,6 @@ yarn-error.log*
 
 # Claude Code session worktrees (local-only sandboxes)
 .claude/worktrees/
+
+# Claude Code scheduler lock — per-session, rewritten every run (never track)
+.claude/scheduled_tasks.lock

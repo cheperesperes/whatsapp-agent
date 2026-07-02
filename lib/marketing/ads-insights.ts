@@ -90,6 +90,55 @@ export async function fetchAdSpend(): Promise<AdSpend> {
   };
 }
 
+// ── Facebook Page engagement ────────────────────────────────
+// Aggregate reach/reactions/comments/shares across the Page's recent posts.
+// Uses the Page ID + Page access token (needs pages_read_engagement /
+// read_insights). Powers the "Engagement social" block on the Negocio board.
+
+export interface PageEngagement {
+  reach: number;
+  reactions: number;
+  comments: number;
+  shares: number;
+  posts: number;
+}
+
+interface PostRow {
+  shares?: { count?: number };
+  reactions?: { summary?: { total_count?: number } };
+  comments?: { summary?: { total_count?: number } };
+  insights?: { data?: { values?: { value?: number }[] }[] };
+}
+
+export async function fetchPageEngagement(days = 30): Promise<PageEngagement> {
+  const pageId = process.env.META_PAGE_ID;
+  const token = process.env.META_PAGE_ACCESS_TOKEN;
+  if (!pageId || !token) throw new Error('META_PAGE_ID or META_PAGE_ACCESS_TOKEN not set');
+
+  const since = Math.floor((Date.now() - days * 86_400_000) / 1000);
+  const fields = [
+    'shares',
+    'reactions.summary(total_count)',
+    'comments.summary(total_count)',
+    'insights.metric(post_impressions_unique)',
+  ].join(',');
+
+  const data = (await metaGet(
+    `/${pageId}/posts?fields=${fields}&since=${since}&limit=50`,
+    token,
+  )) as { data?: PostRow[] };
+
+  const posts = data.data ?? [];
+  let reach = 0, reactions = 0, comments = 0, shares = 0;
+  for (const p of posts) {
+    shares += p.shares?.count ?? 0;
+    reactions += p.reactions?.summary?.total_count ?? 0;
+    comments += p.comments?.summary?.total_count ?? 0;
+    reach += p.insights?.data?.[0]?.values?.[0]?.value ?? 0;
+  }
+  return { reach, reactions, comments, shares, posts: posts.length };
+}
+
 export async function fetchCampaignBreakdown(): Promise<CampaignSpend[]> {
   const accountId = process.env.META_AD_ACCOUNT_ID;
   const token = process.env.META_PAGE_ACCESS_TOKEN;
