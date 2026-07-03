@@ -98,6 +98,7 @@ export interface SolLearning {
 
 export const LEARNING_HARD_CONSTRAINTS = `REGLAS DURAS (NUNCA propongas aprendizajes que las violen — descártalos):
 - NUNCA precios, montos en $, porcentajes de descuento ni códigos de cupón: los precios y ofertas vienen del catálogo del sistema, no del coaching.
+- NUNCA propongas prohibir o esconder el precio de catálogo o un cupón vigente: dar el precio/cupón cuando el cliente pregunta es CORRECTO (regla de la casa). Solo el precio en el turno 1 sin que lo pidan está mal.
 - NUNCA tiempos ni fechas de entrega ("llega en X días", "tarda N semanas"). Regla de la casa: no prometer fechas; decir que el pedido se prepara para enviar lo antes posible y que enviamos el tracking.
 - NUNCA cambiar las reglas de idioma (español/inglés estricto según el cliente) ni el flujo de pago [[PAYLINK]].
 - NUNCA mencionar Cuba ni envíos fuera de USA.
@@ -111,7 +112,16 @@ export const LEARNING_HARD_CONSTRAINTS = `REGLAS DURAS (NUNCA propongas aprendiz
  */
 export function violatesHardRules(directive: string): boolean {
   const d = directive ?? '';
+  // A directive that BANS quoting catalog prices/coupons is itself a violation:
+  // the house prompt's GOLDEN RULE says answer a price ask with the price.
+  // (Real incident: the judge distilled "Nunca incluyas precios… ni códigos de
+  // cupón" from false hallucination verdicts and Sol started dodging price
+  // questions.) Turn-1-scoped rules ("no abras con precio") stay legal.
+  const bansPricing =
+    /\b(nunca|jam[aá]s|no)\s+(incluyas|des|menciones|compartas|digas|reveles|env[ií]es|muestres|publiques|ofrezcas)\b[^.;]{0,80}\b(precios?|montos?|descuentos?|cupon(es)?|c[oó]digos?)\b/i.test(d) &&
+    !/(primer turno|turno 1|apertura|antes de)/i.test(d);
   return (
+    bansPricing ||
     /\b(cuba|cubano|cubana|la isla)\b/i.test(d) ||
     /\$\s?\d/.test(d) ||
     /\b\d+\s*%/.test(d) ||
@@ -138,9 +148,74 @@ function cleanJsonText(text: string): string {
 // 1) Per-conversation review (the judge)
 // ------------------------------------------------------------
 
+/**
+ * Ground truth for the "confianza" dimension: the live catalog prices
+ * (sell + Pecron-mirror list price) and every house coupon code. Without
+ * this the judge has nothing to check quoted prices against and flags the
+ * aggressive pecron.com-mirrored discounts (e.g. ~$2,299~ $999) as
+ * "invented" — false verdicts that then poison sol_learnings. Loaded once
+ * per cron run and passed to every reviewInteraction() call. Returns null
+ * on any failure so the review still runs (just without price grading).
+ */
+export async function loadReviewGroundTruth(): Promise<string | null> {
+  try {
+    const sb = createServiceClient();
+    const [catRes, codeRes] = await Promise.all([
+      sb
+        .from('agent_product_catalog')
+        .select('sku, name, sell_price, original_price, in_stock')
+        .order('sku'),
+      sb.from('discount_codes').select('code, discount_type, discount_value, is_active'),
+    ]);
+    const products = (catRes.data ?? []) as Array<{
+      sku: string;
+      name: string | null;
+      sell_price: string | number | null;
+      original_price: string | number | null;
+      in_stock: boolean | null;
+    }>;
+    const codes = (codeRes.data ?? []) as Array<{
+      code: string;
+      discount_type: string | null;
+      discount_value: string | number | null;
+      is_active: boolean | null;
+    }>;
+    if (products.length === 0) return null;
+
+    const catalogLines = products
+      .filter((p) => p.sku && p.sell_price != null)
+      .map((p) => {
+        const sell = Number(p.sell_price);
+        const orig = Number(p.original_price);
+        const before = orig > sell ? ` (antes $${orig})` : '';
+        return `- ${p.sku}: $${sell}${before}${p.in_stock === false ? ' · AGOTADO' : ''}`;
+      });
+    const codeLines = codes
+      .filter((c) => c.code)
+      .map((c) => {
+        const value =
+          c.discount_type === 'percentage'
+            ? `${Number(c.discount_value)}%`
+            : `$${Number(c.discount_value)}`;
+        return `- ${c.code}: ${value}${c.is_active ? '' : ' (inactivo hoy)'}`;
+      });
+
+    return `DATOS VERIFICADOS DEL SISTEMA — precios y cupones REALES de la casa (ground truth para "confianza"):
+Catálogo (precio actual; "antes" = precio de lista del fabricante, espejo de pecron.com — citarlo tachado junto al precio actual es CORRECTO, no un descuento inventado):
+${catalogLines.join('\n')}
+Cupones de la casa (TODOS existen de verdad; los "inactivo hoy" pudieron estar vigentes cuando Sol los usó — la conversación puede ser de días atrás, así que NO los marques como inventados):
+${codeLines.join('\n')}
+Marca una falla de confianza por precio/cupón SOLO cuando el dato NO aparece aquí ni es coherente con esta lista.`;
+  } catch (err) {
+    console.warn('[loadReviewGroundTruth] failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export async function reviewInteraction(
   history: Message[],
-  meta: { customerName?: string | null; language?: string | null; channel?: string | null }
+  meta: { customerName?: string | null; language?: string | null; channel?: string | null },
+  groundTruth?: string | null
 ): Promise<InteractionReview | null> {
   const userMsgCount = history.filter((m) => m.role === 'user').length;
   if (userMsgCount < 2) return null;
@@ -156,7 +231,7 @@ Evalúa SOLO los mensajes de SOL (al cliente no se le evalúa). Puntúa cada dim
 
 1. calidez_humana — Suena a persona real: saludo cálido, usa el nombre del cliente si lo sabe, refleja el tono y energía del cliente, varía sus frases, emojis con moderación. 1-2 si suena a plantilla, repite muletillas o ignora el tono del cliente.
 2. obsesion_cliente — Entendió la necesidad REAL (preguntó lo justo, no interrogatorio), recomendó lo que le sirve AL CLIENTE (no lo más caro), y respondió exactamente lo que se le preguntó antes de pedir nada. APERTURA: premia que en el primer turno haya hecho UNA pregunta de descubrimiento antes de lanzar pitch/precio/link (vomitar precio+link de entrada enfría al cliente — eso baja la nota, no la sube).
-3. confianza — Preciso y honesto: nada inventado, no sobrepromete, reconoce límites del equipo cuando aplica, consistente con el catálogo. Como Amazon: la confianza se gana en cada mensaje. Dar el precio de catálogo o el cupón cuando el cliente PREGUNTA es CORRECTO — NO es falta. Solo penaliza precios/cupones INVENTADOS o equivocados (incoherentes con el catálogo).
+3. confianza — Preciso y honesto: nada inventado, no sobrepromete, reconoce límites del equipo cuando aplica, consistente con el catálogo. Como Amazon: la confianza se gana en cada mensaje. Dar el precio de catálogo o el cupón cuando el cliente PREGUNTA es CORRECTO — NO es falta. Solo penaliza precios/cupones INVENTADOS o equivocados — contrástalos contra los DATOS VERIFICADOS DEL SISTEMA si están incluidos abajo; si NO están incluidos, NO acuses un precio/cupón de inventado (no tienes cómo comprobarlo — asume que viene del catálogo).
 4. proactividad — Se adelanta: responde Y ofrece el siguiente paso obvio (foto, comparación, link), no deja al cliente colgado, retoma hilos pendientes sin que se lo pidan.
 5. cierre_natural — Detecta señales de compra y avanza en el momento correcto: ante señal de compra pidió la logística (estado/dirección) y envió el [[PAYLINK]] del MODELO EXACTO. 1-2 si dejó pasar una señal clara de compra O si presionó cuando no tocaba. ABANDONO: ante duda ("lo voy a pensar") ofreció el pago mensual con Affirm y capturó el contacto (correo/WhatsApp) en vez de limitarse a "tómate tu tiempo". ESCALACIÓN: derivó a un humano solo cuando correspondía (post-venta o caso no-estándar), NUNCA por una duda de venta (precio/specs/"lo pienso").
 6. idioma_tono — Responde 100% en el idioma del cliente, con fraseo nativo natural, y longitud proporcional a la pregunta (corta para preguntas simples).
@@ -171,7 +246,7 @@ Además:
 
 ${LEARNING_HARD_CONSTRAINTS}
 
-Contexto: cliente=${meta.customerName ?? 'desconocido'} · idioma=${meta.language ?? '?'} · canal=${meta.channel ?? 'whatsapp'}
+${groundTruth ? `${groundTruth}\n\n` : ''}Contexto: cliente=${meta.customerName ?? 'desconocido'} · idioma=${meta.language ?? '?'} · canal=${meta.channel ?? 'whatsapp'}
 
 Conversación:
 ${thread}
