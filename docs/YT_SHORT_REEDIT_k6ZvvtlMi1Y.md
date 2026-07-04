@@ -45,6 +45,21 @@ ffmpeg -i source.mp4 -filter_complex "\
 -map "[v]" -map "[a]" -c:v libx264 -crf 18 -preset slow -c:a aac short_20s_recut.mp4
 ```
 
+## Asset inventory (where the Short's pieces live)
+
+- **Source footage (0:00–0:38):** Google Drive → `video-output-CDF5A44D-2A2A-4D92-9774-C5D4494352CE-1.MOV`
+  (42.8 MB, exported 2026-07-02, iOS editor export). All real-life scenes — moka pot,
+  egg, rice cooker, AC — are inside this single file.
+- **Sorteo end card (0:40–0:43):** Canva → design **"GGRAND SORTEO"** (`DAGuexVIe4c`),
+  1080×1920, 2 pages. Text: "oiikon solar / Sorteo / GRAN SORTEO / ¿Te imaginas pasar
+  el apagón sin ruido, sin humo y sin gasolina?" The orange transition frame (0:38–0:40)
+  is likely from the same design/export.
+- **Not used in this Short** (found while searching): 3 dark-studio power-station promos
+  in the Higgsfield media library (June 29 uploads, one Pecron-branded), the supplier's
+  product/unboxing videos in the shared Drive folder, and the E3800 back-in-stock
+  animated MP4. Also two HEIC photos uploaded to Drive today (IMG_7322/7323) — possibly
+  sorteo-related, not inspected.
+
 ## Sorteo engagement pack (recommendation #3)
 
 Reply fast (first 24–48h weigh most). Spanish first — the audience is the Miami/US
