@@ -20,6 +20,7 @@ day-to-day tracker that points at those when needed.
 ## 🔵 In progress
 
 <!-- Move a card here when you start it. Try to keep this short. -->
+- [ ] YT Short re-edit "Se fue la luz…" (k6ZvvtlMi1Y) — analytics-driven ~20s recut + sorteo reply pack; clips rendering via Personal Clipper. Plan: docs/YT_SHORT_REEDIT_k6ZvvtlMi1Y.md (Claude)
 - [x] Set up daily task organization — board + daily log + summary script (this change).
 
 ## 🟢 Done
