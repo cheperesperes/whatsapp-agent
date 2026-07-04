@@ -57,6 +57,9 @@
     },
     "app/api/cron/social-stats/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/followups/route.ts": {
+      "maxDuration": 240
     }
   },
   "crons": [
@@ -69,8 +72,8 @@
       "schedule": "0 8 * * 1"
     },
     {
-      "path": "/api/cron/send-followups",
-      "schedule": "0 * * * *"
+      "path": "/api/cron/followups",
+      "schedule": "5 * * * *"
     },
     {
       "path": "/api/cron/hallucination-check",
@@ -81,28 +84,12 @@
       "schedule": "0 12 * * *"
     },
     {
-      "path": "/api/cron/competitor-stats",
-      "schedule": "0 6 * * *"
-    },
-    {
       "path": "/api/cron/finalize-videos",
       "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/sol-learning",
       "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/paylink-nudge",
-      "schedule": "30 * * * *"
-    },
-    {
-      "path": "/api/cron/sales-followup",
-      "schedule": "15 * * * *"
-    },
-    {
-      "path": "/api/cron/web-lead-followup",
-      "schedule": "45 * * * *"
     },
     {
       "path": "/api/cron/catalog-price-drift",
@@ -115,10 +102,6 @@
     {
       "path": "/api/chat",
       "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/comment-responder",
-      "schedule": "0 */4 * * *"
     },
     {
       "path": "/api/cron/business-snapshot",
