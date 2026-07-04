@@ -70,6 +70,22 @@ Cuban diaspora. **USA-only shipping; never promise shipping outside the USA.**
 > ¡Como lo ves en el video! 😄 AC de ventana a 67°, cafetera y arrocera — y la batería
 > todavía en 64%. Si quieres los specs completos escríbenos por WhatsApp ⚡
 
+## How to finish the cut (pick one)
+
+The source file is in Google Drive (`video-output-CDF5A44D…-1.MOV`, 42.8 MB, 2026-07-02).
+Claude's cloud session cannot fetch video bytes (network allowlist) and Drive's MCP
+download caps at 10 MB, so the physical cut needs one of:
+
+1. **ffmpeg locally** — run the command above against the MOV. Frame-precise, best quality.
+2. **Phone edit (CapCut / YT create)** — apply the 8-row EDL table above: five deletions,
+   two trims, done in ~2 minutes.
+3. **Hand it back to Claude** — export/compress the source to an MP4 **under 10 MB**
+   (720×1280 is fine), drop it in Drive, and tell Claude "cut it" — it can then download
+   via the Drive connector, execute this EDL with ffmpeg, and return the finished file.
+
+Publish the recut as a **new** Short (YouTube can't swap a published video file). Leave
+the original up — it's day-1 and still in discovery; judge it after 48–72h.
+
 ## Duration takeaway (recommendation #2)
 
 For lifestyle/DIY snippets, target **20–25s**: hook (0–4s) → 3–4 quick payoff beats
