@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: 'Inter Black';
+    src: url('file:///home/user/whatsapp-agent/assets/fonts/Inter-Black.ttf') format('truetype');
+    font-weight: 900;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1080px; overflow: hidden; }
+  body {
+    background: #0A0A0A;
+    color: #FFFFFF;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    padding: 52px 72px 44px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .glow {
+    position: absolute; top: -320px; right: -280px;
+    width: 720px; height: 720px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,107,0,0.16) 0%, rgba(255,107,0,0) 68%);
+  }
+  .topbar { display: flex; justify-content: space-between; align-items: center; }
+  .brand { font-family: 'Inter Black'; font-size: 40px; letter-spacing: 2px; }
+  .brand .spark { color: #FF6B00; }
+  .chip {
+    border: 2px solid #333; border-radius: 999px; padding: 10px 24px;
+    font-size: 21px; letter-spacing: 3px; color: #B3B3B3; font-weight: 600;
+  }
+  h1 { font-family: 'Inter Black'; font-size: 74px; line-height: 1.04; margin-top: 30px; }
+  h1 .accent { color: #FF6B00; }
+  .sub { font-size: 25px; color: #B3B3B3; margin-top: 14px; line-height: 1.3; }
+  .rows { margin-top: 34px; display: flex; flex-direction: column; gap: 24px; }
+  .row .meta { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
+  .row .name { font-size: 30px; font-weight: 700; }
+  .row .name .specs { font-size: 23px; font-weight: 400; color: #8C8C8C; margin-left: 14px; }
+  .row .perwh { font-size: 24px; color: #B3B3B3; font-variant-numeric: tabular-nums; }
+  .track { position: relative; height: 62px; }
+  .bar {
+    height: 62px; border-radius: 6px; display: flex; align-items: center;
+    justify-content: flex-end; padding-right: 22px;
+    font-family: 'Inter Black'; font-size: 31px; font-variant-numeric: tabular-nums;
+  }
+  .pecron .bar { width: 57.7%; background: #FF6B00; color: #0A0A0A; }
+  .anker .bar { width: 73.1%; background: #2E2E2E; color: #E8E8E8; border: 1px solid #454545; }
+  .ecoflow .bar { width: 100%; background: #2E2E2E; color: #E8E8E8; border: 1px solid #454545; }
+  .pecron .name { color: #FF6B00; }
+  .pecron .perwh { color: #FF6B00; font-weight: 700; }
+  .tag {
+    position: absolute; left: calc(57.7% + 20px); top: 50%; transform: translateY(-50%);
+    background: rgba(255,107,0,0.14); border: 2px solid #FF6B00; color: #FF6B00;
+    border-radius: 8px; padding: 9px 18px; font-size: 23px; font-weight: 700;
+    letter-spacing: 1px; white-space: nowrap;
+  }
+  .savings {
+    margin-top: 26px; display: flex; gap: 20px;
+  }
+  .save-pill {
+    flex: 1; background: #141414; border: 1px solid #2A2A2A; border-radius: 14px;
+    padding: 16px 22px; text-align: center;
+  }
+  .save-pill .amt { font-family: 'Inter Black'; font-size: 37px; color: #FF6B00; }
+  .save-pill .vs { font-size: 19px; color: #B3B3B3; margin-top: 5px; }
+  .footer { margin-top: 20px; border-top: 1px solid #262626; padding-top: 18px; }
+  .footer .cta { font-size: 24px; font-weight: 700; }
+  .footer .cta .site { color: #FF6B00; }
+  .footer .fine { font-size: 15px; color: #6E6E6E; margin-top: 8px; line-height: 1.35; }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+
+  <div class="topbar">
+    <div class="brand">OIIKON<span class="spark">⚡</span></div>
+    <div class="chip">COMPARATIVA · JULIO 2026</div>
+  </div>
+
+  <h1>Misma energía.<br><span class="accent">Menos precio.</span></h1>
+  <div class="sub">Clase 4 kWh — precio de lista, capacidad e inversor, lado a lado.</div>
+
+  <div class="rows">
+    <div class="row pecron">
+      <div class="meta">
+        <div class="name">PECRON E3800<span class="specs">3,840 Wh · inversor 4,200 W</span></div>
+        <div class="perwh">$0.39 / Wh</div>
+      </div>
+      <div class="track">
+        <div class="bar">$1,499</div>
+        <div class="tag">★ NUESTRO PRECIO</div>
+      </div>
+    </div>
+
+    <div class="row anker">
+      <div class="meta">
+        <div class="name">Anker SOLIX F3800<span class="specs">3,840 Wh · inversor 6,000 W</span></div>
+        <div class="perwh">$0.49 / Wh</div>
+      </div>
+      <div class="track"><div class="bar">$1,899</div></div>
+    </div>
+
+    <div class="row ecoflow">
+      <div class="meta">
+        <div class="name">EcoFlow DELTA Pro 3<span class="specs">4,096 Wh · inversor 4,000 W</span></div>
+        <div class="perwh">$0.63 / Wh</div>
+      </div>
+      <div class="track"><div class="bar">$2,599</div></div>
+    </div>
+  </div>
+
+  <div class="savings">
+    <div class="save-pill">
+      <div class="amt">Ahorra $400</div>
+      <div class="vs">vs. Anker SOLIX F3800 — misma capacidad (3,840 Wh)</div>
+    </div>
+    <div class="save-pill">
+      <div class="amt">Ahorra $1,100</div>
+      <div class="vs">vs. EcoFlow DELTA Pro 3 — capacidad comparable</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="cta">🇺🇸 Envío en USA · Soporte en español · <span class="site">oiikon.com</span></div>
+    <div class="fine">Precios de lista publicados en los sitios oficiales de cada marca (julio 2026); sujetos a cambio. Comparación por costo por watt-hora almacenado ($/Wh). Batería LiFePO4 en los tres modelos.</div>
+  </div>
+</body>
+</html>
