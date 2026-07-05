@@ -9,6 +9,7 @@ import {
   PAYLINK_SENT_RE,
   PRODUCT_QUOTE_RE,
   extractProductModel,
+  MAX_AUTO_NUDGES,
   type NudgeLanguage,
 } from '@/lib/followup';
 import { detectLanguage } from '@/lib/language';
@@ -209,12 +210,18 @@ export async function GET(req: NextRequest) {
     }
 
     // One automated touch-1 max: ledger row OR legacy text marker → skip.
-    const { count: nudgeCount } = await supabase
+    // Use a normal SELECT (not head:true/count:exact) — the HEAD request path
+    // returns null count on some Vercel Node.js deployments, silently bypassing
+    // this guard and causing repeat nudges (observed: 3× identical message to
+    // same customer, 3h apart, 2026-07-04/05).
+    const { data: priorNudgeRows } = await supabase
       .from('sol_followups')
-      .select('id', { count: 'exact', head: true })
-      .eq('conversation_id', c.id);
+      .select('id')
+      .eq('conversation_id', c.id)
+      .limit(MAX_AUTO_NUDGES);
+    const nudgeCount = priorNudgeRows?.length ?? 0;
     const assistantMsgs = msgs.filter((m) => m.role === 'assistant').map((m) => ({ content: m.content }));
-    if ((nudgeCount ?? 0) > 0 || hasPriorFollowup(assistantMsgs)) {
+    if (nudgeCount > 0 || hasPriorFollowup(assistantMsgs)) {
       skipped.push({ conversation_id: c.id, reason: 'already_nudged' });
       continue;
     }
