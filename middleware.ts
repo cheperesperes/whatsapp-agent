@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   '/widget.js',                     // Embeddable widget script for oiikon.com
   '/widget-test',                   // Public preview page for the embed
   '/api/marketing/templates/public-status', // Aggregate counts only, used by cloud schedulers
+  '/api/setup/whatsapp-profile-status',     // Customer-visible profile facts only — business-identity audits
 ];
 
 export async function middleware(request: NextRequest) {
