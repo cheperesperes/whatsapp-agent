@@ -57,6 +57,15 @@ export const FOLLOWUP_MARKER_PATTERNS: RegExp[] = [
   /any questions about (your )?checkout/i,
   /une question sur le paiement/i,
   /èske ou gen kesyon sou peman/i,
+  // quote_nudge openers — buildQuoteNudgeDraft v=0 and v=1 (es/en/fr/ht)
+  // Missing these caused the dedup guard to fail for quote_nudge touches,
+  // letting the text-marker fallback bypass the one-nudge-per-conversation rule.
+  /quedé pendiente con/i,
+  /¿qué le pareció/i,
+  /just circling back on/i,
+  /what did you think of/i,
+  /que pensez-vous de/i,
+  /kisa ou panse de/i,
 ];
 
 /**
