@@ -49,8 +49,10 @@ export async function GET(_req: NextRequest) {
   }
 
   // 1) Phone number: the name customers see + OBA + quality.
+  // (whatsapp_business_account is NOT a readable field on this node — asking
+  // for it 400s the whole request; the WABA id comes from env instead.)
   const phone = await graphGet(
-    `${phoneNumberId}?fields=verified_name,display_phone_number,name_status,quality_rating,is_official_business_account,code_verification_status,whatsapp_business_account`,
+    `${phoneNumberId}?fields=verified_name,display_phone_number,name_status,quality_rating,is_official_business_account,code_verification_status`,
     token,
   );
 
