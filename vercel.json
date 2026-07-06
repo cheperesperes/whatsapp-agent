@@ -60,6 +60,9 @@
     },
     "app/api/cron/followups/route.ts": {
       "maxDuration": 240
+    },
+    "app/api/admin/audience-sync/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -110,6 +113,10 @@
     {
       "path": "/api/cron/social-stats",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/admin/audience-sync",
+      "schedule": "23 9 3 * *"
     }
   ],
   "headers": [
