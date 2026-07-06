@@ -38,6 +38,32 @@ export const maxDuration = 60;
 
 const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION ?? 'v21.0';
 
+// ── Attempt audit log ────────────────────────────────────────────────────────
+// Every attempt (rejections included) writes one outbound_offer_runs row so a
+// failed blast is diagnosable after the fact. Fire-and-forget: logging must
+// never break the send path.
+type RunLog = {
+  template_name?: string | null;
+  coupon_code?: string | null;
+  audience?: string | null;
+  dry_run?: boolean;
+  outcome: string;
+  http_status?: number;
+  error?: string | null;
+  sent_count?: number;
+  skipped_count?: number;
+  total_count?: number;
+  detail?: unknown;
+};
+async function logRun(sb: ReturnType<typeof createServiceClient>, entry: RunLog): Promise<void> {
+  try {
+    await sb.from('outbound_offer_runs').insert(entry as Record<string, unknown>);
+  } catch {
+    /* never block the send path on logging */
+  }
+}
+
+
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
   if (digits.length === 10) return `1${digits}`;
@@ -81,6 +107,10 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
+  // Service client early: the attempt-audit logRun() calls on the early
+  // rejection paths below need it before the main body runs.
+  const sb = createServiceClient();
+
   // Prefer META_-prefixed env (where the never-expires System User token
   // lives — see lib/whatsapp.ts). Fall back to legacy unprefixed names so
   // dev envs that only set one still work.
@@ -89,6 +119,7 @@ export async function POST(req: NextRequest) {
   const phoneId =
     process.env.META_WHATSAPP_PHONE_NUMBER_ID ?? process.env.WHATSAPP_PHONE_NUMBER_ID;
   if (!token || !phoneId) {
+    await logRun(sb, { outcome: 'rejected_env_missing', http_status: 500, error: 'Meta env vars not set' });
     return NextResponse.json(
       { error: 'META_WHATSAPP_ACCESS_TOKEN or META_WHATSAPP_PHONE_NUMBER_ID not set in Vercel env.' },
       { status: 500 },
@@ -122,13 +153,14 @@ export async function POST(req: NextRequest) {
     includeRecentlyMessaged = false,
   } = body || {};
   if (!templateName) {
+    await logRun(sb, { outcome: 'rejected_no_template', http_status: 400, error: 'templateName missing' });
     return NextResponse.json(
       { error: 'templateName is required (must be a Meta-approved template name)' },
       { status: 400 },
     );
   }
 
-  const sb = createServiceClient();
+// (service client created above, before the early-exit audit logs)
 
   // Set when the audience path drops leads already messaged in the last 24h.
   // Surfaced in the dry-run plan so the operator sees the dedupe before sending.
@@ -220,6 +252,7 @@ export async function POST(req: NextRequest) {
     else if (audience === 'en') recipList = recipList.filter((r) => r.language === 'en');
 
     if (recipList.length === 0) {
+      await logRun(sb, { template_name: templateName, coupon_code: couponCode ?? null, audience, outcome: 'rejected_no_recipients', http_status: 400, error: 'No valid US recipients matched audience filter' });
       return NextResponse.json({ error: 'No valid US recipients matched audience filter.' }, { status: 400 });
     }
 
@@ -243,6 +276,7 @@ export async function POST(req: NextRequest) {
       skippedRecentlyMessaged = before - recipList.length;
     }
     if (recipList.length === 0) {
+      await logRun(sb, { template_name: templateName, coupon_code: couponCode ?? null, audience, outcome: 'rejected_all_deduped_24h', http_status: 400, skipped_count: skippedRecentlyMessaged, error: 'all recipients messaged in last 24h' });
       return NextResponse.json(
         {
           error:
@@ -265,8 +299,18 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     coupon = data;
     if (!coupon) {
+      // Self-service error: show which codes ARE usable right now, so an
+      // operator picking a deactivated code (the #1 cause of "offers won't
+      // send") can fix it without leaving the screen.
+      const { data: activeCodes } = await sb
+        .from('discount_codes')
+        .select('code')
+        .eq('is_active', true)
+        .order('code');
+      const available = (activeCodes ?? []).map((c: { code: string }) => c.code).join(', ');
+      await logRun(sb, { template_name: templateName, coupon_code: couponCode, audience, outcome: 'rejected_coupon_inactive', http_status: 404, error: `coupon not active: ${couponCode}`, detail: { active_codes: available } });
       return NextResponse.json(
-        { error: `Active coupon not found: ${couponCode}` },
+        { error: `Active coupon not found: ${couponCode}. Códigos activos disponibles: ${available || '(ninguno)'}` },
         { status: 404 },
       );
     }
@@ -375,6 +419,7 @@ export async function POST(req: NextRequest) {
       previewDebug = { error: e?.message ?? String(e) };
     }
 
+    await logRun(sb, { template_name: templateName, coupon_code: coupon?.code ?? null, audience, dry_run: true, outcome: 'dry_run', total_count: recipList.length, skipped_count: skippedRecentlyMessaged });
     return NextResponse.json({
       dryRun: true,
       recipientCount: recipList.length,
@@ -559,7 +604,21 @@ export async function POST(req: NextRequest) {
   // inline so the operator gets exact per-recipient results.
   const BACKGROUND_THRESHOLD = 20;
   if (recipList.length > BACKGROUND_THRESHOLD) {
-    waitUntil(runBatch(recipList));
+    await logRun(sb, { template_name: templateName, coupon_code: coupon?.code ?? null, audience, outcome: 'queued_background', http_status: 202, total_count: recipList.length, skipped_count: skippedRecentlyMessaged });
+    waitUntil(
+      runBatch(recipList).then((results) =>
+        logRun(sb, {
+          template_name: templateName,
+          coupon_code: coupon?.code ?? null,
+          audience,
+          outcome: 'background_complete',
+          sent_count: results.filter((r: any) => r.success).length,
+          total_count: results.length,
+          skipped_count: results.filter((r: any) => r.skipped).length,
+          detail: { failures: results.filter((r: any) => !r.success && !r.skipped).slice(0, 10) },
+        }),
+      ),
+    );
     return NextResponse.json(
       {
         ok: true,
@@ -582,6 +641,17 @@ export async function POST(req: NextRequest) {
     (r) => r.skipped === 'no_template_variant_for_language',
   ).length;
   const totalCount = results.length;
+  await logRun(sb, {
+    template_name: templateName,
+    coupon_code: coupon?.code ?? null,
+    audience,
+    outcome: 'complete',
+    http_status: sentCount === totalCount ? 200 : sentCount > 0 ? 207 : 502,
+    sent_count: sentCount,
+    total_count: totalCount,
+    skipped_count: skippedLanguageMismatch,
+    detail: { failures: results.filter((r: any) => !r.success && !r.skipped).slice(0, 10) },
+  });
   return NextResponse.json(
     {
       ok: sentCount > 0,
