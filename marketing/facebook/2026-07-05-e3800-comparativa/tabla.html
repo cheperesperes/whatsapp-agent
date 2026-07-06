@@ -34,8 +34,11 @@
   }
   .photo {
     background: #FFF; border-radius: 12px; height: 240px;
-    display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
+    margin-bottom: 16px; background-repeat: no-repeat;
   }
+  .ph-pecron  { background-image: url('prod-pecron.jpg');  background-size: 115%; background-position: 35% 88%; }
+  .ph-anker   { background-image: url('prod-anker.png');   background-size: cover; background-position: center 40%; }
+  .ph-ecoflow { background-image: url('prod-ecoflow.png'); background-size: 125%; background-position: 45% 96%; }
   .pname { font-size: 25px; font-weight: 700; line-height: 1.2; min-height: 62px; }
   .hero .pname { color: #FF6B00; }
   .prices { margin-top: 6px; display: flex; align-items: baseline; gap: 12px; }
@@ -65,37 +68,7 @@
     <!-- PECRON -->
     <div class="col hero">
       <div class="ribbon">★ MEJOR VALOR</div>
-      <div class="photo">
-        <svg width="238" height="250" viewBox="0 0 200 210">
-          <!-- cart -->
-          <rect x="30" y="182" width="140" height="10" rx="4" fill="#3A3A3A"/>
-          <circle cx="52" cy="199" r="9" fill="#4A4A4A"/><circle cx="148" cy="199" r="9" fill="#4A4A4A"/>
-          <circle cx="52" cy="199" r="4" fill="#8C8C8C"/><circle cx="148" cy="199" r="4" fill="#8C8C8C"/>
-          <!-- body -->
-          <rect x="28" y="30" width="144" height="150" rx="10" fill="#26262A"/>
-          <!-- orange corner guards -->
-          <path d="M28 52 v-12 a10 10 0 0 1 10-10 h14 v14 h-10 a4 4 0 0 0-4 4 v4 z" fill="#FF6B00"/>
-          <path d="M172 52 v-12 a10 10 0 0 0-10-10 h-14 v14 h10 a4 4 0 0 1 4 4 v4 z" fill="#FF6B00"/>
-          <path d="M28 158 v12 a10 10 0 0 0 10 10 h14 v-14 h-10 a4 4 0 0 1-4-4 v-4 z" fill="#FF6B00"/>
-          <path d="M172 158 v12 a10 10 0 0 1-10 10 h-14 v-14 h10 a4 4 0 0 0 4-4 v-4 z" fill="#FF6B00"/>
-          <!-- screen -->
-          <rect x="78" y="44" width="44" height="26" rx="4" fill="#0E0E10" stroke="#3C3C40"/>
-          <rect x="83" y="50" width="20" height="4" rx="2" fill="#FF6B00"/>
-          <rect x="83" y="58" width="30" height="3" rx="1.5" fill="#5A5A5E"/>
-          <!-- outlets -->
-          <rect x="42" y="82" width="26" height="24" rx="4" fill="#151517" stroke="#3C3C40"/>
-          <rect x="74" y="82" width="26" height="24" rx="4" fill="#151517" stroke="#3C3C40"/>
-          <rect x="106" y="82" width="26" height="24" rx="4" fill="#151517" stroke="#3C3C40"/>
-          <rect x="138" y="82" width="20" height="24" rx="4" fill="#151517" stroke="#3C3C40"/>
-          <!-- vents -->
-          <rect x="42" y="120" width="116" height="4" rx="2" fill="#333338"/>
-          <rect x="42" y="130" width="116" height="4" rx="2" fill="#333338"/>
-          <rect x="42" y="140" width="116" height="4" rx="2" fill="#333338"/>
-          <rect x="42" y="150" width="116" height="4" rx="2" fill="#333338"/>
-          <!-- logo -->
-          <rect x="76" y="160" width="48" height="8" rx="4" fill="#FF6B00"/>
-        </svg>
-      </div>
+      <div class="photo ph-pecron"></div>
       <div class="pname">Pecron E3800LFP</div>
       <div class="prices"><div class="price">$1,199.00</div><div class="was">$2,399</div></div>
       <div class="stars"></div>
@@ -107,30 +80,7 @@
 
     <!-- ANKER -->
     <div class="col">
-      <div class="photo">
-        <svg width="178" height="250" viewBox="0 0 150 210">
-          <!-- handle -->
-          <rect x="46" y="8" width="58" height="12" rx="6" fill="#3A3D40"/>
-          <rect x="52" y="16" width="10" height="24" fill="#3A3D40"/>
-          <rect x="88" y="16" width="10" height="24" fill="#3A3D40"/>
-          <!-- body -->
-          <rect x="26" y="36" width="98" height="150" rx="12" fill="#C6CACD"/>
-          <rect x="26" y="36" width="98" height="34" rx="12" fill="#B2B6BA"/>
-          <!-- front panel -->
-          <rect x="40" y="82" width="70" height="52" rx="6" fill="#26282B"/>
-          <rect x="48" y="90" width="30" height="14" rx="3" fill="#0E0E10"/>
-          <circle cx="94" cy="97" r="7" fill="#3C4043"/>
-          <rect x="48" y="112" width="14" height="14" rx="3" fill="#3C4043"/>
-          <rect x="68" y="112" width="14" height="14" rx="3" fill="#3C4043"/>
-          <rect x="88" y="112" width="14" height="14" rx="3" fill="#3C4043"/>
-          <!-- vents -->
-          <rect x="40" y="146" width="70" height="4" rx="2" fill="#A9ADB1"/>
-          <rect x="40" y="155" width="70" height="4" rx="2" fill="#A9ADB1"/>
-          <rect x="40" y="164" width="70" height="4" rx="2" fill="#A9ADB1"/>
-          <!-- wheels -->
-          <circle cx="48" cy="194" r="10" fill="#3A3D40"/><circle cx="102" cy="194" r="10" fill="#3A3D40"/>
-        </svg>
-      </div>
+      <div class="photo ph-anker"></div>
       <div class="pname">Anker SOLIX F3800 Plus</div>
       <div class="prices"><div class="price" style="color:#E8E8E8">$2,699.00</div></div>
       <div class="stars">★★★★★ <span class="n">5.0 (10)</span></div>
@@ -142,32 +92,7 @@
 
     <!-- ECOFLOW -->
     <div class="col">
-      <div class="photo">
-        <svg width="250" height="250" viewBox="0 0 210 210">
-          <!-- solar panel behind -->
-          <g transform="rotate(-8 150 90)">
-            <rect x="100" y="30" width="100" height="120" rx="6" fill="#23262B"/>
-            <line x1="100" y1="70" x2="200" y2="70" stroke="#3C4043" stroke-width="3"/>
-            <line x1="100" y1="110" x2="200" y2="110" stroke="#3C4043" stroke-width="3"/>
-            <line x1="133" y1="30" x2="133" y2="150" stroke="#3C4043" stroke-width="3"/>
-            <line x1="166" y1="30" x2="166" y2="150" stroke="#3C4043" stroke-width="3"/>
-          </g>
-          <rect x="150" y="150" width="8" height="40" transform="rotate(18 154 170)" fill="#3A3D40"/>
-          <!-- station -->
-          <rect x="18" y="70" width="110" height="120" rx="12" fill="#B9BEC4"/>
-          <rect x="18" y="70" width="110" height="26" rx="12" fill="#2B2E31"/>
-          <rect x="52" y="76" width="42" height="12" rx="6" fill="#4A4E52"/>
-          <!-- screen + ports -->
-          <rect x="34" y="108" width="42" height="22" rx="4" fill="#1B1D1F"/>
-          <rect x="40" y="114" width="20" height="4" rx="2" fill="#4ADE80"/>
-          <circle cx="102" cy="119" r="9" fill="#8B9096"/>
-          <rect x="34" y="142" width="16" height="16" rx="3" fill="#8B9096"/>
-          <rect x="58" y="142" width="16" height="16" rx="3" fill="#8B9096"/>
-          <rect x="82" y="142" width="16" height="16" rx="3" fill="#8B9096"/>
-          <rect x="34" y="168" width="80" height="4" rx="2" fill="#A3A8AE"/>
-          <rect x="34" y="176" width="80" height="4" rx="2" fill="#A3A8AE"/>
-        </svg>
-      </div>
+      <div class="photo ph-ecoflow"></div>
       <div class="pname">EcoFlow DELTA Pro 3</div>
       <div class="prices"><div class="price">$2,939.00</div><div class="was">$4,997</div></div>
       <div class="stars">★★★★<span style="opacity:.45">★</span> <span class="n">4.7 (145)</span></div>
@@ -180,7 +105,7 @@
 
   <div class="footer">
     <div class="cta">La misma energía por la mitad — <span class="site">oiikon.com</span> · WhatsApp: +1 (561) 698-8477</div>
-    <div class="fine">Ilustraciones de referencia. Precios promedio de mercado (julio 2026), sujetos a cambio. Specs oficiales de cada fabricante.</div>
+    <div class="fine">Imágenes y especificaciones oficiales de cada fabricante. Precios promedio de mercado (julio 2026), sujetos a cambio.</div>
   </div>
 </body>
 </html>
