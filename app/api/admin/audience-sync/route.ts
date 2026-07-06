@@ -59,10 +59,11 @@ async function graph(
   return { ok: res.ok, status: res.status, json };
 }
 
-export async function POST(req: NextRequest) {
-  const sb = createServiceClient();
-
-  // Auth: DB-stored shared secret (fail closed).
+async function authorized(req: NextRequest, sb: ReturnType<typeof createServiceClient>): Promise<boolean> {
+  // Path 1: Vercel cron (monthly auto-refresh) — Bearer CRON_SECRET.
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`) return true;
+  // Path 2: operator/agent trigger — x-sync-token vs the DB-stored secret.
   const { data: tokenRow } = await sb
     .from('app_config')
     .select('value')
@@ -70,7 +71,12 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   const expected = tokenRow?.value ?? '';
   const provided = req.headers.get('x-sync-token') ?? '';
-  if (!expected || provided !== expected) {
+  return Boolean(expected) && provided === expected;
+}
+
+async function runSync(req: NextRequest): Promise<NextResponse> {
+  const sb = createServiceClient();
+  if (!(await authorized(req, sb))) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
@@ -186,4 +192,14 @@ export async function POST(req: NextRequest) {
     uploads,
     lookalike: lalResult,
   });
+}
+
+export async function POST(req: NextRequest) {
+  return runSync(req);
+}
+
+// Vercel cron fires GET — same auth (Bearer CRON_SECRET) and same behavior,
+// so the monthly refresh needs no extra secret handling.
+export async function GET(req: NextRequest) {
+  return runSync(req);
 }
