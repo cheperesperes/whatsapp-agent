@@ -25,6 +25,7 @@ day-to-day tracker that points at those when needed.
 ## 🟢 Done
 
 <!-- Move finished cards here, newest first. Date them. -->
+- 2026-07-06 — Post de Facebook final con revisión de cumplimiento Meta/FTC: versión orgánica (comparativa verificada) + versión ad-safe sin marcas de terceros, imagen 1080×1080 con foto oficial (insignia de descuento removida) y checklist. En `marketing/facebook/2026-07-06-post-final/`.
 - 2026-07-05 — Facebook post E3800 comparativa: copy en español + tarjeta comparativa 1080×1080 (PECRON E3800 $1,499 vs Anker SOLIX F3800 $1,899 vs EcoFlow DELTA Pro 3 $2,599, $/Wh). En `marketing/facebook/2026-07-05-e3800-comparativa/`.
 - 2026-07-04 — Cron cleanup: removed two zero-output crons (competitor-stats, comment-responder — 0 rows produced ever) and consolidated the four hourly follow-up crons into one /api/cron/followups dispatcher (same jobs, same order, per-job 50s timeout). 17 app crons → 12. Cloud routines consolidated to 2 (daily summary + corrected coach/strategist v2).
 - 2026-07-02 — KB training pass: triaged the 2,324-row kb_suggestions queue (rejected 489: exact duplicates, pricing-category as policy, and clusters now covered), and added 7 canonical catalog-verified knowledge_base entries for the top repeated customer questions (payment methods, shipping regions, delivery time, E-series/F-series model comparisons). Live immediately — KB loads per message.
