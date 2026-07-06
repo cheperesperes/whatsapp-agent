@@ -107,6 +107,10 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
+  // Service client early: the attempt-audit logRun() calls on the early
+  // rejection paths below need it before the main body runs.
+  const sb = createServiceClient();
+
   // Prefer META_-prefixed env (where the never-expires System User token
   // lives — see lib/whatsapp.ts). Fall back to legacy unprefixed names so
   // dev envs that only set one still work.
@@ -156,7 +160,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const sb = createServiceClient();
+// (service client created above, before the early-exit audit logs)
 
   // Set when the audience path drops leads already messaged in the last 24h.
   // Surfaced in the dry-run plan so the operator sees the dedupe before sending.

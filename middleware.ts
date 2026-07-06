@@ -15,6 +15,7 @@ const PUBLIC_PATHS = [
   '/widget-test',                   // Public preview page for the embed
   '/api/marketing/templates/public-status', // Aggregate counts only, used by cloud schedulers
   '/api/setup/whatsapp-profile-status',     // Customer-visible profile facts only — business-identity audits
+  '/api/admin/audience-sync',               // token-gated (x-sync-token vs app_config) — Meta audience refresh
 ];
 
 export async function middleware(request: NextRequest) {
