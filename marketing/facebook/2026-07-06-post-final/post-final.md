@@ -9,7 +9,7 @@ ambas versiones ANTES de publicar — el precio del post debe ser el del checkou
 
 ## VERSIÓN A — Post orgánico (con comparación)
 
-⚡ **QUE UN APAGÓN NO TE DETENGA** ⚡
+⚡ **QUE UN BLACKOUT NO TE DETENGA** ⚡
 
 La PECRON E3800LFP mantiene tu casa funcionando: nevera, luces, TV, ventiladores y equipos esenciales — sin gasolina, sin ruido, sin humo.
 
@@ -32,7 +32,7 @@ La PECRON E3800LFP mantiene tu casa funcionando: nevera, luces, TV, ventiladores
 
 *Precios de competidores verificados el 5 de julio de 2026 en tiendas oficiales; sujetos a cambio. Especificaciones oficiales de cada fabricante.*
 
-#EnergiaSolar #PowerStation #Apagones #PlantaElectrica #Oiikon #BackupPower
+#EnergiaSolar #PowerStation #Blackout #PlantaElectrica #Oiikon #BackupPower
 
 **Imágenes sugeridas (en orden):** 1) `../2026-07-05-e3800-comparativa/e3800-tabla-productos-1080.png`, 2) fotos propias del producto.
 
@@ -40,7 +40,7 @@ La PECRON E3800LFP mantiene tu casa funcionando: nevera, luces, TV, ventiladores
 
 ## VERSIÓN B — Para pauta / boost (segura para Meta Ads)
 
-⚡ Que un apagón no te detenga.
+⚡ Que un blackout no te detenga.
 
 La PECRON E3800LFP respalda tu nevera, luces, TV y equipos esenciales — sin gasolina y sin ruido. 3,840 Wh · 4,200 W · batería LiFePO4.
 
@@ -62,7 +62,7 @@ La PECRON E3800LFP respalda tu nevera, luces, TV y equipos esenciales — sin ga
 ✅ **Sin ratings de terceros en ads** — las estrellas (5.0/4.7) de la tabla comparativa solo si provienen de una fuente real citable; en anuncios, omitirlas.
 ✅ **Sin claims médicos** — decimos "equipos esenciales", no promesas sobre equipos médicos ni salud.
 ✅ **Sin engagement bait** — no "etiqueta a un amigo", "comparte y gana", etc. (Meta lo penaliza en alcance).
-✅ **Sin atributos personales** — no dirigirse al lector afirmando su condición ("tú que no tienes luz…"); el hook es sobre el apagón, no sobre la persona.
+✅ **Sin atributos personales** — no dirigirse al lector afirmando su condición ("tú que no tienes luz…"); el hook es sobre el blackout, no sobre la persona.
 ✅ **Producto permitido** — estaciones de energía portátiles no son categoría restringida en Meta Commerce.
 ✅ **Landing coherente** — el enlace lleva a oiikon.com con el mismo producto y el mismo precio del post.
 ✅ **FTC / código interno (§3.2)** — cada cifra (Wh, W, ciclos, garantía) respaldada por el fabricante; nada inventado; disclosure de fecha en la comparación.
