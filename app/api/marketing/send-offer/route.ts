@@ -27,6 +27,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
+import { formatFirstName } from '@/lib/followup';
 import { createServerClient } from '@supabase/ssr';
 import { waitUntil } from '@vercel/functions';
 
@@ -151,7 +152,14 @@ export async function POST(req: NextRequest) {
     // an OUTBOUND_OFFER in the last 24h, so re-running doesn't double-message
     // a batch already sent today. Set true to deliberately re-send.
     includeRecentlyMessaged = false,
+    // Optional public https image for templates whose HEADER is IMAGE —
+    // Meta requires a header parameter on send for those templates.
+    headerImageUrl,
   } = body || {};
+  const headerImage =
+    typeof headerImageUrl === 'string' && /^https:\/\//.test(headerImageUrl.trim())
+      ? headerImageUrl.trim()
+      : null;
   if (!templateName) {
     await logRun(sb, { outcome: 'rejected_no_template', http_status: 400, error: 'templateName missing' });
     return NextResponse.json(
@@ -376,7 +384,8 @@ export async function POST(req: NextRequest) {
             recipList.find((r) => r.name) ||
             null;
           const sampleName =
-            realRecipient?.name || (tplLang.startsWith('en') ? 'friend' : 'amigo/a');
+            formatFirstName(realRecipient?.name) ||
+            (tplLang.startsWith('en') ? 'friend' : 'amigo/a');
           const sampleCode = coupon?.code || '';
           const sampleDiscount = discountText(coupon, tplLang.startsWith('en') ? 'en' : 'es');
           const sub = [sampleName, sampleCode, sampleDiscount];
@@ -387,13 +396,19 @@ export async function POST(req: NextRequest) {
           for (const comp of tpl.components || []) {
             const type = (comp.type || '').toUpperCase();
             if (type === 'HEADER') {
+              const fmt = (comp.format || 'TEXT').toUpperCase();
               header = {
-                type: comp.format || 'TEXT',
+                type: fmt,
+                // The operator-provided image wins in the preview: it's what
+                // the real send will attach. Fall back to Meta's example.
                 link:
+                  (fmt === 'IMAGE' && headerImage) ||
                   comp.example?.header_handle?.[0] ||
                   comp.example?.header_url?.[0] ||
                   null,
                 text: comp.text || null,
+                requiresImage: fmt === 'IMAGE',
+                imageProvided: fmt === 'IMAGE' ? Boolean(headerImage) : undefined,
               };
             } else if (type === 'BODY') {
               const raw = comp.text || '';
@@ -479,7 +494,7 @@ export async function POST(req: NextRequest) {
   // picks per recipient; sendOne skips leads with no matching variant. Only
   // if the lookup fails entirely (variants empty) does sendOne fall back to a
   // best-guess language code per lead.
-  type TplVariant = { language: string; bodyParamCount: number };
+  type TplVariant = { language: string; bodyParamCount: number; headerFormat: string | null };
   const variants: TplVariant[] = [];
   try {
     // WABA id: env first, phone-number lookup as fallback — phone lookup
@@ -507,8 +522,15 @@ export async function POST(req: NextRequest) {
         const bodyComp = (tpl.components || []).find(
           (c: any) => (c.type || '').toUpperCase() === 'BODY',
         );
+        const headerComp = (tpl.components || []).find(
+          (c: any) => (c.type || '').toUpperCase() === 'HEADER',
+        );
         const m = (bodyComp?.text || '').match(/\{\{\s*\d+\s*\}\}/g);
-        variants.push({ language: tpl.language || 'es', bodyParamCount: m ? m.length : 0 });
+        variants.push({
+          language: tpl.language || 'es',
+          bodyParamCount: m ? m.length : 0,
+          headerFormat: headerComp?.format ? String(headerComp.format).toUpperCase() : null,
+        });
       }
     }
   } catch {
@@ -537,7 +559,11 @@ export async function POST(req: NextRequest) {
         skipped: 'no_template_variant_for_language',
       };
     }
-    const param1 = r.name || (lang === 'en' ? 'friend' : 'amigo/a');
+    // Sanitized first name only — WhatsApp display names can be junk or
+    // vulgar ("elpanamopinga"); formatFirstName screens those and we fall
+    // back to the generic salutation instead of echoing them.
+    const cleanedName = formatFirstName(r.name);
+    const param1 = cleanedName || (lang === 'en' ? 'friend' : 'amigo/a');
     const param2 = coupon?.code || '';
     const param3 = discountText(coupon, lang);
     const allParams = [
@@ -547,6 +573,26 @@ export async function POST(req: NextRequest) {
     ];
     const params = allParams.slice(0, variant?.bodyParamCount ?? 1);
     const langCode = variant?.language ?? (lang === 'en' ? 'en_US' : 'es');
+    // IMAGE-header templates REQUIRE a header parameter — without one Meta
+    // rejects the send. Skip (never half-send) when no image was provided.
+    if (variant?.headerFormat === 'IMAGE' && !headerImage) {
+      return {
+        phone: r.phone,
+        language: lang,
+        success: false,
+        skipped: 'template_requires_header_image',
+      };
+    }
+    const components: any[] = [];
+    if (variant?.headerFormat === 'IMAGE' && headerImage) {
+      components.push({
+        type: 'header',
+        parameters: [{ type: 'image', image: { link: headerImage } }],
+      });
+    }
+    if (params.length > 0) {
+      components.push({ type: 'body', parameters: params.map((text) => ({ type: 'text', text })) });
+    }
     const payload = {
       messaging_product: 'whatsapp',
       to: normalizePhone(r.phone),
@@ -554,10 +600,7 @@ export async function POST(req: NextRequest) {
       template: {
         name: templateName,
         language: { code: langCode },
-        components:
-          params.length > 0
-            ? [{ type: 'body', parameters: params.map((text) => ({ type: 'text', text })) }]
-            : [],
+        components,
       },
     };
     let result: any;

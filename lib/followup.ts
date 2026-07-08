@@ -89,10 +89,22 @@ export function extractProductModel(text: string): string | null {
  * Returns empty string if name is null/empty — caller falls back to
  * a no-name greeting.
  */
+const NAME_JUNK = /(pinga|verga|poll[ao]n?|put[ao]|mierd|cabr[oó]n|singa[od]|co[ñn]o|cojon|chocha|papay[ao]|joder|carajo|fuck|shit|bitch|dick|pussy|penis|sexy?|xxx|porn)/i;
+
 export function formatFirstName(name: string | null | undefined): string {
   if (!name) return '';
   const first = name.trim().split(/\s+/)[0] ?? '';
   if (!first) return '';
+  // Junk screen: WhatsApp display names are user-set and can be handles,
+  // emojis, numbers or vulgar jokes ("elpanamopinga"). If the first token
+  // doesn't look like a real given name, return '' so callers use the
+  // generic salutation instead of echoing it at the customer.
+  if (!/^[\p{L}'’-]+$/u.test(first)) return '';
+  if (first.length < 2 || first.length > 16) return '';
+  if (NAME_JUNK.test(first)) return '';
+  // Articles/titles as first token ("El Diablo", "Sr Gómez") read wrong in a
+  // greeting — fall back to the generic salutation.
+  if (/^(el|la|los|las|the|de|del|sr|sra|mr|mrs|dr)$/i.test(first)) return '';
   // Title-case: first char upper, rest lower.
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
