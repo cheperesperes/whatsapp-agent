@@ -2398,11 +2398,33 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
   const [sendResult, setSendResult] = useState<SendOfferResult | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
 
+  // Approved Meta templates → dropdown. Free-typing a template name was the
+  // #1 send failure (the old default 'oiikon_offer_v1' was deleted in Meta and
+  // any typo = template-not-found). Picking from the live APPROVED list makes
+  // that failure class impossible.
+  const [approvedTemplates, setApprovedTemplates] = useState<
+    Array<{ name: string; languages: string[] }>
+  >([]);
+
   useEffect(() => {
     fetch('/api/marketing/coupons', { cache: 'no-store' })
       .then((r) => r.json())
       .then((d) => setCoupons(d.coupons ?? []))
       .catch(() => setCoupons([]));
+    fetch('/api/marketing/templates', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        const byName = new Map<string, Set<string>>();
+        for (const t of (d.templates ?? []) as Array<{ name: string; language: string; status?: string }>) {
+          if ((t.status ?? '').toUpperCase() !== 'APPROVED') continue;
+          if (!byName.has(t.name)) byName.set(t.name, new Set());
+          byName.get(t.name)!.add(t.language);
+        }
+        setApprovedTemplates(
+          [...byName.entries()].map(([name, langs]) => ({ name, languages: [...langs] })),
+        );
+      })
+      .catch(() => setApprovedTemplates([]));
   }, []);
 
   // Pre-fill the coupon chosen for the 🏷️ Oferta social post so the operator
@@ -2477,14 +2499,33 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
             <label className="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">
               Plantilla Meta (aprobada)
             </label>
-            <input
-              type="text"
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-              className="w-full text-sm bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-200 font-mono"
-              placeholder="nombre exacto de la plantilla APROBADA en Meta"
-            />
-            <p className="text-[10px] text-gray-600 mt-1">Debe existir en Meta Business Manager con status APPROVED.</p>
+            {approvedTemplates.length > 0 ? (
+              <select
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                className="w-full text-sm bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-200 font-mono"
+              >
+                <option value="">— elegir plantilla aprobada —</option>
+                {approvedTemplates.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.name} · {t.languages.join(' + ')}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                className="w-full text-sm bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-200 font-mono"
+                placeholder="nombre exacto de la plantilla APROBADA en Meta"
+              />
+            )}
+            <p className="text-[10px] text-gray-600 mt-1">
+              {approvedTemplates.length > 0
+                ? `${approvedTemplates.length} plantillas APROBADAS en Meta — solo se listan las que pueden enviarse.`
+                : 'Debe existir en Meta Business Manager con status APPROVED.'}
+            </p>
           </div>
           <div>
             <label className="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">
