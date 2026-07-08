@@ -2388,6 +2388,8 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
   const [templateName, setTemplateName] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [audience, setAudience] = useState<'all' | 'es' | 'en'>('all');
+  // Public https image for IMAGE-header templates (required by Meta on send).
+  const [headerImageUrl, setHeaderImageUrl] = useState('');
   // When ON, re-send even to leads who already got an offer in the last 24h
   // (sends includeRecentlyMessaged=true → server skips the 24h dedupe). OFF by
   // default so a normal blast still can't double-message today's batch.
@@ -2450,6 +2452,7 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
         couponCode: couponCode || undefined,
         audience,
         includeRecentlyMessaged,
+        headerImageUrl: headerImageUrl.trim() || undefined,
         dryRun: true,
       }),
     });
@@ -2475,6 +2478,7 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
         couponCode: couponCode || undefined,
         audience,
         includeRecentlyMessaged,
+        headerImageUrl: headerImageUrl.trim() || undefined,
       }),
     });
     const data = await res.json();
@@ -2545,6 +2549,22 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
               ))}
             </select>
           </div>
+        </div>
+
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">
+            Imagen del encabezado (opcional — solo plantillas con encabezado de IMAGEN)
+          </label>
+          <input
+            type="url"
+            value={headerImageUrl}
+            onChange={(e) => setHeaderImageUrl(e.target.value)}
+            className="w-full text-sm bg-surface-800 border border-surface-600 rounded px-2 py-1.5 text-gray-200 font-mono"
+            placeholder="https://oiikon.com/images/oferta.jpg"
+          />
+          <p className="text-[10px] text-gray-600 mt-1">
+            Si la plantilla elegida lleva imagen, Meta la EXIGE al enviar — sin URL esos envíos se omiten. La vista previa la muestra.
+          </p>
         </div>
 
         <div>
