@@ -31,6 +31,13 @@ export const runtime = 'nodejs';
 //     deliberate operator change isn't silently reverted.
 //   • Dry-run: pass `?dry=1` to compute the diff and return it without
 //     writing anything.
+//
+// Bundle→base rule (2026-07-09): a kit/bundle that CONTAINS a power station
+// is not sellable when that station is out of stock — the panels are add-ons,
+// the station is the product. Enforced on BOTH sides: the storefront row is
+// flipped out of stock and the corrected value flows into the agent catalog
+// in the same run. One-way only: a station coming back in stock never
+// auto-restores its kits (restore quantity is an operator decision).
 // ─────────────────────────────────────────────────────────────────────────────
 
 // STOCK ONLY — never sync price columns. The storefront `products` and the
@@ -49,6 +56,7 @@ const OOS_ALERT_CAP = 5; // never spam the operator with more than this many OOS
 
 interface WebsiteRow {
   sku: string;
+  name?: string | null;
   sell_price: number | null;
   original_price: number | null;
   discount_percentage: number | null;
@@ -56,6 +64,7 @@ interface WebsiteRow {
   stock_quantity: number | null;
   is_active?: boolean | null;
   is_publicly_visible?: boolean | null;
+  availability_status?: string | null;
 }
 
 interface AgentRow extends WebsiteRow {
@@ -98,6 +107,25 @@ function normalizeNumeric(v: unknown): number | null {
  * so a Postgres numeric → JS number → numeric round-trip doesn't cause a
  * spurious "change" log on every run.
  */
+/**
+ * Bundle→base dependency, derived from the kit's name so new kits are covered
+ * without touching this file: every kit names its station model ("Kit Respaldo
+ * … PECRON E2400LFP + Panel Solar 200W", "PECRON E3600LFP x2 … Kit"). Only
+ * rows that look like kits qualify — expansion batteries ("Batería de
+ * Expansión … para F5000LFP") sell fine to existing owners and must NOT
+ * follow their station out of stock.
+ */
+const STATION_MODEL_RE = /\b([EF]\d{3,4}LFP)\b/i;
+function bundleBaseSku(row: WebsiteRow): string | null {
+  if (!row.sku) return null;
+  const isKit = /^BUNDLE/i.test(row.sku) || /\b(kit|combo|bundle)\b/i.test(row.name ?? '');
+  if (!isKit) return null;
+  const m = STATION_MODEL_RE.exec(row.name ?? '');
+  if (!m) return null;
+  const base = m[1].toUpperCase();
+  return base === row.sku.toUpperCase() ? null : base;
+}
+
 function valuesDiffer(field: SyncedField, oldV: unknown, newV: unknown): boolean {
   if (field === 'in_stock') {
     return !!oldV !== !!newV;
@@ -151,7 +179,7 @@ export async function GET(req: NextRequest) {
   // 5 deactivated products still marked sellable in the agent catalog.)
   const { data: websiteRows, error: webErr } = await supabase
     .from('products')
-    .select('sku, sell_price, original_price, discount_percentage, in_stock, stock_quantity, is_active, is_publicly_visible')
+    .select('sku, name, sell_price, original_price, discount_percentage, in_stock, stock_quantity, is_active, is_publicly_visible, availability_status')
     .not('sku', 'is', null);
 
   if (webErr) {
@@ -175,6 +203,25 @@ export async function GET(req: NextRequest) {
   const agentBySku = new Map<string, AgentRow>();
   for (const r of (agentRows ?? []) as AgentRow[]) {
     if (r.sku) agentBySku.set(r.sku.toUpperCase(), r);
+  }
+
+  // ── Bundle→base rule: kits with an out-of-stock power station ──
+  // Corrected in-memory FIRST so the agent diff below always sees the truth;
+  // the storefront write happens in the apply section (guard + dry-run aware).
+  const bundleFlips: Array<{ sku: string; base: string; baseStatus: string | null }> = [];
+  for (const web of websiteBySku.values()) {
+    // Hidden/inactive rows aren't on the store — nothing to enforce.
+    if (!web.in_stock || web.is_active === false || web.is_publicly_visible === false) continue;
+    const baseKey = bundleBaseSku(web);
+    const base = baseKey ? websiteBySku.get(baseKey) : undefined;
+    if (!base) continue;
+    const baseSellable =
+      !!base.in_stock && base.is_active !== false && base.is_publicly_visible !== false &&
+      (base.stock_quantity == null || base.stock_quantity > 0);
+    if (baseSellable) continue;
+    bundleFlips.push({ sku: web.sku, base: base.sku, baseStatus: base.availability_status ?? null });
+    web.in_stock = false;
+    web.stock_quantity = 0;
   }
 
   // ── Compute diffs (skipping protected rows) ──
@@ -263,6 +310,8 @@ export async function GET(req: NextRequest) {
     stock_flips: flipCount,
     stock_flip_pct: Math.round(flipPct * 10) / 10,
     oos_transitions: oosTransitions.length,
+    bundle_rule_flips: bundleFlips.length,
+    bundle_rule_skus: bundleFlips.map((f) => `${f.sku} (base ${f.base})`),
     missing_in_agent: missingInAgent.length,
     missing_in_agent_skus: missingInAgent.slice(0, 20),
     aborted: false as boolean,
@@ -300,6 +349,42 @@ export async function GET(req: NextRequest) {
       },
       { status: 200 }
     );
+  }
+
+  // ── Bundle rule, storefront side: flip the kit's own products row ──
+  // The kit inherits its base's status (pre_order/coming_soon) so the store
+  // shows WHY it's unavailable, not just that it is.
+  if (bundleFlips.length > 0) {
+    const now = new Date().toISOString();
+    for (const f of bundleFlips) {
+      const status =
+        f.baseStatus && ['pre_order', 'out_of_stock', 'coming_soon', 'very_soon'].includes(f.baseStatus)
+          ? f.baseStatus
+          : 'out_of_stock';
+      const { error: bundleErr } = await supabase
+        .from('products')
+        .update({ in_stock: false, stock_quantity: 0, availability_status: status, updated_at: now })
+        .eq('sku', f.sku);
+      if (bundleErr) {
+        // The in-memory correction already protected the agent catalog this
+        // run; surface the storefront failure so it isn't silent.
+        await supabase.from('app_config').upsert(
+          { key: 'inventory_sync_last_error', value: `bundle-rule ${f.sku}: ${bundleErr.message}`.slice(0, 500) },
+          { onConflict: 'key' }
+        );
+      }
+    }
+    const { error: bundleLogErr } = await supabase.from('inventory_sync_log').insert(
+      bundleFlips.map((f) => ({
+        run_id: runId,
+        sku: f.sku,
+        field: 'in_stock',
+        old_value: 'true',
+        new_value: 'false',
+        source: 'bundle-rule',
+      }))
+    );
+    if (bundleLogErr) console.warn('[sync-inventory] bundle-rule log failed:', bundleLogErr.message);
   }
 
   // ── Apply changes (one upsert per SKU + one log batch) ──
