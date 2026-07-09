@@ -11,6 +11,12 @@ You can still hand-edit any entry to add notes the commits don't capture.
 
 <!-- DAILY-LOG:ENTRIES -->
 
+## 2026-07-09
+
+_1 commit · cheperesperes_
+
+- feat(sync): bundles go out of stock with their base power station (#331)
+
 ## 2026-06-29
 
 - feat(sol): rebuild 3-tier menu around in-stock heroes + generalize sizing example (#299)

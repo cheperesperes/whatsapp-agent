@@ -641,18 +641,24 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
     try {
       const { data: slugRows } = await supabase
         .from('products')
-        .select('sku, slug, availability_status')
+        .select('sku, slug, availability_status, expected_availability_date')
         .in('sku', products.map((p) => p.sku));
       const metaBySku = new Map(
         (slugRows ?? []).map((r) => [
           r.sku as string,
-          { slug: (r.slug as string | null) ?? null, availability: (r.availability_status as string | null) ?? null },
+          {
+            slug: (r.slug as string | null) ?? null,
+            availability: (r.availability_status as string | null) ?? null,
+            expectedDate: (r.expected_availability_date as string | null) ?? null,
+          },
         ])
       );
       for (const p of products) {
         const meta = metaBySku.get(p.sku);
         (p as AgentProduct & { slug?: string | null }).slug = meta?.slug ?? null;
         (p as AgentProduct & { availability_status?: string | null }).availability_status = meta?.availability ?? null;
+        (p as AgentProduct & { expected_availability_date?: string | null }).expected_availability_date =
+          meta?.expectedDate ?? null;
       }
     } catch (err) {
       console.warn('[loadAgentCatalog] slug attach failed:', err instanceof Error ? err.message : err);
@@ -677,6 +683,21 @@ export async function loadAgentCatalog(): Promise<AgentProduct[]> {
 // quote (lead time + freight + deposit). Portable stations (category 'kit') are
 // the stocked consumer line — their OOS stays an honest "agotado, te aviso".
 const SPECIAL_ORDER_CATEGORIES = new Set(['inverter', 'battery', 'sistemas-solares-todo-en-uno']);
+
+// "2026-07-14T00:00:00+00" → "14 de julio". Parses the date PART of the string
+// directly (no Date object) so a UTC-midnight timestamp can never render as the
+// previous day in the server's timezone.
+const SPANISH_MONTHS = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+] as const;
+function formatSpanishDate(isoTimestamp: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoTimestamp);
+  if (!m) return null;
+  const month = SPANISH_MONTHS[Number(m[2]) - 1];
+  if (!month) return null;
+  return `${Number(m[3])} de ${month}`;
+}
 
 export function formatProductCatalogForPrompt(products: AgentProduct[]): string {
   const categoryNames: Record<string, string> = {
@@ -752,14 +773,27 @@ export function formatProductCatalogForPrompt(products: AgentProduct[]): string 
       // data but is intentionally NOT formatted into the prompt.
       const priceParts: string[] = [`SKU ${p.sku}`, `Precio $${effectiveUsa.toFixed(2)} (envío gratis en EE.UU.)`];
 
-      const isPreOrder = (p as AgentProduct & { availability_status?: string | null }).availability_status === 'pre_order';
+      const availability = (p as AgentProduct & { availability_status?: string | null }).availability_status;
+      const isPreOrder = availability === 'pre_order';
+      const isDiscontinued = availability === 'discontinued';
+      // Supplier ETA (products.expected_availability_date) — when the incoming
+      // batch has a real date, Sol may share it as an ESTIMATE; without one she
+      // must not promise any date at all.
+      const expectedDate = (p as AgentProduct & { expected_availability_date?: string | null })
+        .expected_availability_date;
+      const etaText = expectedDate ? formatSpanishDate(expectedDate) : null;
+      const preOrderDateRule = etaText
+        ? ` Fecha estimada de disponibilidad: alrededor del ${etaText} (el lote ya viene en camino; los pedidos se envían en orden de reserva apenas llegue). Preséntala como estimada, no garantizada.`
+        : ' NO prometas fecha exacta — di "se lo enviamos apenas regrese".';
       const oosTag = p.in_stock
         ? ''
-        : isPreOrder
-          ? ' 🛒 PRE-ORDEN — disponible por reserva; se envía apenas regrese al stock. Preséntalo con normalidad y DA el link del producto (el cliente reserva pagando en el checkout seguro; reembolso completo en cualquier momento antes de que se envíe). NO prometas fecha exacta — di "se lo enviamos apenas regrese". NO es "agotado".'
-          : SPECIAL_ORDER_CATEGORIES.has(p.category)
-            ? ' 🔧 POR ENCARGO (no en stock) — puedes asesorarlo y dimensionarlo con normalidad; es un pedido especial que traemos del proveedor. NO des link de pago ni prometas fecha exacta de entrega. Captura la necesidad (carga, ciudad, uso) y escala con [HANDOFF: pedido por encargo — SKU + necesidad] para que el especialista cotice (tiempo + flete) y gestione el anticipo.'
-            : ' ⛔ AGOTADO TEMPORALMENTE — no lo vendas ni des link de pago; informa con honestidad, ofrece la alternativa en stock más cercana y pregunta si quiere que le avisemos cuando regrese';
+        : isDiscontinued
+          ? ' ⛔ DESCONTINUADO — el fabricante dejó de producirlo y NO va a regresar. No lo vendas, no des link de pago y NO ofrezcas avisarle cuando regrese. Si lo piden por nombre, dilo con honestidad y recomienda el modelo equivalente o superior del catálogo (en stock o pre-orden).'
+          : isPreOrder
+            ? ` 🛒 PRE-ORDEN — disponible por reserva; se envía apenas regrese al stock. Preséntalo con normalidad y DA el link del producto (el cliente reserva pagando en el checkout seguro; reembolso completo en cualquier momento antes de que se envíe).${preOrderDateRule} NO es "agotado".`
+            : SPECIAL_ORDER_CATEGORIES.has(p.category)
+              ? ' 🔧 POR ENCARGO (no en stock) — puedes asesorarlo y dimensionarlo con normalidad; es un pedido especial que traemos del proveedor. NO des link de pago ni prometas fecha exacta de entrega. Captura la necesidad (carga, ciudad, uso) y escala con [HANDOFF: pedido por encargo — SKU + necesidad] para que el especialista cotice (tiempo + flete) y gestione el anticipo.'
+              : ' ⛔ AGOTADO TEMPORALMENTE — no lo vendas ni des link de pago; informa con honestidad, ofrece la alternativa en stock más cercana y pregunta si quiere que le avisemos cuando regrese';
       lines.push(`• ${p.name}${specsStr}: ${priceParts.join(' · ')}${oosTag}`);
       // Real storefront link (slug attached in loadAgentCatalog). The pecron-<sku>
       // URL pattern is wrong for most SKUs (e.g. F3000), so Sol MUST use this exact
