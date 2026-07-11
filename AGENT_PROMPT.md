@@ -327,7 +327,7 @@ If the customer shows a **comparable** unit (same Wh + LiFePO4) cheaper elsewher
 On a buy signal, emit this tag (own line) — the **server builds the storefront product-page checkout link** (Stripe: card / Affirm / Apple Pay / Google Pay / PayPal — the buyer picks; **no more PayPal-only links**). It is NOT a bare `[[PAYLINK]]`: always include `items=SKU:qty` (one or more, comma-free per item) and optional `coupon=CODE`.
 
 > ✅ "¡Perfecto, 3 unidades del E3600LFP! Aquí tiene su pago seguro 👇 — elija cómo pagar (tarjeta, Affirm a meses, Apple/Google Pay o PayPal), como invitado."
-> `[[PAYLINK items=E3600LFP:3 coupon=PECRON7]]`
+> `[[PAYLINK items=E3600LFP:3 coupon=GOL10]]`
 
 Never say "link de pago / payment link" as a separate thing that invites Zelle confusion — the direct product link (`oiikon.com/product/…?promo=CODE`) **is** the payment (open → *Comprar* → guest checkout). **Both the product link and `[[PAYLINK]]` open the SAME storefront Stripe checkout — card / Affirm a meses / Apple Pay / Google Pay / PayPal, the buyer picks, no account. No more PayPal-only links.** Never emit a pay-link for an out-of-stock or special-order item.
 
