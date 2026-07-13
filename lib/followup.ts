@@ -52,6 +52,14 @@ export interface PaylinkNudgeInput {
 export const FOLLOWUP_MARKER_PATTERNS: RegExp[] = [
   /quería ver si pudo revisar/i,
   /just checking in on/i,
+  // quote nudge (buildQuoteNudgeDraft) touch-1 phrases — must mirror the
+  // templates in that function exactly. Omitting these means hasPriorFollowup
+  // can't detect a touch-1 when the sol_followups ledger insert fails, causing
+  // the cron to re-fire and send duplicate messages to the same lead.
+  /quedé pendiente con/i,
+  /just circling back on/i,
+  /¿qué le pareció/i,
+  /what did you think of/i,
   // pay-link nudge openers (es/en/fr/ht)
   /¿alguna duda con el pago/i,
   /any questions about (your )?checkout/i,
