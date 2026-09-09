@@ -57,8 +57,13 @@ async function metaGet(path: string, token: string): Promise<unknown> {
 
 export async function fetchAdSpend(): Promise<AdSpend> {
   const accountId = process.env.META_AD_ACCOUNT_ID;
-  const token = process.env.META_PAGE_ACCESS_TOKEN;
-  if (!accountId || !token) throw new Error('META_AD_ACCOUNT_ID or META_PAGE_ACCESS_TOKEN not set');
+  // Ads Insights needs a token with `ads_read` (System User / user token).
+  // META_PAGE_ACCESS_TOKEN is a PAGE token (page ops only, no ads scope) —
+  // reusing it here is what produced "(#100) Unsupported get request". Prefer a
+  // dedicated META_ADS_ACCESS_TOKEN; fall back to the page token so nothing
+  // regresses before the new var is set in Vercel.
+  const token = process.env.META_ADS_ACCESS_TOKEN ?? process.env.META_PAGE_ACCESS_TOKEN;
+  if (!accountId || !token) throw new Error('META_AD_ACCOUNT_ID or META_ADS_ACCESS_TOKEN (ads_read) not set');
 
   const presets = ['today', 'yesterday', 'this_week_sun_today', 'this_month'] as const;
 
@@ -164,8 +169,13 @@ export async function fetchPageEngagement(days = 30): Promise<PageEngagement> {
 
 export async function fetchCampaignBreakdown(): Promise<CampaignSpend[]> {
   const accountId = process.env.META_AD_ACCOUNT_ID;
-  const token = process.env.META_PAGE_ACCESS_TOKEN;
-  if (!accountId || !token) throw new Error('META_AD_ACCOUNT_ID or META_PAGE_ACCESS_TOKEN not set');
+  // Ads Insights needs a token with `ads_read` (System User / user token).
+  // META_PAGE_ACCESS_TOKEN is a PAGE token (page ops only, no ads scope) —
+  // reusing it here is what produced "(#100) Unsupported get request". Prefer a
+  // dedicated META_ADS_ACCESS_TOKEN; fall back to the page token so nothing
+  // regresses before the new var is set in Vercel.
+  const token = process.env.META_ADS_ACCESS_TOKEN ?? process.env.META_PAGE_ACCESS_TOKEN;
+  if (!accountId || !token) throw new Error('META_AD_ACCOUNT_ID or META_ADS_ACCESS_TOKEN (ads_read) not set');
 
   const fields = [
     'name', 'status', 'daily_budget', 'lifetime_budget',
