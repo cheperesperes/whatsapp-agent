@@ -87,6 +87,10 @@
       "schedule": "0 12 * * *"
     },
     {
+      "path": "/api/cron/marketing-daily?language=en&media=image",
+      "schedule": "0 13 * * 2,5"
+    },
+    {
       "path": "/api/cron/finalize-videos",
       "schedule": "*/5 * * * *"
     },

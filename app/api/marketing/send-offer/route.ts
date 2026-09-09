@@ -13,6 +13,8 @@
  *     templateName: string;          // Meta-approved template, e.g. 'oiikon_offer_v1'
  *     couponCode: string;            // looked up in discount_codes
  *     audience?: 'all' | 'es' | 'en';
+ *     segment?: 'all' | 'warm' | 'hot';  // by customer_profiles.reading.intent_stage
+ *     excludeBuyers?: boolean;           // drop phones with a PAID order
  *     dryRun?: boolean;
  *     testPhone?: string;            // single-phone delivery test (bypasses audience)
  *     testPhones?: string[];         // multi-phone delivery test for staged blasts
@@ -137,6 +139,16 @@ export async function POST(req: NextRequest) {
     templateName,
     couponCode,
     audience = 'all',
+    // Segment within the audience by the lead's Haiku-extracted reading:
+    //   'all'  → everyone (legacy blast)
+    //   'warm' → reading.intent_stage ∈ {evaluando, listo_comprar}
+    //   'hot'  → reading.intent_stage = listo_comprar
+    // Contacts with NO profile reading are excluded from warm/hot — unknown is
+    // not warm. Sized 2026-09-08: warm ES ≈ 111, warm EN ≈ 32 — under the
+    // unverified-WABA 250/24h cap, unlike an `all` blast (548) that can't deliver.
+    segment = 'all',
+    // Drop anyone who already has a PAID order — don't pitch buyers a welcome coupon.
+    excludeBuyers = false,
     dryRun = false,
     // testPhone bypasses audience resolution and sends to one phone.
     // testPhones (array) bypasses audience and sends to N phones — used
@@ -160,6 +172,15 @@ export async function POST(req: NextRequest) {
     typeof headerImageUrl === 'string' && /^https:\/\//.test(headerImageUrl.trim())
       ? headerImageUrl.trim()
       : null;
+  // Audit label so outbound_offer_runs shows WHICH slice was targeted
+  // (e.g. "es/warm-nobuyers"), not just the language bucket.
+  const audienceLabel =
+    segment !== 'all' || excludeBuyers
+      ? `${audience}/${segment}${excludeBuyers ? '-nobuyers' : ''}`
+      : audience;
+  // phone → reading.intent_stage, populated in the audience branch; used for
+  // the segment filter and the dry-run breakdownByIntent.
+  const stageByPhone = new Map<string, string>();
   if (!templateName) {
     await logRun(sb, { outcome: 'rejected_no_template', http_status: 400, error: 'templateName missing' });
     return NextResponse.json(
@@ -210,9 +231,9 @@ export async function POST(req: NextRequest) {
     //    bought but never got a profile row. Merge on a canonical US-E.164
     //    phone so each person appears exactly once.
     const [profilesRes, convRes, ordersRes] = await Promise.all([
-      sb.from('customer_profiles').select('phone_number, display_name, language'),
+      sb.from('customer_profiles').select('phone_number, display_name, language, reading'),
       sb.from('conversations').select('phone_number, customer_name, opted_out'),
-      sb.from('orders').select('customer_phone, customer_name'),
+      sb.from('orders').select('customer_phone, customer_name, payment_status'),
     ]);
     if (profilesRes.error) {
       return NextResponse.json({ error: `Lead fetch error: ${profilesRes.error.message}` }, { status: 500 });
@@ -259,9 +280,35 @@ export async function POST(req: NextRequest) {
     if (audience === 'es') recipList = recipList.filter((r) => r.language === 'es');
     else if (audience === 'en') recipList = recipList.filter((r) => r.language === 'en');
 
+    // Segment by the profile reading (see body docs). A contact that only
+    // exists in conversations/orders has no reading → excluded from warm/hot.
+    for (const p of profilesRes.data || []) {
+      const e = toE164US((p as any).phone_number);
+      const stage = (p as any).reading?.intent_stage;
+      if (e && typeof stage === 'string') stageByPhone.set(e, stage);
+    }
+    const SEGMENT_STAGES: Record<string, Set<string>> = {
+      warm: new Set(['evaluando', 'listo_comprar']),
+      hot: new Set(['listo_comprar']),
+    };
+    const wantedStages = SEGMENT_STAGES[String(segment)] ?? null;
+    if (wantedStages) {
+      recipList = recipList.filter((r) => wantedStages.has(stageByPhone.get(r.phone) ?? ''));
+    }
+    if (excludeBuyers) {
+      const buyers = new Set<string>();
+      for (const o of ordersRes.data || []) {
+        if ((o as any).payment_status === 'paid') {
+          const e = toE164US((o as any).customer_phone);
+          if (e) buyers.add(e);
+        }
+      }
+      recipList = recipList.filter((r) => !buyers.has(r.phone));
+    }
+
     if (recipList.length === 0) {
-      await logRun(sb, { template_name: templateName, coupon_code: couponCode ?? null, audience, outcome: 'rejected_no_recipients', http_status: 400, error: 'No valid US recipients matched audience filter' });
-      return NextResponse.json({ error: 'No valid US recipients matched audience filter.' }, { status: 400 });
+      await logRun(sb, { template_name: templateName, coupon_code: couponCode ?? null, audience: audienceLabel, outcome: 'rejected_no_recipients', http_status: 400, error: 'No valid US recipients matched audience/segment filter' });
+      return NextResponse.json({ error: 'No valid US recipients matched the audience/segment filter.' }, { status: 400 });
     }
 
     // Dedupe: drop leads who already received an OUTBOUND_OFFER in the last
@@ -434,7 +481,7 @@ export async function POST(req: NextRequest) {
       previewDebug = { error: e?.message ?? String(e) };
     }
 
-    await logRun(sb, { template_name: templateName, coupon_code: coupon?.code ?? null, audience, dry_run: true, outcome: 'dry_run', total_count: recipList.length, skipped_count: skippedRecentlyMessaged });
+    await logRun(sb, { template_name: templateName, coupon_code: coupon?.code ?? null, audience: audienceLabel, dry_run: true, outcome: 'dry_run', total_count: recipList.length, skipped_count: skippedRecentlyMessaged });
     return NextResponse.json({
       dryRun: true,
       recipientCount: recipList.length,
@@ -443,6 +490,15 @@ export async function POST(req: NextRequest) {
         es: recipList.filter((r) => r.language === 'es').length,
         en: recipList.filter((r) => r.language === 'en').length,
       },
+      segment,
+      excludeBuyers,
+      // How many of the planned recipients sit at each intent stage — lets the
+      // operator see the slice is really "warm" before sending.
+      breakdownByIntent: recipList.reduce<Record<string, number>>((acc, r) => {
+        const s = stageByPhone.get(r.phone) ?? 'unknown';
+        acc[s] = (acc[s] ?? 0) + 1;
+        return acc;
+      }, {}),
       coupon: coupon
         ? {
             code: coupon.code,
@@ -647,13 +703,13 @@ export async function POST(req: NextRequest) {
   // inline so the operator gets exact per-recipient results.
   const BACKGROUND_THRESHOLD = 20;
   if (recipList.length > BACKGROUND_THRESHOLD) {
-    await logRun(sb, { template_name: templateName, coupon_code: coupon?.code ?? null, audience, outcome: 'queued_background', http_status: 202, total_count: recipList.length, skipped_count: skippedRecentlyMessaged });
+    await logRun(sb, { template_name: templateName, coupon_code: coupon?.code ?? null, audience: audienceLabel, outcome: 'queued_background', http_status: 202, total_count: recipList.length, skipped_count: skippedRecentlyMessaged });
     waitUntil(
       runBatch(recipList).then((results) =>
         logRun(sb, {
           template_name: templateName,
           coupon_code: coupon?.code ?? null,
-          audience,
+          audience: audienceLabel,
           outcome: 'background_complete',
           sent_count: results.filter((r: any) => r.success).length,
           total_count: results.length,
@@ -687,7 +743,7 @@ export async function POST(req: NextRequest) {
   await logRun(sb, {
     template_name: templateName,
     coupon_code: coupon?.code ?? null,
-    audience,
+    audience: audienceLabel,
     outcome: 'complete',
     http_status: sentCount === totalCount ? 200 : sentCount > 0 ? 207 : 502,
     sent_count: sentCount,
