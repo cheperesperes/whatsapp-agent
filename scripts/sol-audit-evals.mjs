@@ -117,5 +117,23 @@ console.log('\n[MKT] marketing-daily fixes');
   check('ad-spend route accepts META_ADS_ACCESS_TOKEN', /META_ADS_ACCESS_TOKEN/.test(spend));
 }
 
+// ── [SEG] WhatsApp offer segmentation + EN cron (Tier 2, 2026-09-08) ──
+console.log('\n[SEG] send-offer segmentation + EN cron');
+{
+  const so = read('app/api/marketing/send-offer/route.ts');
+  check('send-offer accepts segment + excludeBuyers', /segment = 'all'/.test(so) && /excludeBuyers = false/.test(so));
+  check('warm = evaluando+listo_comprar, hot = listo_comprar', /warm: new Set\(\['evaluando', 'listo_comprar'\]\)/.test(so) && /hot: new Set\(\['listo_comprar'\]\)/.test(so));
+  check('unknown stage is EXCLUDED from warm/hot (not defaulted in)', /wantedStages\.has\(stageByPhone\.get\(r\.phone\) \?\? ''\)/.test(so));
+  check('excludeBuyers drops PAID orders only', /payment_status === 'paid'/.test(so));
+  check('runs are logged with the segment label', /audience: audienceLabel, dry_run: true/.test(so));
+  check('dry-run exposes breakdownByIntent', /breakdownByIntent/.test(so));
+  check('opt-out + 24h dedupe still applied after segmenting', /for \(const e of optedOut\) byPhone\.delete\(e\)/.test(so) && /skippedRecentlyMessaged = before - recipList\.length/.test(so));
+  const dash = read('app/dashboard/marketing/page.tsx');
+  check('dashboard sends segment + excludeBuyers on BOTH dry-run and send', (dash.match(/segment,\s*\n\s*excludeBuyers,/g) || []).length === 2);
+  check('dashboard defaults to warm + exclude buyers', /useState<'all' \| 'warm' \| 'hot'>\('warm'\)/.test(dash) && /useState\(true\);\s*$/m.test(dash.split('setExcludeBuyers] = ')[1] || ''));
+  const vj = read('vercel.json');
+  check('EN marketing cron scheduled (language=en, image-only, 2x/week)', /"path": "\/api\/cron\/marketing-daily\?language=en&media=image"/.test(vj) && /"0 13 \* \* 2,5"/.test(vj));
+}
+
 console.log(`\n${fail === 0 ? '✅ ALL PASS' : '❌ FAILURES'} — ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

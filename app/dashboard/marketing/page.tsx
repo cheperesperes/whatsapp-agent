@@ -2388,6 +2388,11 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
   const [templateName, setTemplateName] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [audience, setAudience] = useState<'all' | 'es' | 'en'>('all');
+  // Segment by the lead's extracted intent stage. Defaults to WARM + exclude
+  // buyers so the safe path is the default: an `all` blast (548) exceeds the
+  // unverified number's 250/24h cap and re-pitches people who already bought.
+  const [segment, setSegment] = useState<'all' | 'warm' | 'hot'>('warm');
+  const [excludeBuyers, setExcludeBuyers] = useState(true);
   // Public https image for IMAGE-header templates (required by Meta on send).
   const [headerImageUrl, setHeaderImageUrl] = useState('');
   // When ON, re-send even to leads who already got an offer in the last 24h
@@ -2451,6 +2456,8 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
         templateName: templateName.trim(),
         couponCode: couponCode || undefined,
         audience,
+        segment,
+        excludeBuyers,
         includeRecentlyMessaged,
         headerImageUrl: headerImageUrl.trim() || undefined,
         dryRun: true,
@@ -2477,6 +2484,8 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
         templateName: templateName.trim(),
         couponCode: couponCode || undefined,
         audience,
+        segment,
+        excludeBuyers,
         includeRecentlyMessaged,
         headerImageUrl: headerImageUrl.trim() || undefined,
       }),
@@ -2583,6 +2592,36 @@ function SendOfferPanel({ initialCouponCode = '' }: { initialCouponCode?: string
               </label>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="block text-[11px] uppercase tracking-wider text-gray-500 mb-1">Segmento</label>
+          <div className="flex flex-wrap gap-2">
+            {(['warm', 'hot', 'all'] as const).map((s) => (
+              <label key={s} className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+                <input
+                  type="radio"
+                  name="segment"
+                  value={s}
+                  checked={segment === s}
+                  onChange={() => setSegment(s)}
+                />
+                {s === 'warm' ? '🔥 Tibios (evaluando + listos)' : s === 'hot' ? '🔥🔥 Listos para comprar' : 'Todos (sin segmentar)'}
+              </label>
+            ))}
+          </div>
+          <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mt-2">
+            <input
+              type="checkbox"
+              checked={excludeBuyers}
+              onChange={(e) => setExcludeBuyers(e.target.checked)}
+            />
+            Excluir a quienes ya compraron
+          </label>
+          <p className="text-[11px] text-gray-500 mt-1">
+            Segmenta por la etapa de intención detectada en el chat. Un envío a &quot;Todos&quot; (~548) supera el límite
+            de 250/día del número sin verificar — la vista previa muestra el conteo real antes de enviar.
+          </p>
         </div>
 
         <div>
