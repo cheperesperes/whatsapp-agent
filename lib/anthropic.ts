@@ -241,7 +241,14 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
   // replace the entire response with a deterministic USA-only template
   // in the detected language. Logs the regression so we can monitor it
   // and tighten the prompt further if it keeps happening.
-  const CUBA_LEAK_RE = /\b(cuba|cubano|cubana|la isla)\b/i;
+  // Broadened backstop. The old regex only caught "cuba/cubano/cubana/la isla",
+  // so a reply naming "La Habana" or a province slipped through. This runs on
+  // SOL'S OWN OUTPUT (not the customer's text), so we only add tokens that are
+  // unambiguously Cuba-context when Sol writes them in a US solar-sales reply —
+  // keeping the false-positive risk (a legit US reply wrongly replaced) low.
+  // Diacritics optional (á→a) to match un-accented model output.
+  const CUBA_LEAK_RE =
+    /\b(cuba|cubano|cubana|cubanos|cubanas|la\s+isla|(la\s+)?habana|holgu[ií]n|camag[üu]ey|matanzas|cienfuegos|guant[aá]namo|santa\s+clara|pinar\s+del\s+r[ií]o|provincia\s+de)\b/i;
   if (CUBA_LEAK_RE.test(customerMessage)) {
     console.warn('[sol] cuba leak detected in reply, replacing with USA-only template. Original (truncated):', customerMessage.slice(0, 200));
     const looksEnglish = /\b(I|the|you|your|we|ship|address|states|please)\b/i.test(customerMessage);

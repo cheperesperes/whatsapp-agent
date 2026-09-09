@@ -119,8 +119,12 @@ const SKIP_META_SIG_VERIFY = process.env.SKIP_META_SIGNATURE === '1' && !IS_PROD
 // customer's actual language rather than guessing from the keyword's
 // character set (Spanish "BAJA" / "CANCELAR" / "SALIR" are all-ASCII and
 // were misclassified as English by a regex that just checked for accents).
+// NOTE: 'para' was removed — it's an extremely common Spanish word ("for") and a
+// one-word reply like "para" (as in "para [mi casa]") was silently unsubscribing
+// real leads. Intentional Spanish opt-out is still covered by "darme de baja" /
+// "no mas mensajes" in the CONTAINS list and by "baja" / "cancelar" here.
 const OPT_OUT_KEYWORDS_EXACT_ES = new Set([
-  'baja', 'cancelar', 'desuscribir', 'salir', 'para',
+  'baja', 'cancelar', 'desuscribir', 'salir',
 ]);
 const OPT_OUT_KEYWORDS_EXACT_EN = new Set([
   'stop', 'cancel', 'unsubscribe', 'quit', 'optout',
