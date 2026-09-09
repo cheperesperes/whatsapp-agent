@@ -99,6 +99,11 @@ export async function generateMarketingContent(
   // best-performing posts (so it emulates what actually engaged our audience).
   const recent = options?.recent ?? [];
   const top = options?.top ?? [];
+  // Deterministic anti-repeat: if the most recent post opened with a question
+  // (engagement format), force a conversion-path format today. Sep 3–8 2026 the
+  // model produced five paraphrases of the same "¿qué encenderías…?" question in
+  // a row — the prompt can't be trusted to self-diversify, so we gate it here.
+  const lastWasEngagement = /[¿?]/.test(recent[0]?.hook ?? '');
   const learningBlock = recent.length
     ? `\n═══════════════════════════════════════════════════════════════════════════════
 APRENDE DE NUESTRO HISTORIAL
@@ -130,8 +135,12 @@ ENFOQUE DE HOY — ENGAGEMENT PRIMERO (mezcla 70/30)
 ═══════════════════════════════════════════════════════════════════════════════
 La MAYORÍA de los posts deben CONSTRUIR COMUNIDAD (comentarios, compartidos,
 guardados), NO vender duro. Solo ~30% son ofertas. Elige UN formato para hoy,
-DISTINTO al de los posts recientes de arriba:
-• Pregunta / encuesta — pide opinión ("¿Qué mantendrías encendido en un apagón de 3 días?")
+DISTINTO al de los posts recientes de arriba:${lastWasEngagement ? `
+⛔ EL POST MÁS RECIENTE FUE DE ENGAGEMENT (abrió con una pregunta). HOY NO puede ser
+otra pregunta ni encuesta: elige Explicación simple, Checklist, Mito vs realidad,
+Historia u Oferta, e incluye una VÍA DE CONVERSIÓN (producto + precio exacto + CTA
+claro). PROHIBIDO abrir con "¿".` : ''}
+• Pregunta / encuesta — pide opinión sobre una situación concreta del hogar (NUNCA la misma pregunta ni el mismo escenario que un post reciente)
 • Mito vs realidad — desmonta una creencia común sobre baterías / energía solar
 • Checklist — p.ej. "qué encender primero cuando se va la luz"
 • Explicación simple — cómo funciona o cómo dimensionar, en lenguaje llano
@@ -339,7 +348,7 @@ ${language === 'en' ? `
 Genera el siguiente contenido de marketing en formato JSON válido. ${language === 'en' ? 'ALL fields in ENGLISH per the override above.' : language === 'bilingual' ? 'BILINGÜE per the override above.' : 'TODO en español.'} Sin explicaciones, solo el JSON:
 
 {
-  "daily_theme": "frase corta que capture el ÁNGULO de hoy (engagement u oferta), distinta a las recientes. Ej engagement: '¿Qué encenderías primero en un apagón?', 'Mito: el litio es peligroso', 'Checklist para temporada de huracanes'. Ej oferta: 'Tu casa siempre con luz'",
+  "daily_theme": "frase corta que capture el ÁNGULO de hoy (engagement u oferta), distinta a las recientes. Ej engagement: 'Mito: el litio es peligroso', 'Checklist para temporada de huracanes', 'Así se dimensiona en 3 pasos'. Ej oferta: 'Tu casa siempre con luz'",
   "product_sku": "${product.sku}",
   "facebook_post": "publicación de Facebook de 150-200 palabras, con emojis, en el FORMATO elegido arriba y con un gancho distinto a los posts recientes. Si es ENGAGEMENT: abre con el gancho, aporta valor o haz una pregunta concreta, e invita a comentar/compartir — NO lideres con precio (puedes omitirlo). Si es OFERTA: problema → solución → precio (SOLO el de PRODUCTO DEL DÍA) → CTA. Incluye el link https://oiikon.com/product/${product.sku.toLowerCase()} y cierra con una llamada a la acción acorde al formato",
   "instagram_caption": "caption de Instagram de 80-120 palabras en el MISMO formato que el facebook_post (engagement vs oferta). Si es engagement, cierra con una pregunta que invite a comentar. 15-20 hashtags relevantes al final (#HurricanePrep #SolarGenerator #PortablePower #BlackoutReady #PECRON #HispanosUSA #LatinosUSA #SolarPortatil #EstacionSolar #RespaldoDeEnergia #EnergyBackup #RVLife #OffGrid #EmergencyPower #OiikonSolar #EnergiaLimpia #SolarPower #FloridaPrep)",
@@ -377,7 +386,7 @@ Genera el siguiente contenido de marketing en formato JSON válido. ${language =
     );
   }
 
-  const content = JSON.parse(jsonMatch[1]) as GeneratedContent;
+  const content = await parseGeneratedJson(jsonMatch[1], anthropic);
 
   // Enforce Google Ads character limits
   content.google_ad_headlines = content.google_ad_headlines.map((h) => h.slice(0, 30));
@@ -392,6 +401,47 @@ Genera el siguiente contenido de marketing en formato JSON válido. ${language =
   content.youtube_script = stripLegalDisclaimer(content.youtube_script);
 
   return content;
+}
+
+/**
+ * Parse the model's JSON, repairing ONCE on failure. 9 of 133 daily runs died on
+ * `Expected ',' or '}' after property value` — an unescaped double quote inside
+ * Spanish copy — and the whole campaign failed. A cheap Haiku pass re-emits
+ * strictly valid JSON with the SAME content, so the (expensive) Sonnet generation
+ * is kept instead of thrown away. Throws the ORIGINAL error if repair also fails.
+ */
+async function parseGeneratedJson(raw: string, anthropic: Anthropic): Promise<GeneratedContent> {
+  try {
+    return JSON.parse(raw) as GeneratedContent;
+  } catch (firstErr) {
+    console.warn(
+      '[marketing/content] JSON parse failed — attempting one repair pass:',
+      firstErr instanceof Error ? firstErr.message : firstErr
+    );
+    try {
+      const fix = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'user',
+            content:
+              'The text below is meant to be ONE JSON object but is malformed (usually an unescaped double quote inside a string value). ' +
+              'Return ONLY the corrected, strictly valid JSON with IDENTICAL content — no commentary, no markdown fences.\n\n' +
+              raw,
+          },
+        ],
+      });
+      const fixed = fix.content[0]?.type === 'text' ? fix.content[0].text : '';
+      const m = fixed.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? fixed.match(/(\{[\s\S]*\})/);
+      if (!m) throw firstErr;
+      const parsed = JSON.parse(m[1]) as GeneratedContent;
+      console.log('[marketing/content] JSON repair succeeded');
+      return parsed;
+    } catch {
+      throw firstErr;
+    }
+  }
 }
 
 const WHATSAPP_LINK = 'https://wa.me/15616988477';

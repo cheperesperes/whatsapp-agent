@@ -17,12 +17,12 @@ export async function GET(req: NextRequest) {
   }
   const hasAdAccount =
     Boolean(process.env.META_AD_ACCOUNT_ID) &&
-    Boolean(process.env.META_PAGE_ACCESS_TOKEN);
+    Boolean(process.env.META_ADS_ACCESS_TOKEN ?? process.env.META_PAGE_ACCESS_TOKEN);
 
   if (!hasAdAccount) {
     return NextResponse.json({
       configured: false,
-      message: 'Set META_AD_ACCOUNT_ID and META_PAGE_ACCESS_TOKEN (with ads_read scope)',
+      message: 'Set META_AD_ACCOUNT_ID and META_ADS_ACCESS_TOKEN (System User token with ads_read)',
     });
   }
 

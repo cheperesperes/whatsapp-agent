@@ -76,7 +76,28 @@ export async function consolidateMemory(): Promise<void> {
     loadMemory(),
   ]);
 
-  if (recentPerf.length === 0 && !existingMemory) return;
+  // Bootstrap from HISTORY when there's no performance data yet. The old early
+  // return kept this table at 0 rows across 133 campaigns because
+  // marketing_performance was never populated — so product_rotation (the
+  // anti-repeat signal) never existed either. Without perf we can't score
+  // themes, but we CAN record recent SKUs so tomorrow's prompt avoids repeats.
+  if (recentPerf.length === 0) {
+    if (recentCampaigns.length === 0 && !existingMemory) return;
+    const recentSkusOnly = recentCampaigns
+      .filter((c) => c.product_sku)
+      .map((c) => c.product_sku as string)
+      .slice(0, 7);
+    await saveMemory({
+      top_themes: existingMemory?.top_themes ?? [],
+      weak_themes: existingMemory?.weak_themes ?? [],
+      best_days: existingMemory?.best_days ?? [],
+      style_notes: existingMemory?.style_notes ?? '',
+      group_insights: existingMemory?.group_insights ?? '',
+      product_rotation: recentSkusOnly.length ? recentSkusOnly : (existingMemory?.product_rotation ?? []),
+      updated_at: new Date().toISOString(),
+    });
+    return;
+  }
 
   // Build performance summary for Claude
   const perfLines: string[] = [];
