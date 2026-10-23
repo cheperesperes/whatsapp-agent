@@ -24,6 +24,8 @@ export interface FollowupInput {
   customerName: string | null;
   lastAssistantContent: string;
   language: 'es' | 'en';
+  /** Rotates the copy so consecutive leads don't read identical. Any int. */
+  variant?: number;
 }
 
 // Pay-link nudge supports the four languages Sol speaks (es/en/fr/ht).
@@ -117,20 +119,34 @@ export function buildFollowupDraft(input: FollowupInput): string {
   const { customerName, lastAssistantContent, language } = input;
   const model = extractProductModel(lastAssistantContent);
   const first = formatFirstName(customerName);
+  // 5 variants, picked per conversation: the old single template opened 261
+  // follow-ups the same way across 167 chats ("quería ver si pudo revisar…").
+  // Short, one idea, emoji only sometimes — like a person texting.
+  // Dedup no longer depends on this wording: both crons check the
+  // sol_followups ledger (legacy text markers still catch old messages).
+  const v = Math.abs(input.variant ?? 0) % 5;
 
   if (language === 'en') {
-    const greeting = first ? `Hi ${first}, ` : 'Hi, ';
-    const subject = model
-      ? `the ${model} I shared yesterday`
-      : 'what I shared yesterday';
-    return `${greeting}just checking in on ${subject}. Any questions I can clear up? No pressure — happy to help whenever you're ready. 😊`;
+    const g = first ? `Hi ${first}, ` : 'Hi, ';
+    const what = model ? `the ${model}` : 'the unit we looked at';
+    return [
+      `${g}did you get a chance to think it over? If anything about ${what} is unclear, just ask.`,
+      `${g}how's it going? We talked about ${what} yesterday — happy to pick it up whenever you like.`,
+      `${g}just here in case a question came up about ${what}. 😊`,
+      `${g}anything holding you back on ${what}? Often it's one quick question.`,
+      `${g}want me to sum up ${what} in two lines? Happy to.`,
+    ][v];
   }
 
-  const greeting = first ? `Hola ${first}, ` : 'Hola, ';
-  const subject = model
-    ? `el ${model} que le recomendé`
-    : 'lo que le compartí';
-  return `${greeting}quería ver si pudo revisar ${subject}. ¿Alguna duda que le pueda aclarar? Sin compromiso — aquí estoy cuando guste. 😊`;
+  const g = first ? `Hola ${first}, ` : 'Hola, ';
+  const what = model ? `el ${model}` : 'el equipo que vimos';
+  return [
+    `${g}¿pudo pensarlo? Si le quedó alguna duda con ${what}, me dice y se la aclaro.`,
+    `${g}¿cómo va todo? Ayer hablamos de ${what} — cuando quiera seguimos.`,
+    `${g}paso por aquí por si le surgió alguna pregunta sobre ${what}. 😊`,
+    `${g}¿algo que le frene con ${what}? A veces es solo una duda rápida.`,
+    `${g}¿quiere que le resuma ${what} en dos líneas? Con gusto.`,
+  ][v];
 }
 
 /**
@@ -242,14 +258,18 @@ export function buildQuoteNudgeDraft(input: QuoteNudgeInput): string {
   const { customerName, lastAssistantContent, language } = input;
   const model = extractProductModel(lastAssistantContent);
   const first = formatFirstName(customerName);
-  const v = Math.abs(input.variant ?? 0) % 2;
+  const v = Math.abs(input.variant ?? 0) % 5;
 
   if (language === 'en') {
     const g = first ? `Hi ${first}, ` : 'Hi, ';
     const what = model ? `the ${model}` : 'the unit I recommended';
-    return v === 0
-      ? `${g}what did you think of ${what}? Happy to answer any question right away — and if you're ready, I'll set up your secure checkout link so it's done in 2 minutes. 😊`
-      : `${g}just circling back on ${what}. Any questions I can clear up? Whenever you're ready I'll get your order link set — no pressure. 😊`;
+    return [
+      `${g}what did you think of ${what}? Happy to answer any question right away — and if you're ready, I'll set up your secure checkout link so it's done in 2 minutes. 😊`,
+      `${g}just circling back on ${what}. Any questions I can clear up? Whenever you're ready I'll get your order link set — no pressure.`,
+      `${g}any question about ${what}? I can answer it right away.`,
+      `${g}still here if you want to move ahead with ${what} — or take your time comparing, that's fine too.`,
+      `${g}how's it looking? If ${what} works for you, I'll set it up whenever you say.`,
+    ][v];
   }
   if (language === 'fr') {
     const g = first ? `Bonjour ${first}, ` : 'Bonjour, ';
@@ -263,9 +283,13 @@ export function buildQuoteNudgeDraft(input: QuoteNudgeInput): string {
   }
   const g = first ? `Hola ${first}, ` : 'Hola, ';
   const what = model ? `el ${model}` : 'el equipo que le recomendé';
-  return v === 0
-    ? `${g}¿qué le pareció ${what}? Cualquier duda se la respondo al momento — y si ya se decidió, le preparo su link de pago seguro y queda listo en 2 minutos. 😊`
-    : `${g}quedé pendiente con ${what}. ¿Le quedó alguna duda que le pueda aclarar? Cuando me diga, se lo dejo listo para ordenar — sin compromiso. 😊`;
+  return [
+    `${g}¿qué le pareció ${what}? Cualquier duda se la respondo al momento — y si ya se decidió, le preparo su link de pago seguro y queda listo en 2 minutos. 😊`,
+    `${g}quedé pendiente con ${what}. ¿Le quedó alguna duda que le pueda aclarar? Cuando me diga, se lo dejo listo para ordenar.`,
+    `${g}¿le quedó alguna pregunta sobre ${what}? Se la respondo al momento.`,
+    `${g}aquí sigo por si quiere avanzar con ${what} — o si prefiere comparar con calma, también está bien.`,
+    `${g}¿qué tal? Si ${what} le convence, se lo dejo listo cuando me diga.`,
+  ][v];
 }
 
 /**

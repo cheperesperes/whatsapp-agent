@@ -307,6 +307,8 @@ export async function GET(req: NextRequest) {
       customerName: c.customer_name,
       lastAssistantContent: quoteMsg.content,
       language,
+      // Same per-conversation rotation as sales-followup (deterministic).
+      variant: parseInt(c.id.replace(/-/g, '').slice(0, 6), 16),
     });
 
     if (dryRun) {

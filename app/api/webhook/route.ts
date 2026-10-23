@@ -62,6 +62,7 @@ import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-
 import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
 import { applyPayLinkMarkers, applyPriceMatchMarkers } from '@/lib/paylink';
 import { validateSolReply, extractCheckoutUrls } from '@/lib/validate-reply';
+import { isBareCloser, shouldStaySilentOnCloser } from '@/lib/human-voice';
 import {
   detectLanguageFromHistory,
   formatLanguageLockForPrompt,
@@ -462,6 +463,20 @@ async function processWebhookLocked(
       console.log(`[WEBHOOK] Conversation ${senderPhone} is escalated — forwarding to operator`);
       await sendEscalatedMessageAlert(OPERATOR_PHONE, senderPhone, messageText);
       return;
+    }
+  }
+
+  // ── Goodbyes: once the chat is wrapped up, a person stops replying ──
+  // (Sol answered 65 of 72 bare "gracias"/"👍"/"ok" messages — see lib/human-voice.ts.)
+  if (isBareCloser(messageText)) {
+    try {
+      const recent = await loadRecentMessages(conversation.id, 6);
+      if (shouldStaySilentOnCloser(recent)) {
+        console.log(`[WEBHOOK] ${senderPhone} sent a closer — no reply (chat already wrapped up)`);
+        return;
+      }
+    } catch (err) {
+      console.warn('[WEBHOOK] closer check failed, replying normally:', err);
     }
   }
 
