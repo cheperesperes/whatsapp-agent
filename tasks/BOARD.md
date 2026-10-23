@@ -14,6 +14,9 @@ day-to-day tracker that points at those when needed.
 ## 🟡 Backlog (next up)
 
 <!-- Add new tasks here. Most important at the top. -->
+- [ ] Sol v2 — top-tier sales + service rep: human voice, prompt rewrite on the cleaned base, fixed self-learning loop (review queue + offline test chats so it learns while ads are paused). Scope pending owner answers.
+- [ ] Run scripts/2026-10-23-sol-data-cleanup.sql after the 2026 refresh PR merges (deactivates 9 stale KB rows, retires the struck-through-price coaching).
+- [ ] Before ads restart: test Sol on the Vercel preview (WhatsApp + web widget) — prices, pay link, language, coupon claims.
 - [ ] GCLID/FBCLID attribution system — Meta CAPI + Google Ads offline conversions. Full spec in CLAUDE_CODE_PROMPTS.md → TASK 2. Prereq: 10+ "venta ganada" marked first.
 - [ ] Live Google Ads API spend sync — needs developer token + OAuth. Until then, spend is logged manually in the Negocio board (ad_spend table).
 
@@ -21,10 +24,12 @@ day-to-day tracker that points at those when needed.
 
 <!-- Move a card here when you start it. Try to keep this short. -->
 - [x] Set up daily task organization — board + daily log + summary script (this change).
+- [ ] 2026 refresh PR (fix/sol-2026-refresh) — awaiting owner review/merge.
 
 ## 🟢 Done
 
 <!-- Move finished cards here, newest first. Date them. -->
+- 2026-10-23 — 2026 refresh (PR, not merged yet): models → Claude Sonnet 5.5 / Haiku 5.5 via lib/models.ts (env-overridable); removed the stale "PayPal link" and "MSRP anchor" instructions; final-price-only enforced in the judge + coaching filter; web chat now builds pay links (Sep 30 buyer got "👇" and no link); coupon/volume claims only when live (0 codes active today); Sol loads the whole KB (was an arbitrary 50 of 121); dashboard chat list, KB status and funnel F3000 bucket fixed.
 - 2026-07-09 — Bundle→base stock rule: kits showing available while their power station was out (Kit Hogar 2400 → E2400LFP, Kit Hogar 5000 → F5000LFP) fixed in both the store and Sol's catalog, and the 10-min sync cron now enforces it automatically — a kit flips out of stock (inheriting the base's status) the moment its station does, on both sides. Base derived from the kit's name so new kits are covered; expansion batteries deliberately exempt.
 - 2026-07-04 — Cron cleanup: removed two zero-output crons (competitor-stats, comment-responder — 0 rows produced ever) and consolidated the four hourly follow-up crons into one /api/cron/followups dispatcher (same jobs, same order, per-job 50s timeout). 17 app crons → 12. Cloud routines consolidated to 2 (daily summary + corrected coach/strategist v2).
 - 2026-07-02 — KB training pass: triaged the 2,324-row kb_suggestions queue (rejected 489: exact duplicates, pricing-category as policy, and clusters now covered), and added 7 canonical catalog-verified knowledge_base entries for the top repeated customer questions (payment methods, shipping regions, delivery time, E-series/F-series model comparisons). Live immediately — KB loads per message.
