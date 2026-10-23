@@ -63,6 +63,7 @@ import { normalizeWhatsAppFormatting } from '@/lib/whatsapp-format';
 import { applyPayLinkMarkers, applyPriceMatchMarkers } from '@/lib/paylink';
 import { validateSolReply, extractCheckoutUrls } from '@/lib/validate-reply';
 import { isBareCloser, shouldStaySilentOnCloser } from '@/lib/human-voice';
+import { loadCustomerOrders, formatOrdersForPrompt } from '@/lib/orders-context';
 import {
   detectLanguageFromHistory,
   formatLanguageLockForPrompt,
@@ -482,7 +483,7 @@ async function processWebhookLocked(
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats, activeOffers, volumeActive, productCosts] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats, activeOffers, volumeActive, productCosts, customerOrders] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
@@ -493,6 +494,7 @@ async function processWebhookLocked(
       loadActiveOffers(),
       hasActiveVolumeOffer(),
       loadProductCosts(),
+      loadCustomerOrders(senderPhone),
     ]);
 
     // Fire-and-forget: learn from competitor mentions in this message.
@@ -512,7 +514,8 @@ async function processWebhookLocked(
 
     const catalog = formatProductCatalogForPrompt(products) + formatOffersForPrompt(products, activeOffers, productCosts, volumeActive);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
-    const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
+    // Post-sale: the customer's own paid orders (matched by WhatsApp number).
+    const profilePrompt = formatCustomerProfileForPrompt(customerProfile) + formatOrdersForPrompt(customerOrders);
     const competitorPrompt =
       formatCompetitorsForPrompt(competitors, products) +
       formatCompetitorStatsForPrompt(competitorStats);
