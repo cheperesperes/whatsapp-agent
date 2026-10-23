@@ -50,10 +50,19 @@ interface Learning {
   directive: string;
   category: string;
   rationale: string | null;
-  status: 'active' | 'retired';
-  source: 'auto' | 'manual';
+  status: 'active' | 'retired' | 'proposed' | 'rejected';
+  source: 'auto' | 'manual' | 'practice';
   times_reinforced: number;
   updated_at: string;
+}
+
+interface PracticeSummary {
+  run_id: string;
+  created_at: string;
+  passed: number;
+  total: number;
+  model: string | null;
+  failing: { scenario_id: string; title: string | null; failures: { id: string; desc: string }[] }[];
 }
 
 interface Overview {
@@ -66,6 +75,7 @@ interface Overview {
   };
   reviews: Review[];
   learnings: Learning[];
+  practice?: PracticeSummary | null;
 }
 
 function scoreColor(score: number): string {
@@ -153,6 +163,33 @@ export default function LearningPage() {
     await load();
   }
 
+  async function setLearningStatus(l: Learning, status: 'active' | 'rejected') {
+    await fetch('/api/learning/learnings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: l.id, status }),
+    });
+    await load();
+  }
+
+  async function runPractice() {
+    setRunning(true);
+    setRunResult('Corriendo chats de práctica (1–3 min)…');
+    try {
+      const res = await fetch('/api/cron/sol-practice', { cache: 'no-store' });
+      const json = await res.json();
+      setRunResult(
+        res.ok
+          ? `Práctica: ${json.passed}/${json.total} escenarios pasaron · ${json.proposed} regla(s) propuesta(s) para aprobar.`
+          : `Error: ${json.error ?? res.status}`,
+      );
+    } catch (e) {
+      setRunResult(e instanceof Error ? e.message : 'Error de red');
+    }
+    setRunning(false);
+    await load();
+  }
+
   async function toggleLearning(l: Learning) {
     await fetch('/api/learning/learnings', {
       method: 'PATCH',
@@ -164,6 +201,8 @@ export default function LearningPage() {
 
   const active = (data?.learnings ?? []).filter((l) => l.status === 'active');
   const retired = (data?.learnings ?? []).filter((l) => l.status === 'retired');
+  const proposed = (data?.learnings ?? []).filter((l) => l.status === 'proposed');
+  const practice = data?.practice ?? null;
   const sc = data?.stats.sentiment_counts ?? {};
   const sentimentTotal = (sc.contento ?? 0) + (sc.neutral ?? 0) + (sc.frustrado ?? 0);
 
@@ -179,15 +218,26 @@ export default function LearningPage() {
               aprende y adapta su trato humano.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={runNow}
-            disabled={running}
-            className="px-4 py-2 rounded-lg bg-whatsapp-500/15 text-whatsapp-600 border border-whatsapp-500/30
-                       text-sm font-medium hover:bg-whatsapp-500/25 transition-colors disabled:opacity-50"
-          >
-            {running ? 'Evaluando…' : 'Evaluar ahora'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={runPractice}
+              disabled={running}
+              className="px-4 py-2 rounded-lg bg-surface-700 text-gray-200 border border-surface-600
+                         text-sm font-medium hover:bg-surface-600 transition-colors disabled:opacity-50"
+            >
+              Correr práctica
+            </button>
+            <button
+              type="button"
+              onClick={runNow}
+              disabled={running}
+              className="px-4 py-2 rounded-lg bg-whatsapp-500/15 text-whatsapp-600 border border-whatsapp-500/30
+                         text-sm font-medium hover:bg-whatsapp-500/25 transition-colors disabled:opacity-50"
+            >
+              {running ? 'Trabajando…' : 'Evaluar ahora'}
+            </button>
+          </div>
         </div>
 
         {runResult && (
@@ -268,6 +318,76 @@ export default function LearningPage() {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Proposals waiting for the owner */}
+            <div className="bg-surface-800 border border-amber-500/30 rounded-xl p-4 space-y-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-100">
+                  Reglas propuestas — esperan su aprobación ({proposed.length})
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  Sol no cambia sola: estas reglas salen de la evaluación diaria y de los chats de práctica,
+                  y solo entran a su prompt si usted las aprueba.
+                </p>
+              </div>
+              {proposed.length === 0 ? (
+                <p className="text-sm text-gray-500">No hay propuestas pendientes.</p>
+              ) : (
+                proposed.map((l) => (
+                  <div key={l.id} className="border border-surface-600 rounded-lg p-3 space-y-2">
+                    <p className="text-sm text-gray-100">{l.directive}</p>
+                    {l.rationale && <p className="text-xs text-gray-500">{l.rationale}</p>}
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="px-2 py-0.5 rounded-full bg-surface-700 text-gray-400">{l.category}</span>
+                      <span className="text-gray-500">{l.source === 'practice' ? 'De la práctica' : 'De chats reales'}</span>
+                      <span className="flex-1" />
+                      <button
+                        type="button"
+                        onClick={() => setLearningStatus(l, 'active')}
+                        className="px-3 py-1 rounded-md bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25"
+                      >
+                        Aprobar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLearningStatus(l, 'rejected')}
+                        className="px-3 py-1 rounded-md bg-red-500/10 text-red-300 border border-red-500/30 hover:bg-red-500/20"
+                      >
+                        Rechazar
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Last practice run */}
+            <div className="bg-surface-800 border border-surface-600 rounded-xl p-4 space-y-2">
+              <h2 className="text-sm font-semibold text-gray-100">Chats de práctica (cada noche)</h2>
+              {!practice ? (
+                <p className="text-sm text-gray-500">
+                  Aún no hay corridas. Pulse «Correr práctica» o espere la corrida nocturna.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-300">
+                    {practice.passed}/{practice.total} escenarios pasaron ·{' '}
+                    {new Date(practice.created_at).toLocaleString('es-ES')}
+                    {practice.model ? ` · ${practice.model}` : ''}
+                  </p>
+                  {practice.failing.length > 0 && (
+                    <ul className="text-xs text-gray-400 space-y-1">
+                      {practice.failing.map((f) => (
+                        <li key={f.scenario_id}>
+                          <span className="text-red-300">✗ {f.title ?? f.scenario_id}</span> —{' '}
+                          {f.failures.map((x) => x.desc).join('; ')}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Active learnings */}

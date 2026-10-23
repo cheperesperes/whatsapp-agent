@@ -80,6 +80,35 @@ interface ChatRequest {
   message: string;
   displayName?: string | null;
   browserLang?: string | null; // visitor's browser/page language tag, e.g. "pt-BR"
+  /** Practice mode only (see isPracticeRequest): the prior turns, oldest first. */
+  history?: { role: 'user' | 'assistant'; content: string }[];
+}
+
+/**
+ * Practice mode — the nightly practice-chat loop (lib/practice.ts) runs Sol's
+ * REAL web pipeline in-process with a scripted history. Gated by a header that
+ * must equal CRON_SECRET (server-only). In practice mode NOTHING is written:
+ * no conversation, no messages, no profile, no KB suggestions, no lead score —
+ * so simulated customers never show up in the dashboard, stats or learning.
+ */
+function isPracticeRequest(request: NextRequest, body: ChatRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  return !!secret && request.headers.get('x-sol-practice') === secret && Array.isArray(body.history);
+}
+
+function practiceHistory(prior: ChatRequest['history'], message: string): Message[] {
+  const now = new Date().toISOString();
+  const turns = (prior ?? [])
+    .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    .slice(-19);
+  return [...turns, { role: 'user' as const, content: message }].map((m, i) => ({
+    id: `practice-${i}`,
+    conversation_id: 'practice',
+    role: m.role,
+    content: m.content,
+    handoff_detected: false,
+    created_at: now,
+  }));
 }
 
 interface ChatImage {
@@ -120,10 +149,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // `web::sessionId` for that lookup only).
   const syntheticPhone = `web::${sessionId}`;
 
-  const conversation = await getOrCreateWebConversation(sessionId, body.displayName ?? undefined);
+  const practice = isPracticeRequest(request, body);
+  const conversation = practice
+    ? ({ id: `practice:${sessionId}` } as Awaited<ReturnType<typeof getOrCreateWebConversation>>)
+    : await getOrCreateWebConversation(sessionId, body.displayName ?? undefined);
 
   // Per-session rolling-hour cap to match the WhatsApp webhook's behavior.
-  const recentCount = await countRecentUserMessagesFromPhone(syntheticPhone, 60);
+  const recentCount = practice ? 0 : await countRecentUserMessagesFromPhone(syntheticPhone, 60);
   if (recentCount >= HOURLY_MESSAGE_CAP) {
     return jsonWithCors(request, {
       reply: 'Has alcanzado el límite de mensajes por hora. Un especialista te contactará pronto si es urgente.',
@@ -135,7 +167,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Persist the user message synchronously so the conversation is durable
   // even if downstream AI fails.
   try {
-    await storeMessage(conversation.id, 'user', message, false);
+    if (!practice) await storeMessage(conversation.id, 'user', message, false);
   } catch (err) {
     console.error('[chat] storeMessage user FAILED:', err);
     return jsonWithCors(request, { error: 'persist_failed' }, { status: 500 });
@@ -143,10 +175,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   try {
     const [history, products, knowledgeEntries, customerProfile, competitors, competitorStats, activeOffers, volumeActive, productCosts] = await Promise.all([
-      loadRecentMessages(conversation.id, 20),
+      practice ? Promise.resolve(practiceHistory(body.history, message)) : loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
-      loadCustomerProfile(syntheticPhone),
+      practice ? Promise.resolve(null) : loadCustomerProfile(syntheticPhone),
       loadCompetitorModels(),
       loadCompetitorStats(),
       loadActiveOffers(),
@@ -159,11 +191,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .filter((m) => m.role === 'user')
       .slice(-3, -1)
       .map((m) => m.content);
-    waitUntil(extractCompetitorMention(
-      message,
-      products.map((p) => ({ sku: p.sku, name: p.name })),
-      recentUserMessages,
-    ));
+    if (!practice) {
+      waitUntil(extractCompetitorMention(
+        message,
+        products.map((p) => ({ sku: p.sku, name: p.name })),
+        recentUserMessages,
+      ));
+    }
 
     const historyWithoutLast = history.slice(0, -1);
 
@@ -188,7 +222,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const detectedLang = resolvedLang.code;
     const languageLock = resolvedLang.lock;
 
-    if (customerProfile?.language !== detectedLang) {
+    if (!practice && customerProfile?.language !== detectedLang) {
       waitUntil(
         upsertCustomerProfile(syntheticPhone, { language: detectedLang }).catch((err) =>
           console.warn(`[chat] language persist failed for ${syntheticPhone}:`, err)
@@ -271,6 +305,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const blockedSkuSet = new Set(validated.blockedSkus.map((s) => s.toUpperCase()));
     const images = await resolveImages(skus.filter((s) => !blockedSkuSet.has(s.toUpperCase())));
 
+    if (practice) {
+      return jsonWithCors(request, { reply: cleanText, images, handoff: handoffReason, practice: true });
+    }
+
     await storeMessage(conversation.id, 'assistant', cleanText, !!handoffReason);
 
     waitUntil(
@@ -289,7 +327,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.error('[chat] AI error:', err);
     const fallback = 'Lo siento, tuve un problema técnico. Por favor intenta de nuevo en un momento.';
     try {
-      await storeMessage(conversation.id, 'assistant', fallback, false);
+      if (!practice) await storeMessage(conversation.id, 'assistant', fallback, false);
     } catch {
       /* ignore */
     }

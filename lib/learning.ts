@@ -83,8 +83,8 @@ export interface SolLearning {
   directive: string;
   category: string;
   rationale: string | null;
-  status: 'active' | 'retired';
-  source: 'auto' | 'manual';
+  status: 'active' | 'retired' | 'proposed' | 'rejected';
+  source: 'auto' | 'manual' | 'practice';
   times_reinforced: number;
   created_at: string;
   updated_at: string;
@@ -430,9 +430,16 @@ Sin markdown, sin explicación.`;
 }
 
 /**
- * Persist a consolidation result: kept rows are updated, new rows inserted,
- * and active auto rows the consolidator dropped are retired. Manual rows are
- * never touched. Returns the number of active learnings after sync.
+ * Persist a consolidation result — OWNER-APPROVED loop (owner decision
+ * 2026-10-23: "every rule change waits for your OK").
+ *
+ * - A kept rule whose wording is unchanged: only its reinforcement count moves.
+ * - A kept rule the consolidator REWORDED: the active text stays as is; the new
+ *   wording is filed as a proposal (rationale says which rule it would replace).
+ * - A NEW rule: filed as a proposal.
+ * - Nothing is retired automatically any more (a bad auto-rule — "muestra el
+ *   precio base tachado" — once went live this way).
+ * Manual rows are never touched. Returns the number of active learnings.
  */
 export async function syncLearnings(
   activeAuto: SolLearning[],
@@ -440,48 +447,78 @@ export async function syncLearnings(
 ): Promise<number> {
   const sb = createServiceClient();
   const now = new Date().toISOString();
-  const keptIds = new Set(consolidated.filter((c) => c.id).map((c) => c.id as string));
-
-  for (const old of activeAuto) {
-    if (!keptIds.has(old.id)) {
-      await sb
-        .from('sol_learnings')
-        .update({ status: 'retired', updated_at: now })
-        .eq('id', old.id);
-    }
-  }
+  const proposals: ProposedLearning[] = [];
 
   for (const item of consolidated) {
-    if (item.id) {
-      const prev = activeAuto.find((l) => l.id === item.id);
-      await sb
-        .from('sol_learnings')
-        .update({
-          directive: item.directive,
-          category: item.category,
-          rationale: item.rationale || prev?.rationale || null,
-          times_reinforced: (prev?.times_reinforced ?? 1) + (item.reinforced ? 1 : 0),
-          status: 'active',
-          updated_at: now,
-        })
-        .eq('id', item.id);
-    } else {
-      await sb.from('sol_learnings').insert({
-        directive: item.directive,
-        category: item.category,
-        rationale: item.rationale || null,
-        status: 'active',
-        source: 'auto',
-        times_reinforced: 1,
-      });
+    const prev = item.id ? activeAuto.find((l) => l.id === item.id) : undefined;
+    if (prev && normalizeDirective(prev.directive) === normalizeDirective(item.directive)) {
+      if (item.reinforced) {
+        await sb
+          .from('sol_learnings')
+          .update({ times_reinforced: (prev.times_reinforced ?? 1) + 1, updated_at: now })
+          .eq('id', prev.id);
+      }
+      continue;
     }
+    proposals.push({
+      directive: item.directive,
+      category: item.category,
+      rationale: prev
+        ? `Reemplazaría: "${prev.directive.slice(0, 90)}". ${item.rationale ?? ''}`.trim()
+        : item.rationale ?? '',
+    });
   }
+  await proposeLearnings(proposals, 'auto');
 
   const { count } = await sb
     .from('sol_learnings')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'active');
-  return count ?? consolidated.length;
+  return count ?? 0;
+}
+
+export interface ProposedLearning {
+  directive: string;
+  category: string;
+  rationale: string;
+}
+
+const normalizeDirective = (d: string) => d.toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * File coaching rules as PROPOSALS for the owner (Aprendizaje page). Screened by
+ * violatesHardRules; skipped if the same wording already exists in any status
+ * (active, proposed, rejected or retired), so a rejected idea isn't re-filed
+ * every night. Returns how many were filed.
+ */
+export async function proposeLearnings(
+  items: ProposedLearning[],
+  source: 'auto' | 'practice'
+): Promise<number> {
+  if (!items.length) return 0;
+  const sb = createServiceClient();
+  const { data: existing } = await sb.from('sol_learnings').select('directive').limit(1000);
+  const seen = new Set((existing ?? []).map((r: { directive: string }) => normalizeDirective(r.directive)));
+  let filed = 0;
+  for (const it of items) {
+    const directive = (it.directive ?? '').trim().slice(0, 220);
+    if (directive.length < 10 || violatesHardRules(directive)) continue;
+    const key = normalizeDirective(directive);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const category = LEARNING_CATEGORIES.includes(it.category as LearningCategory) ? it.category : 'general';
+    const { error } = await sb.from('sol_learnings').insert({
+      directive,
+      category,
+      rationale: (it.rationale ?? '').slice(0, 300) || null,
+      status: 'proposed',
+      source,
+      times_reinforced: 1,
+    });
+    if (!error) filed++;
+    else console.warn('[proposeLearnings] insert failed:', error.message);
+  }
+  return filed;
 }
 
 // ------------------------------------------------------------
