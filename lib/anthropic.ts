@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { SOL_MODEL, FAST_MODEL } from './models';
+import { SOL_MODEL, FAST_MODEL, claudeParams, textOf } from './models';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type {
@@ -192,12 +192,12 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
   messages.push({ role: 'user', content: newUserMessage });
 
   const response = await client.messages.create(
-    {
+    claudeParams({
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: systemParam,
       messages,
-    },
+    }),
     {
       timeout: 22_000,
       headers: {
@@ -212,8 +212,13 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
     console.log(`[sol] cache read=${usage.cache_read_input_tokens ?? 0} created=${usage.cache_creation_input_tokens ?? 0} input=${usage.input_tokens}`);
   }
 
-  const rawText =
-    response.content[0]?.type === 'text' ? response.content[0].text : '';
+  const rawText = textOf(response);
+  // Never send a blank WhatsApp message. On 5.x models a reply can stop at
+  // max_tokens after thinking with no text; treat that like an API error so
+  // the callers' existing fallback/escalation path runs.
+  if (!rawText.trim()) {
+    throw new Error(`[sol] empty reply from ${MODEL} (stop_reason=${response.stop_reason})`);
+  }
 
   const handoffMatch = rawText.match(/\[HANDOFF:\s*([^\]]+)\]/i);
   const handoffReason = handoffMatch ? handoffMatch[1].trim() : null;
@@ -460,14 +465,14 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as {
       display_name: string | null;
@@ -643,14 +648,14 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as {
       rules: Record<ScorecardRuleId, ScorecardRuleResult>;
@@ -801,15 +806,15 @@ Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 250,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     return parseLeadScoreResponse(text);
   } catch (err) {
     console.warn('[scoreLeadQuality] failed:', err instanceof Error ? err.message : err);
@@ -856,14 +861,14 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 800,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as { suggestions?: KBSuggestionDraft[] };
     const out = (parsed.suggestions ?? [])

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
-import { FAST_MODEL } from '@/lib/models';
+import { FAST_MODEL, claudeParams, textOf } from '@/lib/models';
 import { createServiceClient } from '@/lib/supabase';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import type { CompetitorModel } from '@/lib/types';
@@ -106,14 +106,14 @@ Return ONLY the JSON.`;
 
   try {
     const res = await anthropic.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 60,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = res.content[0]?.type === 'text' ? res.content[0].text : '';
+    const text = textOf(res);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as { price_usd: number | null };
     if (parsed.price_usd === null || parsed.price_usd === undefined) return null;

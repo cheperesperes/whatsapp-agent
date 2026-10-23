@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { REVIEW_MODEL, FAST_MODEL } from '@/lib/models';
+import { REVIEW_MODEL, FAST_MODEL, claudeParams, textOf } from '@/lib/models';
 import { selectBestOffer, type Offer } from '@/lib/supabase';
 
 export interface GeneratedContent {
@@ -368,13 +368,13 @@ Genera el siguiente contenido de marketing en formato JSON válido. ${language =
   "youtube_tags": ["PECRON", "estacion solar portatil", "solar generator", "hurricane prep", "blackout backup", "portable power station", "RV solar", "off-grid solar", "emergency power", "LiFePO4", "oiikon", "${product.sku}"]
 }`;
 
-  const response = await anthropic.messages.create({
+  const response = await anthropic.messages.create(claudeParams({
     model: REVIEW_MODEL,
     max_tokens: 4096,
     messages: [{ role: 'user', content: prompt }],
-  });
+  }));
 
-  const text = response.content[0].type === 'text' ? response.content[0].text : '';
+  const text = textOf(response);
 
   // Extract JSON from response (handle markdown code blocks)
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
@@ -420,7 +420,7 @@ async function parseGeneratedJson(raw: string, anthropic: Anthropic): Promise<Ge
       firstErr instanceof Error ? firstErr.message : firstErr
     );
     try {
-      const fix = await anthropic.messages.create({
+      const fix = await anthropic.messages.create(claudeParams({
         model: FAST_MODEL,
         max_tokens: 4096,
         messages: [
@@ -432,8 +432,8 @@ async function parseGeneratedJson(raw: string, anthropic: Anthropic): Promise<Ge
               raw,
           },
         ],
-      });
-      const fixed = fix.content[0]?.type === 'text' ? fix.content[0].text : '';
+      }));
+      const fixed = textOf(fix);
       const m = fixed.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? fixed.match(/(\{[\s\S]*\})/);
       if (!m) throw firstErr;
       const parsed = JSON.parse(m[1]) as GeneratedContent;

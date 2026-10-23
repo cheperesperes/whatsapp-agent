@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { REVIEW_MODEL } from './models';
+import { REVIEW_MODEL, claudeParams, textOf } from './models';
 import { createServiceClient } from './supabase';
 import type { Message } from './types';
 
@@ -268,14 +268,14 @@ Sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: REVIEW_MODEL,
         max_tokens: 900,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: REVIEW_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const parsed = JSON.parse(cleanJsonText(text)) as Partial<InteractionReview> & {
       scores?: Record<string, unknown>;
     };
@@ -389,14 +389,14 @@ Sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: REVIEW_MODEL,
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: REVIEW_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const parsed = JSON.parse(cleanJsonText(text)) as {
       learnings?: Array<Partial<ConsolidatedLearning>>;
     };

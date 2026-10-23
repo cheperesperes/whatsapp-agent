@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { FAST_MODEL } from './models';
+import { FAST_MODEL, claudeParams, textOf } from './models';
 import type { Message } from './types';
 
 const client = new Anthropic({
@@ -172,15 +172,15 @@ Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: CLASSIFIER_MODEL,
         max_tokens: CLASSIFIER_MAX_TOKENS,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: CLASSIFIER_TIMEOUT_MS }
     );
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as Partial<IntentClassification>;
 
