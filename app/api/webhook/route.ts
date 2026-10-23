@@ -15,6 +15,7 @@ import {
   loadAgentCatalog,
   formatProductCatalogForPrompt,
   loadActiveOffers,
+  hasActiveVolumeOffer,
   loadProductCosts,
   formatOffersForPrompt,
   getDashboardStats,
@@ -466,7 +467,7 @@ async function processWebhookLocked(
 
   // ── AI mode: generate Sol response ─────────────────────
   try {
-    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats, activeOffers, productCosts] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, alreadySentSkus, competitors, competitorStats, activeOffers, volumeActive, productCosts] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
@@ -475,6 +476,7 @@ async function processWebhookLocked(
       loadCompetitorModels(),
       loadCompetitorStats(),
       loadActiveOffers(),
+      hasActiveVolumeOffer(),
       loadProductCosts(),
     ]);
 
@@ -493,7 +495,7 @@ async function processWebhookLocked(
 
     const historyWithoutLast = history.slice(0, -1);
 
-    const catalog = formatProductCatalogForPrompt(products) + formatOffersForPrompt(products, activeOffers, productCosts);
+    const catalog = formatProductCatalogForPrompt(products) + formatOffersForPrompt(products, activeOffers, productCosts, volumeActive);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
     const competitorPrompt =

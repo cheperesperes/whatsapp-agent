@@ -1084,12 +1084,42 @@ export function selectBestOffer(
  * own code comma-separated in a single [[PAYLINK]] marker. Returns
  * '' when no product has any applicable offer (prompt unchanged).
  */
+/** Is any server-applied volume code (VOL5/VOL8/VOL12) live right now? */
+export async function hasActiveVolumeOffer(): Promise<boolean> {
+  try {
+    return (await loadOffersByCode(['VOL5', 'VOL8', 'VOL12'])).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Tells Sol the TRUTH about discounts today. Without it, an empty offers block
+ * left her guessing — on 2026-10-23 (0 active codes) she still answered
+ * "¿cupón si compro 2?" with "¡Claro que sí! … el mejor precio por volumen ya
+ * aplicado", which the checkout would not honor.
+ */
+function formatDiscountStatus(hasCoupons: boolean, volumeActive: boolean): string {
+  return [
+    '',
+    '=== CUPONES Y DESCUENTOS HOY (dato real del sistema — manda sobre cualquier ejemplo del prompt) ===',
+    hasCoupons
+      ? '• Cupones: SOLO los listados en MEJOR OFERTA POR EQUIPO. Ningún otro código existe hoy.'
+      : '• Cupones: NO hay ningún cupón activo hoy. Si preguntan, dilo con honestidad en una línea ("ahora mismo no tenemos cupón activo") y ofrece Affirm o el valor del equipo. No menciones códigos.',
+    volumeActive
+      ? '• Volumen (2+ unidades): hay descuento por volumen activo; el link con la cantidad real lo aplica solo. Nunca digas un % concreto.'
+      : '• Volumen (2+ unidades): NO hay descuento por volumen activo hoy. El link con 2+ unidades sale a precio normal: no prometas rebaja por cantidad.',
+    '',
+  ].join('\n');
+}
+
 export function formatOffersForPrompt(
   products: AgentProduct[],
   offers: Offer[],
   costBySku: Record<string, number>,
+  volumeActive = false,
 ): string {
-  if (offers.length === 0) return '';
+  if (offers.length === 0) return formatDiscountStatus(false, volumeActive);
 
   const lines: string[] = [];
   for (const p of products) {
@@ -1107,9 +1137,9 @@ export function formatOffersForPrompt(
       );
     }
   }
-  if (lines.length === 0) return '';
+  if (lines.length === 0) return formatDiscountStatus(false, volumeActive);
 
-  return [
+  return formatDiscountStatus(true, volumeActive) + [
     '',
     '=== MEJOR OFERTA POR EQUIPO (una sola, ya validada por margen) ===',
     'Para cada SKU de abajo ya calculamos LA única oferta aplicable (filtrada por marca, pedido mínimo y margen). Es la ÚNICA que puedes presentar para ese equipo.',
