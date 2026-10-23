@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { REVIEW_MODEL, claudeParams, textOf } from './models';
 import { createServiceClient } from './supabase';
 import type { Message } from './types';
 
@@ -20,7 +21,6 @@ const client = new Anthropic({
 
 // Same model Sol replies with. Reviews run offline in a cron (not in the
 // reply path), so we can afford the better judge over Haiku.
-const REVIEW_MODEL = 'claude-sonnet-4-6';
 const REVIEW_TIMEOUT_MS = 30_000;
 
 export const MAX_ACTIVE_LEARNINGS = 8;
@@ -130,7 +130,10 @@ export function violatesHardRules(directive: string): boolean {
     /\busd\s*\$?\d/i.test(d) ||
     // Delivery time: N days/weeks/hours (incl. bare "48 horas", "72h")
     /\b\d+\s*(d[ií]as?|days?|semanas?|weeks?|h|hrs?|horas?)\b/i.test(d) ||
-    /\b(cup[oó]n|coupon|c[oó]digo)\s+[A-Z0-9]{4,}\b/.test(d)
+    /\b(cup[oó]n|coupon|c[oó]digo)\s+[A-Z0-9]{4,}\b/.test(d) ||
+    // House rule (owner, 2026-10-23): final price only. Block any coaching that
+    // tells Sol to show a struck-through / list / MSRP price.
+    /\b(muestr\w*|mostrar|cit\w*|inclu\w*|show\w*|display\w*)\b[^.;]{0,60}(tachad|strikethrough|struck|msrp)/i.test(d)
   );
 }
 
@@ -201,7 +204,7 @@ export async function loadReviewGroundTruth(): Promise<string | null> {
       });
 
     return `DATOS VERIFICADOS DEL SISTEMA — precios y cupones REALES de la casa (ground truth para "confianza"):
-Catálogo (precio actual; "antes" = precio de lista del fabricante, espejo de pecron.com — citarlo tachado junto al precio actual es CORRECTO, no un descuento inventado):
+Catálogo (precio actual; "antes" = precio de lista del fabricante, espejo de pecron.com — es solo referencia para ti. Regla de la casa: Sol muestra SOLO el precio final, sin precio tachado ni MSRP; si Sol cita el "antes" tachado, es una falla de FORMATO de precio, no un precio inventado):
 ${catalogLines.join('\n')}
 Cupones de la casa (TODOS existen de verdad; los "inactivo hoy" pudieron estar vigentes cuando Sol los usó — la conversación puede ser de días atrás, así que NO los marques como inventados):
 ${codeLines.join('\n')}
@@ -265,14 +268,14 @@ Sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: REVIEW_MODEL,
         max_tokens: 900,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: REVIEW_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const parsed = JSON.parse(cleanJsonText(text)) as Partial<InteractionReview> & {
       scores?: Record<string, unknown>;
     };
@@ -386,14 +389,14 @@ Sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: REVIEW_MODEL,
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: REVIEW_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const parsed = JSON.parse(cleanJsonText(text)) as {
       learnings?: Array<Partial<ConsolidatedLearning>>;
     };

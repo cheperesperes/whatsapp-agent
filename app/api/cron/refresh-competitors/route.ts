@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
+import { FAST_MODEL, claudeParams, textOf } from '@/lib/models';
 import { createServiceClient } from '@/lib/supabase';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import type { CompetitorModel } from '@/lib/types';
@@ -33,7 +34,7 @@ const EXTRACT_TIMEOUT_MS = 6_000;       // per-row Haiku call
 const PRICE_CHANGE_EPSILON_PCT = 0.5;   // ignore <0.5% drift (rounding noise)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const EXTRACT_MODEL = 'claude-haiku-4-5-20251001';
+const EXTRACT_MODEL = FAST_MODEL;
 
 interface PriceChange {
   row: CompetitorModel;
@@ -105,14 +106,14 @@ Return ONLY the JSON.`;
 
   try {
     const res = await anthropic.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 60,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = res.content[0]?.type === 'text' ? res.content[0].text : '';
+    const text = textOf(res);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as { price_usd: number | null };
     if (parsed.price_usd === null || parsed.price_usd === undefined) return null;

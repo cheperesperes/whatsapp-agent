@@ -37,8 +37,10 @@ function phoneKey(raw: string | null | undefined): string {
   return (raw ?? '').replace(/\D/g, '').slice(-10);
 }
 
-function sourceBucket(adSource: string | null): 'F5000' | 'E3600' | 'other_ad' | 'no_ad' {
+function sourceBucket(adSource: string | null): 'F3000' | 'F5000' | 'E3600' | 'other_ad' | 'no_ad' {
   if (!adSource) return 'no_ad';
+  // F3000 = the main WhatsApp ad from late June (most July ad chats).
+  if (/F3000/i.test(adSource)) return 'F3000';
   if (/F5000/i.test(adSource)) return 'F5000';
   if (/E3600/i.test(adSource)) return 'E3600';
   if (/^ad/i.test(adSource) || /template:/i.test(adSource)) return 'other_ad';
@@ -138,7 +140,7 @@ export async function GET() {
 
   const win7 = emptyStage();
   const win30 = emptyStage();
-  const bySource: Record<string, Stage> = { F5000: emptyStage(), E3600: emptyStage(), other_ad: emptyStage(), no_ad: emptyStage() };
+  const bySource: Record<string, Stage> = { F3000: emptyStage(), F5000: emptyStage(), E3600: emptyStage(), other_ad: emptyStage(), no_ad: emptyStage() };
 
   for (const c of convs) {
     const s = stat.get(c.id)!;

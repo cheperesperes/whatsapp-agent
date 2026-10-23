@@ -8,6 +8,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { FAST_MODEL, claudeParams, textOf } from '@/lib/models';
 import { createServiceClient } from '@/lib/supabase';
 import { getRecentPerformance, listCampaigns } from './db';
 
@@ -121,8 +122,8 @@ export async function consolidateMemory(): Promise<void> {
 
   // Ask Claude to synthesize learnings
   const anthropic = new Anthropic();
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const response = await anthropic.messages.create(claudeParams({
+    model: FAST_MODEL,
     max_tokens: 600,
     messages: [
       {
@@ -147,9 +148,9 @@ Devuelve un JSON con estos campos (en español):
 Solo el JSON, sin texto adicional.`,
       },
     ],
-  });
+  }));
 
-  const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
+  const text = (textOf(response) || '{}');
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
   if (!jsonMatch) return;
 

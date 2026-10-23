@@ -26,6 +26,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 import { validateSolReply } from '@/lib/validate-reply';
+import { applyPayLinkMarkers, applyPriceMatchMarkers } from '@/lib/paylink';
 import {
   getOrCreateWebConversation,
   loadRecentMessages,
@@ -33,6 +34,7 @@ import {
   loadAgentCatalog,
   formatProductCatalogForPrompt,
   loadActiveOffers,
+  hasActiveVolumeOffer,
   loadProductCosts,
   formatOffersForPrompt,
   loadKnowledgeBase,
@@ -140,7 +142,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const [history, products, knowledgeEntries, customerProfile, competitors, competitorStats, activeOffers, productCosts] = await Promise.all([
+    const [history, products, knowledgeEntries, customerProfile, competitors, competitorStats, activeOffers, volumeActive, productCosts] = await Promise.all([
       loadRecentMessages(conversation.id, 20),
       loadAgentCatalog(),
       loadKnowledgeBase(),
@@ -148,6 +150,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       loadCompetitorModels(),
       loadCompetitorStats(),
       loadActiveOffers(),
+      hasActiveVolumeOffer(),
       loadProductCosts(),
     ]);
 
@@ -164,7 +167,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const historyWithoutLast = history.slice(0, -1);
 
-    const catalog = formatProductCatalogForPrompt(products) + formatOffersForPrompt(products, activeOffers, productCosts);
+    const catalog = formatProductCatalogForPrompt(products) + formatOffersForPrompt(products, activeOffers, productCosts, volumeActive);
     const kbPrompt = formatKnowledgeBaseForPrompt(knowledgeEntries);
     const profilePrompt = formatCustomerProfileForPrompt(customerProfile);
     const competitorPrompt =
@@ -231,10 +234,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Extract `[SEND_IMAGE:SKU]` tags into a structured image list the
     // frontend renders inline (instead of sending separate WhatsApp media).
     const { text: extractedText, skus } = extractImageTags(aiMessage);
-    const rawCleanText = replaceProofVideoTags(extractedText);
+    const withVideos = replaceProofVideoTags(extractedText);
 
-    // Pre-send validation gate (lib/validate-reply.ts). The web widget has
-    // no pay-link builder, so ANY checkout URL here is model-invented.
+    // Build [[PAYLINK]] / [[PRICEMATCH]] markers into real storefront links, same
+    // as WhatsApp. Before this, the web widget had no builder: the validator
+    // stripped the marker and the buyer got "Le dejo su kit listo 👇" with no
+    // link (real web chat, 2026-09-30). The built link is an oiikon.com product
+    // page, so the validator's "no checkout URLs on web" rule still holds.
+    const webPayLang: 'es' | 'en' = detectedLang === 'es' ? 'es' : 'en';
+    const webSoft =
+      webPayLang === 'en'
+        ? 'You can complete your order right on oiikon.com — or leave me your WhatsApp number and I’ll send you the link there. 🙏'
+        : 'Puede completar su pedido directamente en oiikon.com — o déjeme su WhatsApp y le envío el link por ahí. 🙏';
+    const pl = await applyPayLinkMarkers(withVideos, webPayLang, undefined, webSoft);
+    if (pl.built > 0 || pl.failed > 0) {
+      console.log(`[PAYLINK][chat] conv=${conversation.id} built=${pl.built} failed=${pl.failed} :: ${pl.details.join(' ; ')}`);
+    }
+    const pm = await applyPriceMatchMarkers(pl.text, webPayLang);
+    if (pm.built > 0 || pm.failed > 0) {
+      console.log(`[PRICEMATCH][chat] conv=${conversation.id} built=${pm.built} failed=${pm.failed} :: ${pm.details.join(' ; ')}`);
+    }
+    const rawCleanText = pm.text;
+
+    // Pre-send validation gate (lib/validate-reply.ts). Links built above are
+    // oiikon.com product pages; any OTHER checkout URL here is model-invented.
     const validated = validateSolReply(rawCleanText, products, {
       forbidAllPaymentUrls: true,
       language: detectedLang === 'en' || detectedLang === 'fr' || detectedLang === 'ht' ? detectedLang : 'es',

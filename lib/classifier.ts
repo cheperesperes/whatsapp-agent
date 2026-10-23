@@ -1,11 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { FAST_MODEL, claudeParams, textOf } from './models';
 import type { Message } from './types';
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const CLASSIFIER_MODEL = 'claude-haiku-4-5-20251001';
+const CLASSIFIER_MODEL = FAST_MODEL;
 // Tight inline budget — classifier blocks Sol's reply, so degrade to "no hint"
 // fast rather than burn the webhook's maxDuration on a slow Haiku call.
 const CLASSIFIER_TIMEOUT_MS = 2_000;
@@ -171,15 +172,15 @@ Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: CLASSIFIER_MODEL,
         max_tokens: CLASSIFIER_MAX_TOKENS,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: CLASSIFIER_TIMEOUT_MS }
     );
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as Partial<IntentClassification>;
 

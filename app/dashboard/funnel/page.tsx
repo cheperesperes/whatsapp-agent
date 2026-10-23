@@ -73,8 +73,10 @@ function FunnelTable({ s }: { s: StageRates }) {
 }
 
 const SOURCE_LABEL: Record<string, string> = {
-  F5000: 'Ad F5000 ($1,899)',
-  E3600: 'Ad E3600 ($949)',
+  // No prices in labels — they drift from the live catalog.
+  F3000: 'Ad F3000',
+  F5000: 'Ad F5000',
+  E3600: 'Ad E3600',
   other_ad: 'Otros ads',
   no_ad: 'Sin atribución',
 };
@@ -146,7 +148,7 @@ export default function FunnelPage() {
               </tr>
             </thead>
             <tbody>
-              {['F5000', 'E3600', 'other_ad', 'no_ad'].map((k) => {
+              {['F3000', 'F5000', 'E3600', 'other_ad', 'no_ad'].map((k) => {
                 const s = data.by_source_30d[k];
                 if (!s) return null;
                 return (

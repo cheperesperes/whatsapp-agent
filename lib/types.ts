@@ -290,7 +290,10 @@ export interface KnowledgeEntry {
   answer: string;
   category: string;
   source: string;
+  /** Never incremented by any code path — don't rely on it. */
   times_used: number;
+  /** false = kept for audit, never sent to Sol (loadKnowledgeBase filters it). */
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }

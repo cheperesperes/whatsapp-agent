@@ -155,7 +155,7 @@ export function buildSystemPrompt(ctx: CustomerContext): string {
 // const systemPrompt = buildSystemPrompt(ctx);
 //
 // const response = await anthropic.messages.create({
-//   model: "claude-sonnet-4-6",
+//   model: "claude-sonnet-5-5",
 //   max_tokens: 400,
 //   system: systemPrompt,
 //   messages: conversationHistory,

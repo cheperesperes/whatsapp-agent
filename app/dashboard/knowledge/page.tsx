@@ -148,7 +148,13 @@ export default function KnowledgePage() {
                   {entry.category}
                 </span>
                 <span>Fuente: {entry.source}</span>
-                <span>Usos: {entry.times_used}</span>
+                {entry.is_active === false ? (
+                  <span className="px-2 py-0.5 rounded-full bg-red-900/40 text-red-300">
+                    Inactiva — Sol no la ve
+                  </span>
+                ) : (
+                  <span className="text-emerald-400">Activa</span>
+                )}
                 <span>{formatFull(entry.created_at)}</span>
               </div>
             </div>

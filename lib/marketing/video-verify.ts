@@ -13,6 +13,7 @@
  * detected morph returns { ok:false } so the operator sees a 🚨 flag and rejects.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { REVIEW_MODEL, claudeParams, textOf } from '@/lib/models';
 import ffmpegPath from 'ffmpeg-static';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -21,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const execFileP = promisify(execFile);
-const VISION_MODEL = process.env.VIDEO_VERIFY_MODEL ?? 'claude-sonnet-4-6';
+const VISION_MODEL = process.env.VIDEO_VERIFY_MODEL ?? REVIEW_MODEL;
 const MIN_CONFIDENCE = Number(process.env.VIDEO_VERIFY_MIN_CONFIDENCE ?? 0.95);
 
 export interface VideoVerdict {
@@ -77,7 +78,7 @@ async function checkFrame(
   refMedia: 'image/jpeg' | 'image/png',
   productName: string,
 ): Promise<{ same: boolean; intact: boolean; confidence: number; issues: string[] }> {
-  const resp = await client.messages.create({
+  const resp = await client.messages.create(claudeParams({
     model: VISION_MODEL,
     max_tokens: 300,
     messages: [{
@@ -97,8 +98,8 @@ async function checkFrame(
         { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: frame.toString('base64') } },
       ],
     }],
-  }, { timeout: 30_000 });
-  const txt = resp.content[0]?.type === 'text' ? resp.content[0].text : '';
+  }), { timeout: 30_000 });
+  const txt = textOf(resp);
   const cleaned = txt.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
   try {
     const p = JSON.parse(cleaned) as { same_product?: boolean; product_intact?: boolean; confidence?: number; issues?: unknown };

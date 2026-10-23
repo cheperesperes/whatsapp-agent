@@ -25,6 +25,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { REVIEW_MODEL, claudeParams, textOf } from '@/lib/models';
 import { createServiceClient } from '@/lib/supabase';
 import { createServerClient } from '@supabase/ssr';
 
@@ -164,12 +165,12 @@ Devuelve SOLO JSON válido, sin explicaciones, con esta forma:
     const anthropic = new Anthropic();
     let text = '';
     try {
-      const resp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+      const resp = await anthropic.messages.create(claudeParams({
+        model: REVIEW_MODEL,
         max_tokens: 4096,
         messages: [{ role: 'user', content: prompt }],
-      });
-      text = resp.content[0]?.type === 'text' ? resp.content[0].text : '';
+      }));
+      text = textOf(resp);
     } catch (e: any) {
       return NextResponse.json({ error: `Generation failed: ${e?.message ?? String(e)}` }, { status: 502 });
     }
@@ -238,12 +239,12 @@ function wrapArticleHtml(bodyHtml: string, lang: 'es' | 'en'): string {
 
 async function generateJson(prompt: string): Promise<any> {
   const anthropic = new Anthropic();
-  const resp = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+  const resp = await anthropic.messages.create(claudeParams({
+    model: REVIEW_MODEL,
     max_tokens: 4096,
     messages: [{ role: 'user', content: prompt }],
-  });
-  const text = resp.content[0]?.type === 'text' ? resp.content[0].text : '';
+  }));
+  const text = textOf(resp);
   const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\})/);
   if (!match) throw new Error('Model did not return JSON');
   return JSON.parse(match[1]);

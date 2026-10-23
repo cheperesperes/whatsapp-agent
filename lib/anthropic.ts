@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { SOL_MODEL, FAST_MODEL, claudeParams, textOf } from './models';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type {
@@ -12,8 +13,8 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const MODEL = 'claude-sonnet-4-6';
-const EXTRACT_MODEL = 'claude-haiku-4-5-20251001';
+const MODEL = SOL_MODEL;
+const EXTRACT_MODEL = FAST_MODEL;
 const MAX_TOKENS = 500;
 
 // Background extractors run inside `waitUntil` and SHARE the lambda's
@@ -120,11 +121,11 @@ Cuando el cliente esté LISTO para comprar o pida un link de pago (ej.: "mándam
 - items = uno o más equipos separados por coma, formato SKU:cantidad. Usa el SKU EXACTO del catálogo. Ej.: items=E3600LFP:3 · combo: items=E1500LFP:1,WB12200:1
 - coupon = normalmente UN solo código: el de la oferta de ese equipo si lo presentaste (ej. coupon=PECRON7), o coupon=none si no hay. COMBO de varios equipos con ofertas distintas: pasa los códigos separados por coma, uno por equipo, exactamente los que ya cotizaste (ej. items=E1500LFP:1,WB12200:1 coupon=HURRICANE5,PECRON7); el sistema aplica a CADA equipo el mejor descuento seguro de esa lista, así ninguno se queda a precio completo. No inventes códigos ni le pongas a un equipo el cupón de otro.
 - fl = estimación interna del impuesto. ⛔ NUNCA le preguntes al cliente si el envío es para Florida — el checkout calcula el impuesto real con la dirección del comprador, así que la pregunta no aporta nada y siembra dudas de cobertura (clientes reales respondieron preguntando "¿entonces envían a mi estado?"). DERIVA el valor de lo que el cliente YA dijo en la conversación: mencionó Florida o una ciudad de Florida → fl=si; mencionó cualquier otro estado o ciudad → fl=no; no se sabe → fl=no y emite la etiqueta igual, sin preguntar.
-- El sistema reemplaza esa etiqueta por un link de pago REAL de PayPal (tarjeta / PayPal / Apple Pay, sin cuenta; el total y el descuento los calculamos nosotros). TÚ no escribes el link ni el total final, solo la etiqueta.
+- El sistema reemplaza esa etiqueta por el link REAL del checkout de oiikon.com (tarjeta, Affirm a meses, Apple Pay, Google Pay o PayPal — el cliente elige, sin crear cuenta; el total y el descuento los calculamos nosotros). Funciona igual en WhatsApp y en el chat de la web. TÚ no escribes el link ni el total final, solo la etiqueta.
 - Acompáñala con una frase cálida, ej.: "¡Perfecto! Aquí tienes tu link de pago seguro 👇" (la etiqueta va en la línea siguiente).
 - 🛡️ TRANQUILIDAD EN EL PAGO (clave: el miedo a comprar por WhatsApp es lo que más frena el pago). Junto al link, agrega UNA línea corta de riesgo-cero con hechos REALES — pago protegido + garantía + devolución — ej.: "Pago seguro con PayPal o tarjeta (protección al comprador), garantía PECRON y 30 días para devolver — cero riesgo 😊". NO inventes sellos, número de clientes ni reseñas. Ver "CONFIANZA Y RIESGO CERO" en el prompt principal.
 - Si NO estás seguro del SKU o la cantidad, PREGÚNTALO primero — no emitas la etiqueta con datos inventados.
-- ⚠️ NO REGENERES el link. Si YA emitiste un [[PAYLINK]] en esta conversación para el MISMO equipo, cantidad, cupón y estado (FL), y el cliente responde "ok" / "sí" / "gracias" / una duda, NO emitas otra etiqueta — el link que ya mandaste sigue activo. Solo confirma en una línea: "Use el link de arriba para pagar — ahí mismo completa con tarjeta, PayPal o Apple Pay 😊". Emite un [[PAYLINK]] NUEVO SOLO si cambió algo del pedido (otro equipo, otra cantidad, otro cupón, o el estado de envío FL). Mandar 3 links iguales confunde al cliente y crea pedidos duplicados.
+- ⚠️ NO REGENERES el link. Si YA emitiste un [[PAYLINK]] en esta conversación para el MISMO equipo, cantidad, cupón y estado (FL), y el cliente responde "ok" / "sí" / "gracias" / una duda, NO emitas otra etiqueta — el link que ya mandaste sigue activo. Solo confirma en una línea: "Use el link de arriba para pagar — ahí mismo completa con tarjeta, Affirm, Apple Pay o PayPal 😊". Emite un [[PAYLINK]] NUEVO SOLO si cambió algo del pedido (otro equipo, otra cantidad, otro cupón, o el estado de envío FL). Mandar 3 links iguales confunde al cliente y crea pedidos duplicados.
 - ⛔ PRODUCTO AGOTADO (excepción a TODO lo anterior): si el equipo aparece marcado "⛔ AGOTADO" en el catálogo, NO emitas la etiqueta, NO preguntes lo de Florida y NO prometas link de pago — aunque el cliente lo pida con urgencia. Dile con honestidad que está agotado en este momento, ofrécele la alternativa en stock más cercana con precio y link, y pregúntale si quiere que le avisemos en cuanto regrese (si acepta, agrega [METRIC: restock_request: SKU]).
 - 🔧 PRODUCTO POR ENCARGO (excepción para sistemas grandes): si el equipo aparece marcado "🔧 POR ENCARGO" (un sistema todo-en-uno, inversor o batería 48V que no tenemos en stock pero traemos del proveedor), NO emitas [[PAYLINK]] ni des link de pago. Asesóralo y dimensiónalo con normalidad, di con honestidad que es un pedido especial (precio de catálogo solo como referencia, sin fecha exacta de entrega), captura la necesidad y escala con [HANDOFF: pedido por encargo — SKU + necesidad] para que el especialista cotice (tiempo + flete) y gestione el anticipo. Ver "PEDIDO POR ENCARGO" en el prompt principal.
 
@@ -153,7 +154,7 @@ Escribes por WhatsApp como un buen vendedor que textea, NO como un folleto ni un
 - CONCRETO: responde EXACTO lo que preguntó con el dato real (precio, horas, qué corre). Sin relleno ("imagínelo como un tanque…", "sin pestañear"), sin repetir lo ya dicho, sin specs ni un segundo producto que nadie pidió.
 - HUMANO: cálido y directo, como una persona real. UNA sola pregunta, y de CIERRE (no de interrogatorio). Nada de sonar a robot o a plantilla.
 - ANTES DE ENVIAR pregúntate: "¿un humano por WhatsApp escribiría esto, así de largo?" Si es más largo de lo que un humano teclearía, CÓRTALO.
-Esto NO cambia QUÉ dices (el contenido correcto y el FORMATO DE PRECIO con su ancla MSRP siguen igual) — solo recorta lo de MÁS: di lo correcto, pero corto y humano.`;
+Esto NO cambia QUÉ dices (el contenido correcto y el FORMATO DE PRECIO — solo el precio final, sin precio tachado ni MSRP — siguen igual) — solo recorta lo de MÁS: di lo correcto, pero corto y humano.`;
 
   const systemPrompt = `${basePrompt}
 
@@ -191,12 +192,12 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
   messages.push({ role: 'user', content: newUserMessage });
 
   const response = await client.messages.create(
-    {
+    claudeParams({
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: systemParam,
       messages,
-    },
+    }),
     {
       timeout: 22_000,
       headers: {
@@ -211,8 +212,13 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
     console.log(`[sol] cache read=${usage.cache_read_input_tokens ?? 0} created=${usage.cache_creation_input_tokens ?? 0} input=${usage.input_tokens}`);
   }
 
-  const rawText =
-    response.content[0]?.type === 'text' ? response.content[0].text : '';
+  const rawText = textOf(response);
+  // Never send a blank WhatsApp message. On 5.x models a reply can stop at
+  // max_tokens after thinking with no text; treat that like an API error so
+  // the callers' existing fallback/escalation path runs.
+  if (!rawText.trim()) {
+    throw new Error(`[sol] empty reply from ${MODEL} (stop_reason=${response.stop_reason})`);
+  }
 
   const handoffMatch = rawText.match(/\[HANDOFF:\s*([^\]]+)\]/i);
   const handoffReason = handoffMatch ? handoffMatch[1].trim() : null;
@@ -459,14 +465,14 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as {
       display_name: string | null;
@@ -642,14 +648,14 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as {
       rules: Record<ScorecardRuleId, ScorecardRuleResult>;
@@ -800,15 +806,15 @@ Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 250,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     return parseLeadScoreResponse(text);
   } catch (err) {
     console.warn('[scoreLeadQuality] failed:', err instanceof Error ? err.message : err);
@@ -855,14 +861,14 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
 
   try {
     const response = await client.messages.create(
-      {
+      claudeParams({
         model: EXTRACT_MODEL,
         max_tokens: 800,
         messages: [{ role: 'user', content: prompt }],
-      },
+      }),
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as { suggestions?: KBSuggestionDraft[] };
     const out = (parsed.suggestions ?? [])

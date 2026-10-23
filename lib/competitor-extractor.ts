@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { FAST_MODEL, claudeParams, textOf } from './models';
 import { createServiceClient } from './supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,8 +77,8 @@ export async function extractCompetitorMention(
 
   const anthropic = new Anthropic();
 
-  const res = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const res = await anthropic.messages.create(claudeParams({
+    model: FAST_MODEL,
     max_tokens: 300,
     messages: [
       {
@@ -107,9 +108,9 @@ ${message}
 """`,
       },
     ],
-  });
+  }));
 
-  const text = res.content[0]?.type === 'text' ? res.content[0].text.trim() : '';
+  const text = textOf(res).trim();
   if (!text || text === 'null') return null;
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);

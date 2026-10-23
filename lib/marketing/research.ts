@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { FAST_MODEL, claudeParams, textOf } from '@/lib/models';
 
 interface SearchResult {
   title: string;
@@ -114,8 +115,8 @@ export async function conductDailyResearch(): Promise<ResearchResult> {
   let brief = snippets[0] ?? 'Tendencias no disponibles hoy.';
 
   if (snippets.length > 0) {
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const msg = await anthropic.messages.create(claudeParams({
+      model: FAST_MODEL,
       max_tokens: 350,
       messages: [
         {
@@ -138,8 +139,8 @@ En 4-6 oraciones en ESPAÑOL resume:
 Solo el resumen, sin introducción.`,
         },
       ],
-    });
-    if (msg.content[0].type === 'text') brief = msg.content[0].text;
+    }));
+    { const t = textOf(msg); if (t) brief = t; }
   }
 
   return { brief, facebookGroups };
