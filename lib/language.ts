@@ -275,6 +275,34 @@ export function browserLanguageName(browserLang?: string | null): string | null 
   return OTHER_LANGUAGE_NAMES[base] || null;
 }
 
+/**
+ * Non-Latin scripts the Latin-word heuristic can't see (it strips them). Real
+ * case 2026-07-27: a customer wrote in Chinese, the detector returned
+ * 'unknown', fell back to a hard SPANISH lock, and Sol answered in Spanish.
+ * Returns an English language name for the generic lock, or null.
+ */
+const SCRIPT_LANGS: { name: string; re: RegExp }[] = [
+  { name: 'Japanese', re: /[\u3040-\u30ff]/g }, // kana first: Japanese also uses Han
+  { name: 'Korean', re: /[\uac00-\ud7af\u1100-\u11ff]/g },
+  { name: 'Chinese', re: /[\u4e00-\u9fff\u3400-\u4dbf]/g },
+  { name: 'Arabic', re: /[\u0600-\u06ff]/g },
+  { name: 'Hebrew', re: /[\u0590-\u05ff]/g },
+  { name: 'Russian', re: /[\u0400-\u04ff]/g },
+  { name: 'Hindi', re: /[\u0900-\u097f]/g },
+  { name: 'Thai', re: /[\u0e00-\u0e7f]/g },
+  { name: 'Greek', re: /[\u0370-\u03ff]/g },
+];
+
+export function detectScriptLanguageName(text: string): string | null {
+  const letters = (text ?? '').replace(/[\s\d\p{P}\p{S}]/gu, '');
+  if (letters.length === 0) return null;
+  for (const { name, re } of SCRIPT_LANGS) {
+    const n = letters.match(re)?.length ?? 0;
+    if (n >= 2 && n / letters.length >= 0.3) return name;
+  }
+  return null;
+}
+
 /** Generic hard language lock for ANY language (browser-detected languages the
  *  heuristic doesn't hand-code). The model is fluent in all of them. */
 export function formatGenericLanguageLockForPrompt(languageName: string): string {
@@ -313,6 +341,12 @@ export function resolveLanguage(
   persistedLanguage?: string | null,
   browserLang?: string | null
 ): ResolvedLanguage {
+  // A non-Latin script in the latest messages wins: those customers must never
+  // get the Spanish fallback lock.
+  const scriptName = detectScriptLanguageName(recentUserMessages.slice(-2).join(' '));
+  if (scriptName) {
+    return { code: 'es', lock: formatGenericLanguageLockForPrompt(scriptName), otherName: scriptName };
+  }
   const blob = recentUserMessages.slice(-5).join(' ');
   const detected = detectLanguage(blob);
   if (detected !== 'unknown') {

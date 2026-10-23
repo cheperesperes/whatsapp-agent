@@ -65,8 +65,7 @@ import { validateSolReply, extractCheckoutUrls } from '@/lib/validate-reply';
 import { isBareCloser, shouldStaySilentOnCloser } from '@/lib/human-voice';
 import { loadCustomerOrders, formatOrdersForPrompt } from '@/lib/orders-context';
 import {
-  detectLanguageFromHistory,
-  formatLanguageLockForPrompt,
+  resolveLanguage,
 } from '@/lib/language';
 import { buildFirstContactDirective } from '@/lib/ad-landing';
 import { timezoneFromPhone } from '@/lib/timezone';
@@ -546,11 +545,11 @@ async function processWebhookLocked(
         .map((m) => m.content),
       messageText,
     ];
-    const detectedLang = detectLanguageFromHistory(
-      recentUserMsgs,
-      customerProfile?.language
-    );
-    const languageLock = formatLanguageLockForPrompt(detectedLang);
+    // resolveLanguage = the old detector + persisted fallback, plus non-Latin
+    // script detection (Chinese/Arabic/… customers no longer get a Spanish lock).
+    const resolvedLang = resolveLanguage(recentUserMsgs, customerProfile?.language, null);
+    const detectedLang = resolvedLang.code;
+    const languageLock = resolvedLang.lock;
     console.log(
       `[WEBHOOK] Language pin for ${senderPhone}: ${detectedLang} (persisted=${customerProfile?.language ?? 'none'})`
     );
@@ -902,7 +901,7 @@ async function processWebhookLocked(
     let cleanMessage = normalizedMessage;
     {
       // Pay-link / post-payment templates only exist in es/en — map fr/ht → en.
-      const payLang: 'es' | 'en' = detectedLang === 'es' ? 'es' : 'en';
+      const payLang: 'es' | 'en' = detectedLang === 'es' && !resolvedLang.otherName ? 'es' : 'en';
       const pl = await applyPayLinkMarkers(normalizedMessage, payLang, senderPhone);
       cleanMessage = pl.text;
       if (pl.built > 0 || pl.failed > 0) {

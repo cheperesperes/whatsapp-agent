@@ -275,7 +275,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // stripped the marker and the buyer got "Le dejo su kit listo 👇" with no
     // link (real web chat, 2026-09-30). The built link is an oiikon.com product
     // page, so the validator's "no checkout URLs on web" rule still holds.
-    const webPayLang: 'es' | 'en' = detectedLang === 'es' ? 'es' : 'en';
+    const webPayLang: 'es' | 'en' = detectedLang === 'es' && !resolvedLang.otherName ? 'es' : 'en';
     const webSoft =
       webPayLang === 'en'
         ? 'You can complete your order right on oiikon.com — or leave me your WhatsApp number and I’ll send you the link there. 🙏'
