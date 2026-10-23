@@ -12,13 +12,14 @@ const NO_CACHE_HEADERS = {
   Pragma: 'no-cache',
 };
 
-// GET /api/knowledge — list entries (most-used first)
+// GET /api/knowledge — list entries (active first, newest first). The old
+// "most-used first" order sorted on times_used, which nothing increments.
 export async function GET() {
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from('knowledge_base')
     .select('*')
-    .order('times_used', { ascending: false })
+    .order('is_active', { ascending: false })
     .order('created_at', { ascending: false });
 
   if (error) {

@@ -1334,12 +1334,19 @@ export async function loadKnowledgeBase(): Promise<KnowledgeEntry[]> {
   // pairs marked inactive on 2026-05-21 when Oiikon went USA-only) never
   // reach Sol's runtime context. The rows remain in the table for audit
   // history; flip is_active back to true to re-enable.
+  // Load ALL active entries (121 rows ≈ 35k chars on 2026-10-23 — it sits in the
+  // prompt-cached prefix). The old `.order('times_used').limit(50)` silently
+  // dropped ~70 entries, and since nothing ever increments times_used (all 0),
+  // WHICH 50 reached Sol was arbitrary. Stable order keeps the cache prefix
+  // identical between requests; the cap is only a runaway guard — keep the KB
+  // curated (deactivate stale rows) rather than relying on it.
   const { data, error } = await supabase
     .from('knowledge_base')
     .select('*')
     .eq('is_active', true)
-    .order('times_used', { ascending: false })
-    .limit(50);
+    .order('category', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(250);
 
   if (error) {
     console.error('[KB] Failed to load knowledge base:', error.message);

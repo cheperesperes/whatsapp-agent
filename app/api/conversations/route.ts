@@ -37,18 +37,25 @@ export async function GET() {
   // One query per conversation would be an N+1. Pull the most-recent message
   // per conversation in a single query using DISTINCT ON-like pattern via a
   // bulk fetch + client-side grouping.
-  const ids = list.map((c) => c.id);
-  const { data: msgs } = await supabase
-    .from('messages')
-    .select('*')
-    .in('conversation_id', ids)
-    .order('created_at', { ascending: false });
-
+  // Page through messages newest-first. A single query is capped by Supabase's
+  // 1,000-row default, so with ~5,400 messages the older chats came back with
+  // no last message and showed "Sin mensajes" (392 of 531 on 2026-10-23).
+  // Stops as soon as every conversation has its latest message.
   const lastByConv: Record<string, Message> = {};
-  for (const m of (msgs ?? []) as Message[]) {
-    if (!lastByConv[m.conversation_id]) {
-      lastByConv[m.conversation_id] = m;
+  const PAGE = 1000;
+  const MAX_PAGES = 50; // runaway guard (~50k messages)
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { data: msgs, error: msgErr } = await supabase
+      .from('messages')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(page * PAGE, page * PAGE + PAGE - 1);
+    if (msgErr || !msgs || msgs.length === 0) break;
+    for (const m of msgs as Message[]) {
+      if (!lastByConv[m.conversation_id]) lastByConv[m.conversation_id] = m;
     }
+    if (msgs.length < PAGE || Object.keys(lastByConv).length >= list.length) break;
   }
 
   const withLast = list.map((c) => ({ ...c, last_message: lastByConv[c.id] }));
