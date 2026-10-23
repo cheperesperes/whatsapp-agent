@@ -25,6 +25,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { REVIEW_MODEL } from '@/lib/models';
 import { createServiceClient } from '@/lib/supabase';
 import { createServerClient } from '@supabase/ssr';
 
@@ -165,7 +166,7 @@ Devuelve SOLO JSON válido, sin explicaciones, con esta forma:
     let text = '';
     try {
       const resp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: REVIEW_MODEL,
         max_tokens: 4096,
         messages: [{ role: 'user', content: prompt }],
       });
@@ -239,7 +240,7 @@ function wrapArticleHtml(bodyHtml: string, lang: 'es' | 'en'): string {
 async function generateJson(prompt: string): Promise<any> {
   const anthropic = new Anthropic();
   const resp = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: REVIEW_MODEL,
     max_tokens: 4096,
     messages: [{ role: 'user', content: prompt }],
   });

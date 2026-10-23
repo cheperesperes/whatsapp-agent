@@ -13,6 +13,7 @@
  * detected morph returns { ok:false } so the operator sees a 🚨 flag and rejects.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { REVIEW_MODEL } from '@/lib/models';
 import ffmpegPath from 'ffmpeg-static';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -21,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const execFileP = promisify(execFile);
-const VISION_MODEL = process.env.VIDEO_VERIFY_MODEL ?? 'claude-sonnet-4-6';
+const VISION_MODEL = process.env.VIDEO_VERIFY_MODEL ?? REVIEW_MODEL;
 const MIN_CONFIDENCE = Number(process.env.VIDEO_VERIFY_MIN_CONFIDENCE ?? 0.95);
 
 export interface VideoVerdict {

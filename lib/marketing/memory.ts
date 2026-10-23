@@ -8,6 +8,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { FAST_MODEL } from '@/lib/models';
 import { createServiceClient } from '@/lib/supabase';
 import { getRecentPerformance, listCampaigns } from './db';
 
@@ -122,7 +123,7 @@ export async function consolidateMemory(): Promise<void> {
   // Ask Claude to synthesize learnings
   const anthropic = new Anthropic();
   const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: FAST_MODEL,
     max_tokens: 600,
     messages: [
       {

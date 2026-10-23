@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { FAST_MODEL } from '@/lib/models';
 
 interface SearchResult {
   title: string;
@@ -115,7 +116,7 @@ export async function conductDailyResearch(): Promise<ResearchResult> {
 
   if (snippets.length > 0) {
     const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: FAST_MODEL,
       max_tokens: 350,
       messages: [
         {

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { SOL_MODEL, FAST_MODEL } from './models';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type {
@@ -12,8 +13,8 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const MODEL = 'claude-sonnet-4-6';
-const EXTRACT_MODEL = 'claude-haiku-4-5-20251001';
+const MODEL = SOL_MODEL;
+const EXTRACT_MODEL = FAST_MODEL;
 const MAX_TOKENS = 500;
 
 // Background extractors run inside `waitUntil` and SHARE the lambda's

@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { REVIEW_MODEL, FAST_MODEL } from '@/lib/models';
 import { selectBestOffer, type Offer } from '@/lib/supabase';
 
 export interface GeneratedContent {
@@ -368,7 +369,7 @@ Genera el siguiente contenido de marketing en formato JSON válido. ${language =
 }`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: REVIEW_MODEL,
     max_tokens: 4096,
     messages: [{ role: 'user', content: prompt }],
   });
@@ -420,7 +421,7 @@ async function parseGeneratedJson(raw: string, anthropic: Anthropic): Promise<Ge
     );
     try {
       const fix = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: FAST_MODEL,
         max_tokens: 4096,
         messages: [
           {

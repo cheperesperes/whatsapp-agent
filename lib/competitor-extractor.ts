@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { FAST_MODEL } from './models';
 import { createServiceClient } from './supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,7 +78,7 @@ export async function extractCompetitorMention(
   const anthropic = new Anthropic();
 
   const res = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: FAST_MODEL,
     max_tokens: 300,
     messages: [
       {
