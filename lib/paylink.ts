@@ -257,21 +257,26 @@ export interface ApplyPayLinkResult {
 
 /**
  * Replace every [[PAYLINK …]] marker in an outgoing Sol message with a real
- * PayPal pay-link. A raw marker is NEVER left in the text — on failure it's
- * swapped for a soft "one moment" line so the customer never sees the marker.
+ * storefront checkout link (oiikon.com product page). A raw marker is NEVER
+ * left in the text — on failure it's swapped for a soft line so the customer
+ * never sees the marker. WhatsApp's default soft line promises a follow-up
+ * (the webhook alerts the operator); channels with no follow-up path (the web
+ * widget) pass their own `softOverride`.
  */
 export async function applyPayLinkMarkers(
   text: string,
   lang: 'es' | 'en' = 'es',
   waPhone?: string,
+  softOverride?: string,
 ): Promise<ApplyPayLinkResult> {
   const markers = [...text.matchAll(PAYLINK_RE)];
   if (markers.length === 0) return { text, built: 0, failed: 0, details: [] };
 
   const soft =
-    lang === 'en'
+    softOverride ??
+    (lang === 'en'
       ? 'One moment — I’ll send your secure pay link right away. 🙏'
-      : 'Un momento — te envío tu link de pago seguro enseguida. 🙏';
+      : 'Un momento — le envío su link de pago seguro enseguida. 🙏');
 
   let out = text;
   let built = 0;
