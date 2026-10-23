@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 // Operator management of sol_learnings (session-protected by middleware).
-// POST = add manual coaching directive. PATCH = activate/retire a row.
+// POST = add manual coaching directive. PATCH = approve (active) / retire / reject a row.
 
 export async function POST(req: NextRequest) {
   let body: { directive?: string; category?: string };
@@ -61,9 +61,10 @@ export async function PATCH(req: NextRequest) {
   }
 
   const id = (body.id ?? '').trim();
-  const status = body.status === 'retired' ? 'retired' : body.status === 'active' ? 'active' : null;
+  const status =
+    body.status === 'retired' || body.status === 'active' || body.status === 'rejected' ? body.status : null;
   if (!id || !status) {
-    return NextResponse.json({ error: 'id and status (active|retired) required' }, { status: 400 });
+    return NextResponse.json({ error: 'id and status (active|retired|rejected) required' }, { status: 400 });
   }
 
   const sb = createServiceClient();

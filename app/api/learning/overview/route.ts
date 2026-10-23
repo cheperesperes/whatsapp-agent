@@ -33,7 +33,7 @@ export async function GET() {
     sb
       .from('sol_learnings')
       .select('*')
-      .order('status', { ascending: true }) // active before retired
+      .order('status', { ascending: true }) // active, proposed, rejected, retired
       .order('updated_at', { ascending: false })
       .limit(60),
   ]);
@@ -74,7 +74,45 @@ export async function GET() {
     sentimentCounts[s] = (sentimentCounts[s] ?? 0) + 1;
   }
 
+  // Latest practice run (fail-soft: the table may not exist before the 2026-10-23 migration).
+  let practice: {
+    run_id: string; created_at: string; passed: number; total: number; model: string | null;
+    failing: { scenario_id: string; title: string | null; failures: { id: string; desc: string }[] }[];
+  } | null = null;
+  try {
+    const { data: last } = await sb
+      .from('sol_practice_runs')
+      .select('run_id')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const runId = last?.[0]?.run_id as string | undefined;
+    if (runId) {
+      const { data: rows } = await sb
+        .from('sol_practice_runs')
+        .select('scenario_id, title, passed, failures, model, created_at')
+        .eq('run_id', runId);
+      const list = rows ?? [];
+      practice = {
+        run_id: runId,
+        created_at: (list[0]?.created_at as string) ?? new Date().toISOString(),
+        passed: list.filter((r) => r.passed).length,
+        total: list.length,
+        model: (list[0]?.model as string | null) ?? null,
+        failing: list
+          .filter((r) => !r.passed)
+          .map((r) => ({
+            scenario_id: r.scenario_id as string,
+            title: (r.title as string | null) ?? null,
+            failures: (r.failures as { id: string; desc: string }[]) ?? [],
+          })),
+      };
+    }
+  } catch {
+    practice = null;
+  }
+
   return NextResponse.json({
+    practice,
     stats: {
       reviewed_7d: recent.length,
       avg_score_7d: avg(recent.map((r) => r.overall_score as number)),
