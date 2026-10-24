@@ -19,6 +19,10 @@
 
 (function () {
   'use strict';
+  // Mount once <body> exists. If the host page loads this script from <head>
+  // (or very early), document.body is still null and appendChild would throw,
+  // leaving the site with no chat at all.
+  function boot() {
   if (window.__oiikonSolMounted) return;
   window.__oiikonSolMounted = true;
 
@@ -58,14 +62,14 @@
   // visitor. If detectLanguage() returns 'en', every label uses STRINGS.en.
   var STRINGS = {
     es: {
-      greeting: 'Hola, soy Oiikon. ¿Cómo te ayudamos?',
-      header_subtitle: 'Energía solar para tu hogar',
+      greeting: '¡Hola! Soy Sol, la asistente virtual de Oiikon 😊 Pregúnteme el precio, cuánto le dura un equipo o cuál le conviene — le respondo al momento.',
+      header_subtitle: 'Energía solar para su hogar',
       open_aria: 'Abrir chat con Oiikon',
       close_aria: 'Cerrar',
       send_aria: 'Enviar',
-      input_placeholder: 'Escribe tu mensaje...',
-      fallback_error: 'Disculpa, hubo un problema. Intenta de nuevo.',
-      fallback_network: 'No pude enviar tu mensaje. Revisa tu conexión y vuelve a intentarlo.',
+      input_placeholder: 'Escriba su mensaje...',
+      fallback_error: 'Disculpe, hubo un problema. Intente de nuevo.',
+      fallback_network: 'No pude enviar su mensaje. Revise su conexión y vuelva a intentarlo.',
       email_title: '¿Le doy seguimiento por email?',
       email_hint: 'Si tiene que irse, le mando los detalles y le aviso de cualquier duda pendiente.',
       email_placeholder: 'su@email.com',
@@ -77,7 +81,7 @@
       email_invalid: 'Escriba un email válido.',
     },
     en: {
-      greeting: "Hi, I'm Oiikon. How can we help?",
+      greeting: "Hi! I'm Sol, Oiikon's virtual assistant 😊 Ask me prices, how long a unit runs, or which one fits you — I'll answer right away.",
       header_subtitle: 'Solar energy for your home',
       open_aria: 'Open chat with Oiikon',
       close_aria: 'Close',
@@ -100,6 +104,8 @@
   var T = STRINGS[LANG] || STRINGS.es;
   // Allow caller to override greeting via window.OIIKON_SOL.greeting
   var GREETING = CFG.greeting || T.greeting;
+  // Same rule as greetingNamesSol() in lib/widget-greeting.ts.
+  var GREETED_SIGNAL = (/\bsol\b/i.test(GREETING) && /oiikon/i.test(GREETING) && /(virtual|asistente|assistant)/i.test(GREETING)) ? 'sol' : 'generic';
 
   // ── Proactive teaser bubble ──────────────────────────────
   // Shows a one-line preview above the closed widget after a short delay
@@ -119,63 +125,59 @@
   // preference wins, otherwise navigator.language with Spanish kept as
   // a default for the Hispanic-American visitor segment.
 
-  var TEASER_DELAY_MS_GENERIC = 15000; // 15s on home / non-product pages (catch visitors before they bounce)
-  var TEASER_DELAY_MS_PRODUCT = 8000;  // 8s on product pages — higher intent
-  var TEASER_REPEAT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 1 day between teasers
-  var TEASER_AUTO_HIDE_MS = 12000;     // teaser disappears if not clicked
+  // Owner request 2026-10-23: Sol must greet visitors when they land. The old
+  // 15 s delay missed most visitors (and the site injects this script late),
+  // and the once-per-24h cooldown hid it from returning visitors.
+  var TEASER_DELAY_MS_GENERIC = 4000;  // 4s on home / non-product pages
+  var TEASER_DELAY_MS_PRODUCT = 3000;  // 3s on product pages — higher intent
+  var TEASER_SESSION_KEY = 'oiikon_sol_teaser_session'; // once per visit (browser session)
+  var TEASER_DISMISS_DAYS = 3;         // × hides it for 3 days, not forever
+  var TEASER_AUTO_HIDE_MS = 30000;     // stays 30s if not clicked
 
   // Audience tags. The picker scans URL + referrer + simple page-text
   // signals to choose one. Falls back to 'generic'.
   var AUDIENCES = ['hurricane', 'rv', 'offgrid', 'generic'];
 
   var TEASER_COPY = {
+    // Spanish uses "usted" (Sol's register) and avoids "apagón" (house vocabulary rule).
     es: {
       hurricane: [
-        '¿Listo para el próximo apagón? En 30 seg te digo qué necesitas (sin gastar en gasolina).',
-        '¿Cansado de pagar gasolina al generador? Te muestro la cuenta solar — paga solo.',
-        'Antes de la próxima tormenta, 3 preguntas y te digo si una Pecron te alcanza.',
+        '¿Listo para cuando se vaya la luz? En 30 segundos le digo qué equipo necesita, sin gastar en gasolina.',
+        '¿Cansado de pagar gasolina al generador? Le muestro la cuenta con energía solar.',
+        'Antes de la próxima tormenta: 3 preguntas y le digo qué PECRON le alcanza.',
       ],
       rv: [
-        '¿RV, casa rodante o cabaña? Te ajusto un Pecron a tu uso real (y dejas de cargar combustible).',
-        'Adiós al ruido del generador en el camping — calculemos qué solar te aguanta el viaje.',
-        '¿Cuántos días fuera de red? Te digo qué Pecron + paneles te dan autonomía sin gas.',
+        '¿RV, casa rodante o cabaña? Le ajusto un PECRON a su uso real, sin cargar combustible.',
+        'Adiós al ruido del generador en el camping — calculemos qué le aguanta el viaje.',
+        '¿Cuántos días fuera de la red? Le digo qué PECRON y paneles le dan autonomía.',
       ],
       offgrid: [
-        '¿Casa off-grid o cabaña? Te diseño el sistema en 3 preguntas — sin generador a gasolina.',
-        '¿Cansado de mover bidones de combustible? Te muestro cuánto ahorras yendo solar.',
-        'En 30 segundos te calculo qué LiFePO4 + paneles cubren tu carga real.',
+        '¿Casa off-grid o cabaña? Le diseño el sistema en 3 preguntas, sin generador a gasolina.',
+        '¿Cansado de mover bidones de combustible? Le muestro cuánto ahorra con solar.',
+        'En 30 segundos le calculo qué batería y paneles cubren su consumo real.',
       ],
       generic: [
-        'En 3 preguntas te digo qué Pecron necesitas — sin presión.',
-        '¿Comparas precio de generador vs solar? Te hago la cuenta gratis.',
-        '¿Necesitas energía de respaldo? Te diseño la solución en 30 segundos.',
+        '¡Hola! Soy Sol 😊 En 3 preguntas le digo qué equipo necesita, sin presión.',
+        '¿Compara generador contra solar? Le hago la cuenta gratis.',
+        '¿Necesita energía de respaldo? Pregúnteme — le respondo al momento.',
       ],
-      // Discount / offer curiosity hooks — pull the visitor into the chat to
-      // ASK about today's deal (Sol then presents the margin-safe offer server-side).
+      // Only shown when window.OIIKON_SOL.offerTeasers === true (a deal is live).
       offers: [
-        '👀 Hay una oferta de bienvenida hoy — pregúntame cuál te toca.',
-        '💸 ¿Buscas descuento? Pregúntame qué oferta tienes hoy antes de comprar.',
-        '¿Te digo qué cupón aplica a tu equipo? Pregúntame, sin compromiso 😊',
-        'Pregúntame por las ofertas de hoy — quizá te ahorro en tu Pecron.',
+        'Hoy hay una oferta activa — pregúnteme cuál aplica a su equipo.',
+        '¿Busca descuento? Pregúnteme la oferta de hoy antes de comprar.',
       ],
-      // "Ayúdame a elegir" / sizing (idea de Ed) — mata la parálisis de elección
-      // e invita una pregunta concreta para que Sol dimensione el equipo correcto.
       help: [
-        '¿No sabes cuál equipo elegir? Te ayudo a encontrar el correcto en 1 minuto.',
-        'Dime qué quieres mantener encendido (nevera, A/C, luces…) y te digo qué equipo te alcanza.',
-        '¿Dudando entre dos modelos? Te ayudo a decidir según tu uso real, sin compromiso.',
+        '¿No sabe cuál equipo elegir? Le ayudo a encontrar el correcto en 1 minuto.',
+        'Dígame qué quiere mantener encendido (nevera, A/C, luces…) y le digo qué equipo le alcanza.',
+        '¿Duda entre dos modelos? Le ayudo a decidir según su uso real, sin compromiso.',
       ],
-      // Confianza — el bloqueo #1 de pay-link→pagado es "¿es seguro comprar aquí?".
       trust: [
-        'Compra con confianza: pregúntame por la garantía, devoluciones y protección al comprador. 🛡️',
-        '¿Primera compra con nosotros? Te explico la garantía y cómo te protege tu pago.',
+        'Compre con confianza: pregúnteme por la garantía, las devoluciones y la protección al comprador. 🛡️',
+        '¿Primera compra con nosotros? Le explico la garantía y cómo se protege su pago.',
       ],
-      // "Descuento secreto" — gancho de curiosidad estilo buen vendedor (idea de
-      // Ed). El descuento real aparece en el carrito SI hay uno disponible hoy,
-      // así que es verdad; crea intriga e invita a escribir / agregar al carrito.
+      // Only shown when window.OIIKON_SOL.offerTeasers === true.
       secret: [
-        '🤫 Un secreto entre nosotros: agrega tu equipo al carrito y, si hay un descuento disponible hoy, lo verás aplicado. ¿Te digo cuál te conviene?',
-        'Psst… 🤫 hay un precio que no sale a la vista. Pregúntame por el descuento de hoy antes de comprar.',
+        'Pregúnteme por el precio de hoy antes de comprar — le digo si hay algún descuento activo.',
       ],
     },
     en: {
@@ -195,16 +197,14 @@
         '30 sec to size the LiFePO4 + panels that cover your real load.',
       ],
       generic: [
-        '3 questions and I\'ll tell you which Pecron fits — no pressure.',
+        'Hi! I\'m Sol 😊 3 questions and I\'ll tell you which station fits — no pressure.',
         'Comparing generator vs solar cost? I\'ll do the math, free.',
         'Need backup power? I\'ll design the solution in 30 seconds.',
       ],
       // Discount / offer curiosity hooks (see ES note above).
       offers: [
-        '👀 There\'s a welcome offer today — ask me which one you get.',
-        '💸 Looking for a discount? Ask me what deal you\'ve got before you buy.',
-        'Want to know which coupon fits your station? Just ask — no pressure 😊',
-        'Ask me about today\'s offers — I might save you money on your Pecron.',
+        'There\'s a deal live today — ask me which one fits your station.',
+        'Looking for a discount? Ask me about today\'s offer before you buy.',
       ],
       // "Help me choose" / sizing (see ES note).
       help: [
@@ -219,8 +219,7 @@
       ],
       // "Secret discount" intrigue (see ES note).
       secret: [
-        '🤫 A little secret: add your station to the cart and, if there\'s a discount available today, you\'ll see it applied. Want me to tell you which one fits?',
-        'Psst… 🤫 there\'s a price you won\'t see up front. Ask me about today\'s discount before you buy.',
+        'Ask me about today\'s price before you buy — I\'ll tell you if any discount is live.',
       ],
     },
   };
@@ -258,10 +257,13 @@
     // visitor into a concrete question. Lead with one of them ~70% of the time;
     // the rest of the time use the audience-tailored hook (still names their case).
     var intent = [];
-    if (pack.offers && pack.offers.length) intent.push(pack.offers);
+    // Discount hooks only when the site explicitly says a deal is live
+    // (window.OIIKON_SOL.offerTeasers = true). On 2026-10-23 no coupon was
+    // active, so "ask me about today's discount" led to "we have no coupon".
+    if (CFG.offerTeasers === true && pack.offers && pack.offers.length) intent.push(pack.offers);
     if (pack.help && pack.help.length) intent.push(pack.help);
     if (pack.trust && pack.trust.length) intent.push(pack.trust);
-    if (pack.secret && pack.secret.length) intent.push(pack.secret);
+    if (CFG.offerTeasers === true && pack.secret && pack.secret.length) intent.push(pack.secret);
     var aud = pack[audience] || pack.generic || TEASER_COPY.es.generic;
     var bucket = (intent.length && (!aud || Math.random() < 0.7))
       ? intent[Math.floor(Math.random() * intent.length)]
@@ -312,8 +314,17 @@
   // breaks to <br>. Keep it minimal — no full markdown.
   function formatText(s) {
     var out = escapeHtml(s);
-    out = out.replace(/\*([^\n*]+)\*/g, '<strong>$1</strong>');
-    out = out.replace(/_([^\n_]+)_/g, '<em>$1</em>');
+    // Links first, so markdown inside URLs (e.g. "_" in a slug) is left alone.
+    // Text is already HTML-escaped, so the href can't break out of the tag.
+    var links = [];
+    out = out.replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)\]]/g, function (url) {
+      links.push('<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="oiikon-sol-link">' + url + '</a>');
+      return '\u0000' + (links.length - 1) + '\u0000';
+    });
+    out = out.replace(/\*\*([^\n*]+)\*\*/g, '<strong>$1</strong>'); // **bold**
+    out = out.replace(/\*([^\n*]+)\*/g, '<strong>$1</strong>');     // *bold* (WhatsApp)
+    out = out.replace(/(^|[\s(])_([^\n_]+)_(?=$|[\s.,;:!?)])/g, '$1<em>$2</em>');
+    out = out.replace(/\u0000(\d+)\u0000/g, function (_, i) { return links[Number(i)]; });
     out = out.replace(/\n/g, '<br>');
     return out;
   }
@@ -328,6 +339,8 @@
     '  transition:transform .15s ease;font-family:system-ui,-apple-system,sans-serif;',
     '}',
     '#oiikon-sol-bubble:hover{transform:scale(1.05);}',
+    '@keyframes oiikonSolPulse{0%{box-shadow:0 0 0 0 rgba(249,115,22,.55)}70%{box-shadow:0 0 0 16px rgba(249,115,22,0)}100%{box-shadow:0 0 0 0 rgba(249,115,22,0)}}',
+    '#oiikon-sol-bubble[data-attention="true"]{animation:oiikonSolPulse 1.6s ease-out 3;}',
     '#oiikon-sol-bubble[data-open="true"]{display:none;}',
     // ── Teaser tooltip (shown above the closed bubble) ──
     '#oiikon-sol-teaser{',
@@ -351,7 +364,7 @@
     '}',
     '#oiikon-sol-teaser-close:hover{color:#1f2937;}',
     '@media (max-width:480px){',
-    '  #oiikon-sol-teaser{right:14px;bottom:184px;max-width:calc(100vw - 28px);}',
+    '  #oiikon-sol-teaser{left:14px;right:14px;bottom:184px;max-width:none;box-sizing:border-box;padding-right:28px;}',
     '  #oiikon-sol-teaser::after{display:none;}',
     '}',
     '#oiikon-sol-panel{',
@@ -381,6 +394,7 @@
     '.oiikon-sol-msg-bot{background:white;border:1px solid #e5e7eb;align-self:flex-start;border-bottom-left-radius:4px;}',
     '.oiikon-sol-msg-user{background:#f97316;color:white;align-self:flex-end;border-bottom-right-radius:4px;}',
     '.oiikon-sol-msg-img{margin-top:6px;border-radius:8px;max-width:100%;display:block;}',
+    '.oiikon-sol-link{color:#ea580c;text-decoration:underline;word-break:break-all;}',
     '.oiikon-sol-typing{display:flex;gap:4px;padding:10px 14px;align-self:flex-start;background:white;border:1px solid #e5e7eb;border-radius:14px;border-bottom-left-radius:4px;}',
     '.oiikon-sol-typing span{width:6px;height:6px;border-radius:50%;background:#9ca3af;animation:oiikon-sol-bounce 1.4s infinite ease-in-out both;}',
     '.oiikon-sol-typing span:nth-child(2){animation-delay:.16s;}',
@@ -392,7 +406,10 @@
     '.oiikon-sol-send{background:#f97316;color:white;border:none;border-radius:50%;width:36px;height:36px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;}',
     '.oiikon-sol-send:disabled{opacity:.5;cursor:not-allowed;}',
     '@media (max-width:480px){',
-    '  #oiikon-sol-panel{right:10px;bottom:106px;left:10px;width:auto;height:78vh;max-height:calc(100vh - 122px);}',
+    // max-width:none — the desktop calc(100vw - 40px) cap left a 30px gap on the right.
+    '  #oiikon-sol-panel{right:10px;bottom:106px;left:10px;width:auto;max-width:none;height:78vh;max-height:calc(100vh - 122px);}',
+    // 16px stops iPhone Safari from zooming the whole page when the input is tapped.
+    '  .oiikon-sol-input{font-size:16px;}',
     '  #oiikon-sol-bubble{right:14px;bottom:110px;}',
     '}',
   ].join('');
@@ -575,6 +592,9 @@
     panel.setAttribute('data-open', open ? 'true' : 'false');
     try { sessionStorage.setItem(OPEN_KEY, open ? '1' : '0'); } catch (e) {}
     if (open) {
+      // The teaser sits over the panel's input row — never leave it showing
+      // once the chat is open, however it was opened (bubble, teaser, restore).
+      hideTeaser(false);
       renderHistory();
       setTimeout(function () { inputEl.focus(); }, 100);
     }
@@ -617,6 +637,10 @@
           // Visitor's page/browser language so Sol can reply in it even when it's
           // not es/en/fr/ht (Portuguese, etc.) and the message is ambiguous.
           browserLang: (document.documentElement.lang || navigator.language || ''),
+          // Tells Sol a canned greeting was already shown, so its first reply
+          // doesn't say hello and introduce itself a second time. A fixed
+          // signal only — the greeting text itself is never sent.
+          greeted: GREETED_SIGNAL,
         }),
       })
         .then(function (res) {
@@ -673,9 +697,11 @@
     if (panel.getAttribute('data-open') === 'true') return false;
     if (history.length > 1) return false;
     try {
-      if (localStorage.getItem(TEASER_DISMISSED_KEY) === '1') return false;
-      var lastShown = parseInt(localStorage.getItem(TEASER_LAST_SHOWN_KEY) || '0', 10);
-      if (lastShown && Date.now() - lastShown < TEASER_REPEAT_COOLDOWN_MS) return false;
+      // Dismissed with × → quiet for TEASER_DISMISS_DAYS (old value '1' = legacy
+      // "forever" flag: treat as expired so those visitors see Sol again).
+      var dismissedAt = parseInt(localStorage.getItem(TEASER_DISMISSED_KEY) || '0', 10);
+      if (dismissedAt > 1 && Date.now() - dismissedAt < TEASER_DISMISS_DAYS * 864e5) return false;
+      if (sessionStorage.getItem(TEASER_SESSION_KEY) === '1') return false;
     } catch (e) {}
     return true;
   }
@@ -688,20 +714,26 @@
     var textEl = teaser.querySelector('#oiikon-sol-teaser-text');
     if (textEl) textEl.textContent = copy;
     teaser.setAttribute('data-visible', 'true');
-    try { localStorage.setItem(TEASER_LAST_SHOWN_KEY, String(Date.now())); } catch (e) {}
+    bubble.setAttribute('data-attention', 'true');
+    try {
+      localStorage.setItem(TEASER_LAST_SHOWN_KEY, String(Date.now()));
+      sessionStorage.setItem(TEASER_SESSION_KEY, '1');
+    } catch (e) {}
     // Auto-hide if the visitor doesn't engage — but DON'T mark as dismissed
     // (we'll try again on the next page after the cooldown).
     if (teaserHideTimer) clearTimeout(teaserHideTimer);
     teaserHideTimer = setTimeout(function () {
       teaser.setAttribute('data-visible', 'false');
+      bubble.removeAttribute('data-attention');
     }, TEASER_AUTO_HIDE_MS);
   }
 
   function hideTeaser(dismissedByUser) {
     teaser.setAttribute('data-visible', 'false');
+    bubble.removeAttribute('data-attention');
     if (teaserHideTimer) { clearTimeout(teaserHideTimer); teaserHideTimer = null; }
     if (dismissedByUser) {
-      try { localStorage.setItem(TEASER_DISMISSED_KEY, '1'); } catch (e) {}
+      try { localStorage.setItem(TEASER_DISMISSED_KEY, String(Date.now())); } catch (e) {}
     }
   }
 
@@ -727,4 +759,7 @@
   // visitors landing there have already shown intent.
   var teaserDelay = isProductPage() ? TEASER_DELAY_MS_PRODUCT : TEASER_DELAY_MS_GENERIC;
   setTimeout(showTeaser, teaserDelay);
+  }
+  if (document.body) boot();
+  else document.addEventListener('DOMContentLoaded', boot);
 })();
