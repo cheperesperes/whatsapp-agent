@@ -364,7 +364,7 @@
     '}',
     '#oiikon-sol-teaser-close:hover{color:#1f2937;}',
     '@media (max-width:480px){',
-    '  #oiikon-sol-teaser{right:14px;bottom:184px;max-width:calc(100vw - 28px);}',
+    '  #oiikon-sol-teaser{left:14px;right:14px;bottom:184px;max-width:none;box-sizing:border-box;padding-right:28px;}',
     '  #oiikon-sol-teaser::after{display:none;}',
     '}',
     '#oiikon-sol-panel{',
@@ -406,7 +406,10 @@
     '.oiikon-sol-send{background:#f97316;color:white;border:none;border-radius:50%;width:36px;height:36px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;}',
     '.oiikon-sol-send:disabled{opacity:.5;cursor:not-allowed;}',
     '@media (max-width:480px){',
-    '  #oiikon-sol-panel{right:10px;bottom:106px;left:10px;width:auto;height:78vh;max-height:calc(100vh - 122px);}',
+    // max-width:none — the desktop calc(100vw - 40px) cap left a 30px gap on the right.
+    '  #oiikon-sol-panel{right:10px;bottom:106px;left:10px;width:auto;max-width:none;height:78vh;max-height:calc(100vh - 122px);}',
+    // 16px stops iPhone Safari from zooming the whole page when the input is tapped.
+    '  .oiikon-sol-input{font-size:16px;}',
     '  #oiikon-sol-bubble{right:14px;bottom:110px;}',
     '}',
   ].join('');
