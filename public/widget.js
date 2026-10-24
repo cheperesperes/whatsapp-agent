@@ -587,6 +587,9 @@
     panel.setAttribute('data-open', open ? 'true' : 'false');
     try { sessionStorage.setItem(OPEN_KEY, open ? '1' : '0'); } catch (e) {}
     if (open) {
+      // The teaser sits over the panel's input row — never leave it showing
+      // once the chat is open, however it was opened (bubble, teaser, restore).
+      hideTeaser(false);
       renderHistory();
       setTimeout(function () { inputEl.focus(); }, 100);
     }
