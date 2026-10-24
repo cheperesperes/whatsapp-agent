@@ -14,7 +14,7 @@ day-to-day tracker that points at those when needed.
 ## 🟡 Backlog (next up)
 
 <!-- Add new tasks here. Most important at the top. -->
-- [ ] OWNER: merge the stack in order #335 → #336 → #337 → #338 → #339 (I was not permitted to merge without review).
+- [ ] OWNER: merge the stack in order #335 → #336 → #337 → #338 → #339 (I was not permitted to merge without review). #340 (web pop-up) is independent — merge any time.
 - [ ] OWNER: apply supabase/migrations/20261023_sol_practice_and_proposals.sql (additive; needed for practice results + rule proposals).
 - [ ] OWNER: record tracking numbers on shipped orders (3 of 20 paid 2026 orders have any) so Sol can answer "¿dónde está mi pedido?".
 - [ ] OWNER: decide on the 74 test conversations (preview query in scripts/2026-10-23-sol-data-cleanup.sql; delete is irreversible).
@@ -27,10 +27,12 @@ day-to-day tracker that points at those when needed.
 <!-- Move a card here when you start it. Try to keep this short. -->
 - [x] Set up daily task organization — board + daily log + summary script (this change).
 - [ ] Sol 2026 refresh + v2 stack (#335–#339) — awaiting owner review/merge.
+- [ ] Web widget pop-up (#340) — awaiting owner review/merge; then re-check on oiikon.com from a phone.
 
 ## 🟢 Done
 
 <!-- Move finished cards here, newest first. Date them. -->
+- 2026-10-24 — Web widget pop-up PR #340 (not merged yet): Sol's teaser now pops for every new visitor ~4 s after the page loads (once per visit, × quiets it 3 days, bubble pulses), greeting introduces Sol in usted, links clickable + bold rendered. Preview testing caught and fixed: teaser covering the chat input when opened from the bubble (also on main), Sol greeting twice on the first reply, uneven phone margins + iPhone input zoom. Results in the PR comment.
 - 2026-10-23 — Sol v2 PRs: #336 human voice (no replies to bare goodbyes; 5 follow-up variants), #337 after-sale service (order status by WhatsApp number, returns/warranty intake, product help), #338 self-learning loop (11 nightly practice chats through the real pipeline, owner-approved rules), #339 voice prompt + non-Latin language fix. Live preview: 11/11 practice scenarios, avg reply 479 → 345 chars.
 - 2026-10-23 — Ran the reviewed data cleanup in production: 9 stale KB entries deactivated (112 active), "precio base tachado" coaching retired.
 - 2026-10-23 — 2026 refresh (PR, not merged yet): models → Claude Sonnet 5.5 / Haiku 5.5 via lib/models.ts (env-overridable); removed the stale "PayPal link" and "MSRP anchor" instructions; final-price-only enforced in the judge + coaching filter; web chat now builds pay links (Sep 30 buyer got "👇" and no link); coupon/volume claims only when live (0 codes active today); Sol loads the whole KB (was an arbitrary 50 of 121); dashboard chat list, KB status and funnel F3000 bucket fixed.
