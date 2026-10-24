@@ -104,6 +104,8 @@
   var T = STRINGS[LANG] || STRINGS.es;
   // Allow caller to override greeting via window.OIIKON_SOL.greeting
   var GREETING = CFG.greeting || T.greeting;
+  // Same rule as greetingNamesSol() in lib/widget-greeting.ts.
+  var GREETED_SIGNAL = (/\bsol\b/i.test(GREETING) && /oiikon/i.test(GREETING) && /(virtual|asistente|assistant)/i.test(GREETING)) ? 'sol' : 'generic';
 
   // ── Proactive teaser bubble ──────────────────────────────
   // Shows a one-line preview above the closed widget after a short delay
@@ -632,6 +634,10 @@
           // Visitor's page/browser language so Sol can reply in it even when it's
           // not es/en/fr/ht (Portuguese, etc.) and the message is ambiguous.
           browserLang: (document.documentElement.lang || navigator.language || ''),
+          // Tells Sol a canned greeting was already shown, so its first reply
+          // doesn't say hello and introduce itself a second time. A fixed
+          // signal only — the greeting text itself is never sent.
+          greeted: GREETED_SIGNAL,
         }),
       })
         .then(function (res) {

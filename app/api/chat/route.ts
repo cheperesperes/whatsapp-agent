@@ -64,6 +64,7 @@ import {
 import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-extractor';
 import { resolveLanguage } from '@/lib/language';
 import { buildFirstContactDirective } from '@/lib/ad-landing';
+import { buildWidgetGreetingDirective } from '@/lib/widget-greeting';
 import type { CustomerProfile, Message } from '@/lib/types';
 
 // Per-session abuse cap (rolling hour). Mirrors HOURLY_MESSAGE_CAP in webhook.
@@ -78,6 +79,7 @@ interface ChatRequest {
   message: string;
   displayName?: string | null;
   browserLang?: string | null; // visitor's browser/page language tag, e.g. "pt-BR"
+  greeted?: string | null; // widget signal: 'sol' | 'generic' (a canned greeting was already shown)
 }
 
 interface ChatImage {
@@ -197,6 +199,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (historyWithoutLast.length === 0) {
       const built = buildFirstContactDirective(message, detectedLang);
       if (built) firstContactDirective = built.directive;
+      const greetedDirective = buildWidgetGreetingDirective(body.greeted);
+      if (greetedDirective) {
+        firstContactDirective = firstContactDirective
+          ? `${firstContactDirective}\n\n${greetedDirective}`
+          : greetedDirective;
+      }
     }
 
     const userTurnCount = historyWithoutLast.filter((m) => m.role === 'user').length + 1;
