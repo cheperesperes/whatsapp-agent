@@ -804,10 +804,11 @@ export interface Offer {
 // virtually every PECRON SKU). Override without a deploy via the
 // SOL_PRESENTABLE_COUPONS env (comma-separated list of codes).
 const DEFAULT_PRESENTABLE_COUPONS = [
-  // SUMMER100 replaced the expired MEMORIAL100 (discount_codes description,
-  // 2026-06-06) — same $100-off-PECRON role for the hurricane-prep season.
-  'SUMMER100', 'PECRON7', 'E3600SAVE', 'E3800SAVE50', 'FAMILIA_F5000',
-  'WELCOME50', 'BIENVENIDO10', 'SAVE5', 'HURRICANE5',
+  // Active public promos only (verified is_active in discount_codes 2026-07-06).
+  // GOL10 = 10% off select PECRON (min $500, ends Jul 31 2026); WELCOME5 = 5%
+  // first-order (min $500). Runtime is overridden by the SOL_PRESENTABLE_COUPONS
+  // env; loadActiveOffers() also re-filters is_active + in-window as a backstop.
+  'GOL10', 'WELCOME5',
 ];
 
 function presentableCouponCodes(): string[] {
@@ -1122,7 +1123,7 @@ export function formatOffersForPrompt(
     '• Si un equipo NO aparece en esta lista, no tiene oferta aplicable — cotiza el precio normal del catálogo, sin cupón.',
     '• Aunque la pregunta no sea de precio (garantía, specs, compatibilidad), responde primero lo que preguntó y luego añade UNA línea con la oferta del equipo.',
     '• El descuento se aplica en el checkout de oiikon.com (tú no lo aplicas). Presenta el ahorro como aproximado: "con el código *CÓDIGO* ahorras alrededor de $X".',
-    '• LINK CON CUPÓN AUTO-APLICADO (OBLIGATORIO cuando hay oferta): cuando presentes la oferta de un equipo, envía el link del producto CON el cupón ya incluido como `?promo=CÓDIGO` al final, p. ej. `https://oiikon.com/product/<slug>?promo=E3600SAVE`. Así el cliente toca el link → el descuento ya queda aplicado en el checkout, sin que él escriba el código. Usa el slug correcto del producto (el del catálogo) + `?promo=` + el código exacto de la oferta. Si NO hay oferta para ese equipo, envía el link normal sin `?promo=`.',
+    '• LINK CON CUPÓN AUTO-APLICADO (OBLIGATORIO cuando hay oferta): cuando presentes la oferta de un equipo, envía el link del producto CON el cupón ya incluido como `?promo=CÓDIGO` al final, p. ej. `https://oiikon.com/product/<slug>?promo=GOL10`. Así el cliente toca el link → el descuento ya queda aplicado en el checkout, sin que él escriba el código. Usa el slug correcto del producto (el del catálogo) + `?promo=` + el código exacto de la oferta. Si NO hay oferta para ese equipo, envía el link normal sin `?promo=`.',
     '',
   ].join('\n');
 }
