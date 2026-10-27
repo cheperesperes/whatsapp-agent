@@ -33,7 +33,7 @@ const EXTRACT_TIMEOUT_MS = 6_000;       // per-row Haiku call
 const PRICE_CHANGE_EPSILON_PCT = 0.5;   // ignore <0.5% drift (rounding noise)
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const EXTRACT_MODEL = 'claude-haiku-4-5-20251001';
+import { HELPER_MODEL as EXTRACT_MODEL } from '@/lib/models';
 
 interface PriceChange {
   row: CompetitorModel;
