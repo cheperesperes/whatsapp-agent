@@ -66,6 +66,7 @@ import {
   formatLanguageLockForPrompt,
 } from '@/lib/language';
 import { buildFirstContactDirective } from '@/lib/ad-landing';
+import { lookupOrderForCustomer, formatOrderForPrompt } from '@/lib/order-lookup';
 import { timezoneFromPhone } from '@/lib/timezone';
 import {
   sendWhatsAppMessage,
@@ -814,6 +815,21 @@ async function processWebhookLocked(
     // in-module; fails soft to '' so it can never block a reply).
     const learnedBehaviors = await getLearnedBehaviorsBlock();
 
+    // Order status: an order number in the customer's recent messages is
+    // loaded and verified (sender phone must match the order) so Sol answers
+    // "¿dónde está mi pedido?" herself. Fails soft to '' on any error.
+    let orderBlock = '';
+    try {
+      const orderView = await lookupOrderForCustomer({
+        recentUserTexts: recentUserMsgs,
+        channel: 'whatsapp',
+        senderPhone,
+      });
+      orderBlock = formatOrderForPrompt(orderView);
+    } catch (err) {
+      console.warn(`[WEBHOOK] order lookup failed for ${senderPhone}:`, err);
+    }
+
     const { message: aiMessage, handoffReason, metrics } = await generateSolResponse(
       historyWithoutLast,
       messageText,
@@ -824,7 +840,7 @@ async function processWebhookLocked(
       competitorPrompt,
       languageLock,
       firstContactDirective,
-      dynamicDirectives,
+      dynamicDirectives + orderBlock,
       'whatsapp',
       learnedBehaviors
     );

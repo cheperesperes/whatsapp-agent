@@ -64,10 +64,31 @@ import {
 import { extractAndPersist as extractCompetitorMention } from '@/lib/competitor-extractor';
 import { resolveLanguage } from '@/lib/language';
 import { buildFirstContactDirective } from '@/lib/ad-landing';
+import { lookupOrderForCustomer, formatOrderForPrompt } from '@/lib/order-lookup';
+import { escalateConversation } from '@/lib/supabase';
+import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import type { CustomerProfile, Message } from '@/lib/types';
 
 // Per-session abuse cap (rolling hour). Mirrors HOURLY_MESSAGE_CAP in webhook.
 const HOURLY_MESSAGE_CAP = Number(process.env.HOURLY_MESSAGE_CAP ?? 40);
+
+// Operator line for handoff alerts (same default as the WhatsApp webhook).
+const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
+
+async function sendWebHandoffAlert(
+  operatorPhone: string,
+  info: { sessionId: string; displayName: string | null; reason: string; lastCustomerMessage: string; conversationId: string }
+): Promise<void> {
+  const alert = [
+    '🚨 HANDOFF (chat web oiikon.com)',
+    `Cliente: ${info.displayName ?? 'sin nombre'} · sesión ${info.sessionId.slice(0, 8)}`,
+    `Razón: ${info.reason}`,
+    `Último mensaje: "${info.lastCustomerMessage}"`,
+    '',
+    'Se le pidió continuar por WhatsApp (+1 561 698 8477); si escribe, el hilo llega aquí. Conversación en el panel: ' + info.conversationId,
+  ].join('\n');
+  await sendWhatsAppMessage(operatorPhone, alert);
+}
 
 // `[SEND_IMAGE:SKU]` extraction — same regex as the webhook.
 const IMAGE_TAG_REGEX = /\[SEND_IMAGE:\s*([A-Z0-9][A-Z0-9_\-./]*)\s*\]/gi;
@@ -213,6 +234,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // in-module; fails soft to '' so it can never block a reply).
     const learnedBehaviors = await getLearnedBehaviorsBlock();
 
+    // Order status: if the visitor typed an order number, load + verify it so
+    // Sol answers "¿dónde está mi pedido?" herself instead of escalating.
+    // Fails soft — a lookup error just means no order block this turn.
+    let orderBlock = '';
+    try {
+      const orderView = await lookupOrderForCustomer({ recentUserTexts: recentUserMsgs, channel: 'web' });
+      orderBlock = formatOrderForPrompt(orderView);
+    } catch (err) {
+      console.warn('[chat] order lookup failed:', err);
+    }
+
     const { message: aiMessage, handoffReason } = await generateSolResponse(
       historyWithoutLast,
       message,
@@ -223,7 +255,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       competitorPrompt,
       languageLock,
       firstContactDirective,
-      dynamicDirectives,
+      dynamicDirectives + orderBlock,
       'web', // channelHint
       learnedBehaviors
     );
@@ -249,6 +281,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const images = await resolveImages(skus.filter((s) => !blockedSkuSet.has(s.toUpperCase())));
 
     await storeMessage(conversation.id, 'assistant', cleanText, !!handoffReason);
+
+    // ── Handoff on the web channel ──
+    // Nobody can answer inside the browser widget (the dashboard has no push
+    // path to it), so a web handoff used to be a dead end: Sol said "le
+    // conecto con el especialista" and nothing happened. Now it (a) marks the
+    // conversation escalated so it shows in the dashboard, (b) alerts the
+    // operator on WhatsApp, and (c) the widget shows a "continue on WhatsApp"
+    // button (see public/widget.js) so the customer lands where a human can
+    // actually take over the thread.
+    if (handoffReason && !conversation.escalated) {
+      try {
+        await escalateConversation(conversation.id, handoffReason, message);
+      } catch (err) {
+        console.error(`[chat] escalateConversation failed for ${conversation.id}:`, err);
+      }
+      waitUntil(
+        sendWebHandoffAlert(OPERATOR_PHONE, {
+          sessionId,
+          displayName: body.displayName ?? customerProfile?.display_name ?? null,
+          reason: handoffReason,
+          lastCustomerMessage: message,
+          conversationId: conversation.id,
+        }).catch((err) => console.error('[chat] web handoff alert failed:', err))
+      );
+    }
 
     waitUntil(
       runBackgroundLearning(conversation.id, syntheticPhone, [
