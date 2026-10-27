@@ -1,3 +1,4 @@
+import { THINKING_OFF } from './models';
 import { textOf } from './anthropic-text';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServiceClient } from './supabase';
@@ -267,6 +268,7 @@ Sin markdown, sin explicación.`;
   try {
     const response = await client.messages.create(
       {
+      ...THINKING_OFF,
         model: REVIEW_MODEL,
         max_tokens: 900,
         messages: [{ role: 'user', content: prompt }],
@@ -388,6 +390,7 @@ Sin markdown, sin explicación.`;
   try {
     const response = await client.messages.create(
       {
+      ...THINKING_OFF,
         model: REVIEW_MODEL,
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }],

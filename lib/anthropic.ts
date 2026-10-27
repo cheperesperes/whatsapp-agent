@@ -1,3 +1,4 @@
+import { THINKING_OFF } from './models';
 import { textOf } from './anthropic-text';
 import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'fs';
@@ -14,7 +15,7 @@ const client = new Anthropic({
 });
 
 import { SOL_MODEL as MODEL, HELPER_MODEL as EXTRACT_MODEL } from './models';
-const MAX_TOKENS = 900; // was 500 — headroom so a longer reply is never cut mid-sentence
+const MAX_TOKENS = 1200;
 
 // Background extractors run inside `waitUntil` and SHARE the lambda's
 // maxDuration with the main reply path. Each Haiku call must time out fast
@@ -194,6 +195,7 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
 
   const response = await client.messages.create(
     {
+      ...THINKING_OFF,
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: systemParam,
@@ -465,6 +467,7 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
   try {
     const response = await client.messages.create(
       {
+      ...THINKING_OFF,
         model: EXTRACT_MODEL,
         max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
@@ -648,6 +651,7 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
   try {
     const response = await client.messages.create(
       {
+      ...THINKING_OFF,
         model: EXTRACT_MODEL,
         max_tokens: 1200,
         messages: [{ role: 'user', content: prompt }],
@@ -806,6 +810,7 @@ Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
   try {
     const response = await client.messages.create(
       {
+      ...THINKING_OFF,
         model: EXTRACT_MODEL,
         max_tokens: 250,
         messages: [{ role: 'user', content: prompt }],
@@ -861,6 +866,7 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
   try {
     const response = await client.messages.create(
       {
+      ...THINKING_OFF,
         model: EXTRACT_MODEL,
         max_tokens: 800,
         messages: [{ role: 'user', content: prompt }],
