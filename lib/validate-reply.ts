@@ -67,6 +67,10 @@ export interface ValidateOptions {
    * out on the first message (the prompt directive alone doesn't hold reliably). */
   holdPriceAndLink?: boolean;
   language?: 'es' | 'en' | 'fr' | 'ht';
+  /** A verified order is in context (lib/order-lookup). An order summary
+   * naturally names the items bought and the amount paid — even if a SKU is
+   * out of stock TODAY — so the OOS-pitch rule must not drop it. */
+  orderContext?: boolean;
 }
 
 /** Permanently discontinued models — NONE right now. Ed (2026-06-27) reversed
@@ -161,7 +165,7 @@ export function validateSolReply(
         oosSkus.add(p.sku.toUpperCase());
       }
     }
-    if (oosSkus.size > 0) {
+    if (oosSkus.size > 0 && !opts.orderContext) {
       const paragraphs = text.split(/\n{2,}/);
       const kept: string[] = [];
       for (const para of paragraphs) {

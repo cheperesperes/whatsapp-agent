@@ -238,9 +238,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Sol answers "¿dónde está mi pedido?" herself instead of escalating.
     // Fails soft — a lookup error just means no order block this turn.
     let orderBlock = '';
+    let orderVerified = false;
     try {
       const orderView = await lookupOrderForCustomer({ recentUserTexts: recentUserMsgs, channel: 'web' });
       orderBlock = formatOrderForPrompt(orderView);
+      orderVerified = !!orderView?.verified;
     } catch (err) {
       console.warn('[chat] order lookup failed:', err);
     }
@@ -269,6 +271,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // no pay-link builder, so ANY checkout URL here is model-invented.
     const validated = validateSolReply(rawCleanText, products, {
       forbidAllPaymentUrls: true,
+      orderContext: orderVerified,
       language: detectedLang === 'en' || detectedLang === 'fr' || detectedLang === 'ht' ? detectedLang : 'es',
     });
     if (validated.violations.length > 0) {
