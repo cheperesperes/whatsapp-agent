@@ -1,3 +1,4 @@
+import { textOf } from './anthropic-text';
 import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -13,7 +14,7 @@ const client = new Anthropic({
 });
 
 import { SOL_MODEL as MODEL, HELPER_MODEL as EXTRACT_MODEL } from './models';
-const MAX_TOKENS = 500;
+const MAX_TOKENS = 900; // was 500 — headroom so a longer reply is never cut mid-sentence
 
 // Background extractors run inside `waitUntil` and SHARE the lambda's
 // maxDuration with the main reply path. Each Haiku call must time out fast
@@ -213,7 +214,10 @@ ${languageLock ? `\n${languageLock}\n` : ''}${firstContactDirective ? `\n${first
   }
 
   const rawText =
-    response.content[0]?.type === 'text' ? response.content[0].text : '';
+    textOf(response);
+  if (!rawText) {
+    console.error(`[sol] EMPTY reply from ${MODEL}: stop=${response.stop_reason} blocks=${response.content.map((b) => b.type).join(',')}`);
+  }
 
   const handoffMatch = rawText.match(/\[HANDOFF:\s*([^\]]+)\]/i);
   const handoffReason = handoffMatch ? handoffMatch[1].trim() : null;
@@ -467,7 +471,7 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
       },
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as {
       display_name: string | null;
@@ -650,7 +654,7 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
       },
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as {
       rules: Record<ScorecardRuleId, ScorecardRuleResult>;
@@ -809,7 +813,7 @@ Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
       { timeout: EXTRACT_TIMEOUT_MS }
     );
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     return parseLeadScoreResponse(text);
   } catch (err) {
     console.warn('[scoreLeadQuality] failed:', err instanceof Error ? err.message : err);
@@ -863,7 +867,7 @@ Devuelve SOLO el JSON, sin markdown, sin explicación.`;
       },
       { timeout: EXTRACT_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as { suggestions?: KBSuggestionDraft[] };
     const out = (parsed.suggestions ?? [])

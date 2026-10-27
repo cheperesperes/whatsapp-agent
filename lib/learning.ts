@@ -1,3 +1,4 @@
+import { textOf } from './anthropic-text';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServiceClient } from './supabase';
 import type { Message } from './types';
@@ -272,7 +273,7 @@ Sin markdown, sin explicación.`;
       },
       { timeout: REVIEW_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const parsed = JSON.parse(cleanJsonText(text)) as Partial<InteractionReview> & {
       scores?: Record<string, unknown>;
     };
@@ -393,7 +394,7 @@ Sin markdown, sin explicación.`;
       },
       { timeout: REVIEW_TIMEOUT_MS }
     );
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const parsed = JSON.parse(cleanJsonText(text)) as {
       learnings?: Array<Partial<ConsolidatedLearning>>;
     };

@@ -1,3 +1,4 @@
+import { textOf } from './anthropic-text';
 import Anthropic from '@anthropic-ai/sdk';
 import type { Message } from './types';
 
@@ -179,7 +180,7 @@ Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
       { timeout: CLASSIFIER_TIMEOUT_MS }
     );
 
-    const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    const text = textOf(response);
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as Partial<IntentClassification>;
 
