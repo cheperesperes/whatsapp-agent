@@ -312,6 +312,9 @@
   // breaks to <br>. Keep it minimal — no full markdown.
   function formatText(s) {
     var out = escapeHtml(s);
+    // Sol sometimes writes markdown **bold**; collapse it to WhatsApp *bold*
+    // first so neither style leaks raw asterisks into the web chat.
+    out = out.replace(/\*\*([^\n*]+)\*\*/g, '*$1*');
     out = out.replace(/\*([^\n*]+)\*/g, '<strong>$1</strong>');
     out = out.replace(/_([^\n_]+)_/g, '<em>$1</em>');
     out = out.replace(/\n/g, '<br>');
@@ -475,6 +478,31 @@
       });
     }
     return div;
+  }
+
+  // ── WhatsApp hand-off button ─────────────────────────────
+  // Nobody can reply inside this widget, so when Sol escalates we hand the
+  // visitor to WhatsApp (where a specialist can take over the same thread),
+  // carrying the session ref + their last message so nothing is retyped.
+  var WA_NUMBER = (CFG.whatsapp || '15616988477').replace(/\D/g, '');
+  function showWhatsAppHandoff(lastUserText) {
+    if (document.getElementById('oiikon-sol-wa-card')) return;
+    var intro = (LANG === 'en')
+      ? 'Hi Oiikon, I was chatting with Sol on the website (ref ' + sessionId.slice(0, 8) + '). '
+      : 'Hola Oiikon, estaba chateando con Sol en la web (ref ' + sessionId.slice(0, 8) + '). ';
+    var href = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(intro + (lastUserText || ''));
+    var card = document.createElement('div');
+    card.id = 'oiikon-sol-wa-card';
+    card.className = 'oiikon-sol-msg oiikon-sol-msg-bot';
+    card.style.cssText = 'border:1px solid #F97316;border-radius:12px;padding:12px;';
+    var label = (LANG === 'en') ? 'Continue on WhatsApp' : 'Continuar por WhatsApp';
+    var note = (LANG === 'en')
+      ? 'A specialist picks up the same conversation there.'
+      : 'Un especialista sigue la misma conversación allí.';
+    card.innerHTML =
+      '<div style="margin-bottom:8px;">' + escapeHtml(note) + '</div>' +
+      '<a href="' + href + '" target="_blank" rel="noopener" style="display:inline-block;background:#16A34A;color:#fff;text-decoration:none;font-weight:600;padding:10px 16px;border-radius:999px;">' + escapeHtml(label) + ' →</a>';
+    msgsEl.appendChild(card);
   }
 
   // ── Email follow-up opt-in card ──────────────────────────
@@ -643,6 +671,7 @@
         history.push({ role: 'assistant', text: reply, images: images });
         saveHistory(history);
         msgsEl.appendChild(renderMessage({ role: 'assistant', text: reply, images: images }));
+        if (data && data.handoff) showWhatsAppHandoff(text);
         msgsEl.scrollTop = msgsEl.scrollHeight;
         maybeShowEmailCard(reply);
       })
