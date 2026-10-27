@@ -63,6 +63,12 @@
     },
     "app/api/admin/audience-sync/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/order-conversions/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/hot-leads-digest/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -121,6 +127,14 @@
     {
       "path": "/api/admin/audience-sync",
       "schedule": "23 9 3 * *"
+    },
+    {
+      "path": "/api/cron/order-conversions",
+      "schedule": "20 */6 * * *"
+    },
+    {
+      "path": "/api/cron/hot-leads-digest",
+      "schedule": "30 12 * * *"
     }
   ],
   "headers": [
