@@ -19,4 +19,8 @@ export const REVIEW_MODEL = process.env.SOL_REVIEW_MODEL?.trim() || SOL_MODEL;
  * answers are short, latency-bound chat turns: thinking off is the right
  * default. The SDK pinned here predates the field, hence the cast at use.
  */
-export const THINKING_OFF = { thinking: { type: 'disabled' as const } };
+// The API rejects { type: 'disabled' } on 5.5 models and asks for 'between_tools'
+// ("the model does not think before responding" — verbatim from the 400 error).
+// The pinned SDK's types predate 'between_tools'; the cast keeps tsc happy while the
+// wire value is exactly what the API asked for.
+export const THINKING_OFF = { thinking: { type: 'between_tools' } } as unknown as { thinking: { type: 'disabled' } };
