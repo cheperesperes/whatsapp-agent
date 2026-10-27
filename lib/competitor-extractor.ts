@@ -1,3 +1,4 @@
+import { THINKING_OFF } from './models';
 import { textOf } from './anthropic-text';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServiceClient } from './supabase';
@@ -79,6 +80,7 @@ export async function extractCompetitorMention(
   const anthropic = new Anthropic();
 
   const res = await anthropic.messages.create({
+      ...THINKING_OFF,
     model: HELPER_MODEL,
     max_tokens: 300,
     messages: [

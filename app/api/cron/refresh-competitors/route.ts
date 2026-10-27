@@ -1,3 +1,4 @@
+import { THINKING_OFF } from '@/lib/models';
 import { textOf } from '@/lib/anthropic-text';
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
@@ -107,6 +108,7 @@ Return ONLY the JSON.`;
   try {
     const res = await anthropic.messages.create(
       {
+      ...THINKING_OFF,
         model: EXTRACT_MODEL,
         max_tokens: 60,
         messages: [{ role: 'user', content: prompt }],

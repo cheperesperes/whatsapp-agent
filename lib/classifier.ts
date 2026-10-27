@@ -1,3 +1,4 @@
+import { THINKING_OFF } from './models';
 import { textOf } from './anthropic-text';
 import Anthropic from '@anthropic-ai/sdk';
 import type { Message } from './types';
@@ -173,6 +174,7 @@ Devuelve SOLO el JSON. Sin markdown. Sin explicación.`;
   try {
     const response = await client.messages.create(
       {
+      ...THINKING_OFF,
         model: CLASSIFIER_MODEL,
         max_tokens: CLASSIFIER_MAX_TOKENS,
         messages: [{ role: 'user', content: prompt }],
