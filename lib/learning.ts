@@ -20,7 +20,7 @@ const client = new Anthropic({
 
 // Same model Sol replies with. Reviews run offline in a cron (not in the
 // reply path), so we can afford the better judge over Haiku.
-const REVIEW_MODEL = 'claude-sonnet-4-6';
+import { REVIEW_MODEL } from './models';
 const REVIEW_TIMEOUT_MS = 30_000;
 
 export const MAX_ACTIVE_LEARNINGS = 8;

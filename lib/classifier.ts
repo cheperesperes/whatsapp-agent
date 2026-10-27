@@ -5,7 +5,7 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const CLASSIFIER_MODEL = 'claude-haiku-4-5-20251001';
+import { HELPER_MODEL as CLASSIFIER_MODEL } from './models';
 // Tight inline budget — classifier blocks Sol's reply, so degrade to "no hint"
 // fast rather than burn the webhook's maxDuration on a slow Haiku call.
 const CLASSIFIER_TIMEOUT_MS = 2_000;

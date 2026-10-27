@@ -12,8 +12,7 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const MODEL = 'claude-sonnet-4-6';
-const EXTRACT_MODEL = 'claude-haiku-4-5-20251001';
+import { SOL_MODEL as MODEL, HELPER_MODEL as EXTRACT_MODEL } from './models';
 const MAX_TOKENS = 500;
 
 // Background extractors run inside `waitUntil` and SHARE the lambda's

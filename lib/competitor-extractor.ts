@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createServiceClient } from './supabase';
+import { HELPER_MODEL } from './models';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Competitor mention extractor — anonymous collective learning.
@@ -77,7 +78,7 @@ export async function extractCompetitorMention(
   const anthropic = new Anthropic();
 
   const res = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: HELPER_MODEL,
     max_tokens: 300,
     messages: [
       {
