@@ -819,6 +819,7 @@ async function processWebhookLocked(
     // loaded and verified (sender phone must match the order) so Sol answers
     // "¿dónde está mi pedido?" herself. Fails soft to '' on any error.
     let orderBlock = '';
+    let orderVerified = false;
     try {
       const orderView = await lookupOrderForCustomer({
         recentUserTexts: recentUserMsgs,
@@ -826,6 +827,7 @@ async function processWebhookLocked(
         senderPhone,
       });
       orderBlock = formatOrderForPrompt(orderView);
+      orderVerified = !!orderView?.verified;
     } catch (err) {
       console.warn(`[WEBHOOK] order lookup failed for ${senderPhone}:`, err);
     }
@@ -947,6 +949,7 @@ async function processWebhookLocked(
       const v = validateSolReply(cleanMessage, products, {
         hallucinatedPaymentUrls: extractCheckoutUrls(normalizedMessage),
         holdPriceAndLink: isTurn1AdArrival,
+        orderContext: orderVerified,
         language: detectedLang === 'en' || detectedLang === 'fr' || detectedLang === 'ht' ? detectedLang : 'es',
       });
       if (v.violations.length > 0) {

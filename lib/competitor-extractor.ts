@@ -1,3 +1,4 @@
+import { textOf } from './anthropic-text';
 import Anthropic from '@anthropic-ai/sdk';
 import { createServiceClient } from './supabase';
 import { HELPER_MODEL } from './models';
@@ -110,7 +111,7 @@ ${message}
     ],
   });
 
-  const text = res.content[0]?.type === 'text' ? res.content[0].text.trim() : '';
+  const text = textOf(res).trim();
   if (!text || text === 'null') return null;
 
   const jsonMatch = text.match(/\{[\s\S]*\}/);
