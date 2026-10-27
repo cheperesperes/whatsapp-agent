@@ -42,6 +42,8 @@ const PRICE_TOLERANCE = 0.5; // dollars — ignore rounding noise
 const SKU_ALIASES: Record<string, string> = {
   'TE-200': 'TE-200CART',
   'TE-320': 'TF-320CART',
+  'TROLLEY': 'E3000TROLLEY',
+  'E300LFP': 'E300LFP-1', // brand lists the bare unit as the "-1" variant
 };
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
@@ -158,6 +160,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   for (const p of ours ?? []) {
     const sku = norm(p.sku as string);
     if (!sku) continue;
+    // Our own kits (BUNDLE-*, x2 kits) have no counterpart on the brand site.
+    if (String(p.category ?? '') === 'bundle' || /^BUNDLE-/.test(sku) || /X2$/.test(sku)) continue;
     const b = brand.get(sku);
     const name = String(p.name ?? sku).slice(0, 60);
     if (!b) {
@@ -189,8 +193,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   // Brand single-unit SKUs we don't carry (skip the brand's own bundles/kits).
+  const bases = [...matched];
   const notCarried = [...brand.values()]
     .filter((b) => !matched.has(b.sku) && !/[*+]/.test(b.sku) && b.available)
+    // "E2400LFP-300W", "F3000LFP-PV300" are the brand's own kits of units we already carry.
+    .filter((b) => !bases.some((base) => b.sku.startsWith(base + '-')))
     .map((b) => ({ sku: b.sku, product: b.product, price: b.price, handle: b.handle }))
     .slice(0, 40);
 
