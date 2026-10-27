@@ -96,7 +96,9 @@ export async function generateSolResponse(
       ? `\nCANAL ACTUAL: chat embebido en oiikon.com (NO WhatsApp).\n` +
         `• NO digas "escríbeme por WhatsApp" ni "mándame un mensaje" — el cliente ya está chateando contigo.\n` +
         `• Cuando ofrezcas comprar, di "puedes pedirlo en oiikon.com" o comparte el link directo del producto.\n` +
-        `• Si el cliente quiere una llamada o seguimiento fuera del navegador, pídele su teléfono o WhatsApp.\n`
+        `• Si el cliente quiere una llamada o seguimiento fuera del navegador, pídele su teléfono o WhatsApp.\n` +
+        `• HANDOFF EN LA WEB: en este chat NADIE puede tomar el hilo (no digas "aquí mismo en este chat"). Cuando emitas [HANDOFF: …], dile al cliente que para seguir con el especialista toque el botón de WhatsApp que aparece debajo de tu mensaje (nuestro WhatsApp +1 561-698-8477) y que ahí le atienden en el mismo hilo; si prefiere, puede dejarte su teléfono o email y le escriben. Sigue ayudando mientras tanto.\n` +
+        `• ESTADO DE PEDIDO: si hay un bloque "PEDIDO CONSULTADO", responde con esos datos; si el cliente pregunta por un pedido sin dar número, pídele el número (ORD-…) y el email de la compra, o indícale "Estado del pedido" en oiikon.com/cuenta.\n`
       : '';
 
   // Final-line language re-assertion. The turn-1 / dynamic directives are
