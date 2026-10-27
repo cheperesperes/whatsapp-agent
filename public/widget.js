@@ -23,6 +23,8 @@
   window.__oiikonSolMounted = true;
 
   var CFG = window.OIIKON_SOL || {};
+  // WhatsApp number used by the header link and the hand-off card (override via OIIKON_SOL.whatsapp).
+  var WA_NUMBER = (CFG.whatsapp || '15616988477').replace(/\D/g, '');
   var ENDPOINT =
     CFG.endpoint || 'https://whatsapp-agent-ebon-nine.vercel.app/api/chat';
   var SESSION_KEY = 'oiikon_sol_session';
@@ -376,6 +378,9 @@
     '.oiikon-sol-title{flex:1;font-weight:600;font-size:15px;line-height:1.2;}',
     '.oiikon-sol-subtitle{font-size:11px;font-weight:400;opacity:.85;}',
     '.oiikon-sol-close{background:none;border:none;color:white;font-size:24px;cursor:pointer;padding:0 6px;line-height:1;}',
+    '.oiikon-sol-wa{display:inline-flex;align-items:center;gap:5px;color:#fff;text-decoration:none;font-size:12px;font-weight:600;',
+    '  background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:5px 10px;margin-right:4px;}',
+    '.oiikon-sol-wa:hover{background:rgba(255,255,255,.3);}',
     '.oiikon-sol-messages{',
     '  flex:1;overflow-y:auto;padding:16px;background:#f9fafb;',
     '  display:flex;flex-direction:column;gap:10px;',
@@ -415,6 +420,9 @@
     '<div class="oiikon-sol-header">',
     '  <div class="oiikon-sol-avatar">☀️</div>',
     '  <div class="oiikon-sol-title">Oiikon<div class="oiikon-sol-subtitle">' + escapeHtml(T.header_subtitle) + '</div></div>',
+    '  <a class="oiikon-sol-wa" id="oiikon-sol-wa" target="_blank" rel="noopener" aria-label="WhatsApp" title="WhatsApp">' +
+    '    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 1.8a8.2 8.2 0 0 1 0 16.4c-1.5 0-2.9-.4-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 0 1 12 3.8zm-3 4.4c-.2 0-.5.1-.7.3-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3.1 4.9 4.3 2.4 1 2.9.8 3.4.7.5 0 1.7-.7 1.9-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3l-2-1c-.3-.1-.5-.2-.7.1l-.9 1.1c-.2.2-.3.2-.6.1-.3-.1-1.2-.5-2.3-1.5-.9-.8-1.5-1.7-1.6-2-.2-.3 0-.5.1-.6l.4-.5.3-.5c.1-.2 0-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6z"/></svg>' +
+    '    <span>WhatsApp</span></a>',
     '  <button class="oiikon-sol-close" aria-label="' + escapeHtml(T.close_aria) + '">×</button>',
     '</div>',
     '<div class="oiikon-sol-messages" id="oiikon-sol-messages"></div>',
@@ -444,6 +452,8 @@
   var inputEl = panel.querySelector('#oiikon-sol-input');
   var sendBtn = panel.querySelector('#oiikon-sol-send');
   var closeBtn = panel.querySelector('.oiikon-sol-close');
+  // Header WhatsApp link — same number as the hand-off card, with a short intro.
+  (function(){ var a = panel.querySelector('#oiikon-sol-wa'); if (!a) return; var intro = (LANG === 'en') ? 'Hi Oiikon, I was on the website and prefer WhatsApp.' : 'Hola Oiikon, estaba en la web y prefiero WhatsApp.'; a.href = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(intro); })();
 
   // ── State ────────────────────────────────────────────────
   var sessionId = getSessionId();
@@ -484,7 +494,6 @@
   // Nobody can reply inside this widget, so when Sol escalates we hand the
   // visitor to WhatsApp (where a specialist can take over the same thread),
   // carrying the session ref + their last message so nothing is retyped.
-  var WA_NUMBER = (CFG.whatsapp || '15616988477').replace(/\D/g, '');
   function showWhatsAppHandoff(lastUserText) {
     if (document.getElementById('oiikon-sol-wa-card')) return;
     var intro = (LANG === 'en')
