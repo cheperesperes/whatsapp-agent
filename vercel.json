@@ -141,7 +141,7 @@
     },
     {
       "path": "/api/cron/pecron-map-audit",
-      "schedule": "0 11 * * 1"
+      "schedule": "15 10 * * *"
     }
   ],
   "headers": [

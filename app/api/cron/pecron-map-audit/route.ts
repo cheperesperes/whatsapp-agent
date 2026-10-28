@@ -45,6 +45,18 @@ const BRANDS: Array<{ name: string; match: string; feed: string }> = [
 ];
 const PRICE_TOLERANCE = 0.5; // dollars — ignore rounding noise
 
+// Auto-apply mode (owner decision 2026-10-27: "update all prices with the brand",
+// then "automatic, daily"):
+//   MAP_AUTO_APPLY=raise  → only RAISE our price up to the brand price (never sells
+//                           below MAP). Default.
+//   MAP_AUTO_APPLY=all    → also LOWER our price down to the brand price.
+//   MAP_AUTO_APPLY=off    → detect + report only.
+// Applies ONLY to exact-SKU / GW-prefix matches (never to fuzzy model matches),
+// writes products.price AND agent_product_catalog.sell_price so the store,
+// the checkout and Sol agree, and lists every change in the digest.
+const AUTO_APPLY = (process.env.MAP_AUTO_APPLY ?? 'raise').toLowerCase();
+const MAX_AUTO_CHANGES_PER_RUN = 15; // circuit breaker against a broken feed
+
 // Our SKU → brand SKU when they differ in spelling.
 const SKU_ALIASES: Record<string, string> = {
   'TE-200': 'TE-200CART',
@@ -148,6 +160,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const sb = createServiceClient();
 
   const findings: Finding[] = [];
+  const pending: Array<{ brand_name: string; sku: string; from: number; to: number }> = [];
+  const applied: Array<{ brand_name: string; sku: string; from: number; to: number }> = [];
   const notCarried: Array<{ brand: string; sku: string; product: string; price: number; handle: string }> = [];
   const perBrand: Array<{ brand: string; brand_skus: number; ours: number; matched: number; error?: string }> = [];
 
@@ -183,9 +197,10 @@ export async function GET(req: NextRequest): Promise<Response> {
         if (t.length >= 6 && /\d/.test(t) && /[A-Z]/.test(t) && !bySkuToken.has(t)) bySkuToken.set(t, b);
       }
     }
+    const exact = new Set<string>();
     const findBrand = (sku: string, name: string): BrandSku | undefined => {
-      if (brand.has(sku)) return brand.get(sku);
-      if (brand.has('GW-' + sku)) return brand.get('GW-' + sku);
+      if (brand.has(sku)) { exact.add(sku); return brand.get(sku); }
+      if (brand.has('GW-' + sku)) { exact.add(sku); return brand.get('GW-' + sku); }
       if (bySkuToken.has(sku)) return bySkuToken.get(sku);
       for (const t of name.toUpperCase().split(/[^A-Z0-9.]+/)) {
         if (t.length >= 6 && /\d/.test(t) && /[A-Z]/.test(t) && brand.has(t)) return brand.get(t);
@@ -209,8 +224,14 @@ export async function GET(req: NextRequest): Promise<Response> {
       const diff = Math.round((our - b.price) * 100) / 100;
       if (our < b.price - PRICE_TOLERANCE) {
         findings.push({ brand_name: B.name, sku, name, issue: 'below_map', ours: `$${our.toFixed(2)}`, brand: `$${b.price.toFixed(2)} (${b.sku})`, diff });
+        if (exact.has(sku) && (AUTO_APPLY === 'raise' || AUTO_APPLY === 'all')) {
+          pending.push({ brand_name: B.name, sku: String(p.sku), from: our, to: b.price });
+        }
       } else if (our > b.price + PRICE_TOLERANCE) {
         findings.push({ brand_name: B.name, sku, name, issue: 'above_map', ours: `$${our.toFixed(2)}`, brand: `$${b.price.toFixed(2)} (${b.sku})`, diff });
+        if (exact.has(sku) && AUTO_APPLY === 'all') {
+          pending.push({ brand_name: B.name, sku: String(p.sku), from: our, to: b.price });
+        }
       }
       const ourAnchor = p.original_price != null ? Number(p.original_price) : null;
       if (b.compare_at != null && ourAnchor != null && Math.abs(ourAnchor - b.compare_at) > PRICE_TOLERANCE) {
@@ -236,8 +257,28 @@ export async function GET(req: NextRequest): Promise<Response> {
     perBrand.push({ brand: B.name, brand_skus: brand.size, ours: (ours ?? []).length, matched: matched.size });
   }
 
+  // ── Auto-apply (never in dry run; circuit breaker on volume) ──
+  if (!dryRun && pending.length > 0) {
+    if (pending.length > MAX_AUTO_CHANGES_PER_RUN) {
+      console.error(`[map-audit] ${pending.length} price changes pending > ${MAX_AUTO_CHANGES_PER_RUN}; refusing to auto-apply (feed sanity)`);
+    } else {
+      for (const c of pending) {
+        const { error: e1 } = await sb.from('products').update({ price: c.to, updated_at: new Date().toISOString() }).ilike('sku', c.sku);
+        const { error: e2 } = await sb.from('agent_product_catalog').update({ sell_price: c.to }).ilike('sku', c.sku);
+        if (e1 || e2) {
+          console.error(`[map-audit] apply failed for ${c.sku}:`, e1?.message ?? e2?.message);
+          continue;
+        }
+        applied.push(c);
+      }
+    }
+  }
+
   const report = {
     ran_at: new Date().toISOString(),
+    auto_apply: AUTO_APPLY,
+    pending_changes: pending,
+    applied_changes: applied,
     brands: perBrand,
     counts: {
       below_map: findings.filter((f) => f.issue === 'below_map').length,
@@ -271,21 +312,23 @@ export async function GET(req: NextRequest): Promise<Response> {
     .from('app_config')
     .upsert({ key: CONFIG_KEY, value: JSON.stringify({ ...report, signature }) }, { onConflict: 'key' });
 
-  if (changed && findings.length > 0) {
+  if ((changed && findings.length > 0) || applied.length > 0) {
     const line = (f: Finding) =>
       `• ${f.brand_name} ${f.sku} ${f.issue === 'below_map' ? '⬇️ bajo MAP' : f.issue === 'above_map' ? '⬆️ sobre MAP' : f.issue === 'anchor_off' ? '〰️ "antes" distinto' : f.issue === 'stock_diff' ? '📦 stock distinto' : '❓ no está en pecron.com'}: nosotros ${f.ours} · marca ${f.brand}`;
     const top = findings
       .sort((a, b) => (a.issue === 'below_map' ? -1 : 1) - (b.issue === 'below_map' ? -1 : 1))
       .slice(0, 14)
       .map(line);
+    const appliedLines = applied.map((c) => `✅ ${c.brand_name} ${c.sku}: $${c.from.toFixed(2)} → $${c.to.toFixed(2)} (precio de marca aplicado)`);
     const text = [
+      ...(appliedLines.length ? [`💲 Precios actualizados hoy (${appliedLines.length}):`, ...appliedLines, ''] : []),
       `🏷️ Auditoría de precios vs sitios de marca (${report.ran_at.slice(0, 10)}) — ${perBrand.map((b) => `${b.brand}: ${b.matched}/${b.ours}`).join(' · ')}`,
       `${report.counts.below_map} bajo MAP · ${report.counts.above_map} sobre MAP · ${report.counts.anchor_off} "antes" distinto · ${report.counts.stock_diff} stock distinto · ${report.counts.not_on_brand} no en marca · ${report.counts.not_carried} nuevos de la marca que no vendemos`,
       '',
       ...top,
       findings.length > 14 ? `… y ${findings.length - 14} más en el panel.` : '',
       '',
-      'No se cambió ningún precio. Detalle completo: panel → Productos → Auditoría MAP.',
+      `${applied.length ? 'Solo se SUBEN precios al nivel de la marca automáticamente; bajar precios requiere MAP_AUTO_APPLY=all.' : 'No se cambió ningún precio.'} Detalle: panel → Productos → Auditoría MAP.`,
     ]
       .filter(Boolean)
       .join('\n');
