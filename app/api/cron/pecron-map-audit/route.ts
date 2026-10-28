@@ -34,8 +34,15 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const OPERATOR_PHONE = process.env.OPERATOR_PHONE ?? '+15617024893';
-const BRAND_FEED = process.env.PECRON_FEED_URL ?? 'https://www.pecron.com/products.json';
 const CONFIG_KEY = 'pecron_map_audit_last';
+
+// Every brand we resell that publishes a public Shopify feed. `match` is the
+// ilike pattern on products.brand; `feed` the brand's /products.json.
+const BRANDS: Array<{ name: string; match: string; feed: string }> = [
+  { name: 'PECRON', match: '%pecron%', feed: process.env.PECRON_FEED_URL ?? 'https://www.pecron.com/products.json' },
+  { name: 'ECO-WORTHY', match: '%eco%worthy%', feed: process.env.ECOWORTHY_FEED_URL ?? 'https://www.eco-worthy.com/products.json' },
+  { name: 'SunGold Power', match: '%sungold%', feed: process.env.SUNGOLD_FEED_URL ?? 'https://sungoldpower.com/products.json' },
+];
 const PRICE_TOLERANCE = 0.5; // dollars — ignore rounding noise
 
 // Our SKU → brand SKU when they differ in spelling.
@@ -86,6 +93,7 @@ interface BrandSku {
   available: boolean;
 }
 interface Finding {
+  brand_name: string;
   sku: string;
   name: string;
   issue: 'below_map' | 'above_map' | 'anchor_off' | 'stock_diff' | 'not_on_brand';
@@ -99,10 +107,10 @@ function norm(sku: string | null | undefined): string {
   return SKU_ALIASES[s] ?? s;
 }
 
-async function fetchBrandFeed(): Promise<Map<string, BrandSku>> {
+async function fetchBrandFeed(feedUrl: string): Promise<Map<string, BrandSku>> {
   const out = new Map<string, BrandSku>();
   for (let page = 1; page <= 8; page++) {
-    const res = await fetch(`${BRAND_FEED}?limit=250&page=${page}`, {
+    const res = await fetch(`${feedUrl}?limit=250&page=${page}`, {
       headers: { 'user-agent': 'OiikonMapAudit/1.0 (+https://oiikon.com)' },
       cache: 'no-store',
     });
@@ -139,73 +147,99 @@ export async function GET(req: NextRequest): Promise<Response> {
   const dryRun = req.nextUrl.searchParams.get('dry') === '1';
   const sb = createServiceClient();
 
-  let brand: Map<string, BrandSku>;
-  try {
-    brand = await fetchBrandFeed();
-  } catch (err) {
-    console.error('[pecron-map-audit] feed failed:', err);
-    return NextResponse.json({ ok: false, error: `brand feed unreachable: ${String(err)}` }, { status: 502 });
-  }
-
-  const { data: ours, error } = await sb
-    .from('products')
-    .select('sku, name, brand, price, original_price, availability_status, is_active, category')
-    .eq('is_active', true)
-    .ilike('brand', '%pecron%');
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
-
   const findings: Finding[] = [];
-  const matched = new Set<string>();
+  const notCarried: Array<{ brand: string; sku: string; product: string; price: number; handle: string }> = [];
+  const perBrand: Array<{ brand: string; brand_skus: number; ours: number; matched: number; error?: string }> = [];
 
-  for (const p of ours ?? []) {
-    const sku = norm(p.sku as string);
-    if (!sku) continue;
-    // Our own kits (BUNDLE-*, x2 kits) have no counterpart on the brand site.
-    if (String(p.category ?? '') === 'bundle' || /^BUNDLE-/.test(sku) || /X2$/.test(sku)) continue;
-    const b = brand.get(sku);
-    const name = String(p.name ?? sku).slice(0, 60);
-    if (!b) {
-      findings.push({ sku, name, issue: 'not_on_brand', ours: `$${Number(p.price).toFixed(2)}`, brand: '—' });
+  for (const B of BRANDS) {
+    let brand: Map<string, BrandSku>;
+    try {
+      brand = await fetchBrandFeed(B.feed);
+    } catch (err) {
+      console.error(`[map-audit] ${B.name} feed failed:`, err);
+      perBrand.push({ brand: B.name, brand_skus: 0, ours: 0, matched: 0, error: String(err) });
       continue;
     }
-    matched.add(sku);
-    const our = Number(p.price);
-    const diff = Math.round((our - b.price) * 100) / 100;
-    if (our < b.price - PRICE_TOLERANCE) {
-      findings.push({ sku, name, issue: 'below_map', ours: `$${our.toFixed(2)}`, brand: `$${b.price.toFixed(2)}`, diff });
-    } else if (our > b.price + PRICE_TOLERANCE) {
-      findings.push({ sku, name, issue: 'above_map', ours: `$${our.toFixed(2)}`, brand: `$${b.price.toFixed(2)}`, diff });
-    }
-    const ourAnchor = p.original_price != null ? Number(p.original_price) : null;
-    if (b.compare_at != null && ourAnchor != null && Math.abs(ourAnchor - b.compare_at) > PRICE_TOLERANCE) {
-      findings.push({ sku, name, issue: 'anchor_off', ours: `antes $${ourAnchor.toFixed(2)}`, brand: `list $${b.compare_at.toFixed(2)}` });
-    }
-    const ourInStock = p.availability_status === 'in_stock';
-    if (ourInStock !== b.available) {
-      findings.push({
-        sku,
-        name,
-        issue: 'stock_diff',
-        ours: String(p.availability_status ?? '—'),
-        brand: b.available ? 'in stock' : 'sold out',
-      });
-    }
-  }
 
-  // Brand single-unit SKUs we don't carry (skip the brand's own bundles/kits).
-  const bases = [...matched];
-  const notCarried = [...brand.values()]
-    .filter((b) => !matched.has(b.sku) && !/[*+]/.test(b.sku) && b.available)
-    // "E2400LFP-300W", "F3000LFP-PV300" are the brand's own kits of units we already carry.
-    .filter((b) => !bases.some((base) => b.sku.startsWith(base + '-')))
-    .map((b) => ({ sku: b.sku, product: b.product, price: b.price, handle: b.handle }))
-    .slice(0, 40);
+    const { data: ours, error } = await sb
+      .from('products')
+      .select('sku, name, brand, price, original_price, availability_status, is_active, category')
+      .eq('is_active', true)
+      .ilike('brand', B.match);
+    if (error) {
+      perBrand.push({ brand: B.name, brand_skus: brand.size, ours: 0, matched: 0, error: error.message });
+      continue;
+    }
+
+    // Fallback index: model tokens found in brand SKUs / titles (ECO-WORTHY uses
+    // internal numeric SKUs on our side, SunGold spells variants differently).
+    const byToken = new Map<string, BrandSku>();
+    for (const b of brand.values()) {
+      const tokens = new Set<string>(
+        `${b.sku} ${b.product} ${b.variant}`
+          .toUpperCase()
+          .split(/[^A-Z0-9.]+/)
+          .filter((t) => t.length >= 5 && /\d/.test(t))
+      );
+      for (const t of tokens) if (!byToken.has(t)) byToken.set(t, b);
+    }
+    const findBrand = (sku: string, name: string): BrandSku | undefined => {
+      const direct = brand.get(sku);
+      if (direct) return direct;
+      if (byToken.has(sku)) return byToken.get(sku);
+      // Model number inside our product name, e.g. "… SPH5048P - Inversor …"
+      for (const t of name.toUpperCase().split(/[^A-Z0-9.]+/)) {
+        if (t.length >= 5 && /\d/.test(t) && /[A-Z]/.test(t) && byToken.has(t)) return byToken.get(t);
+      }
+      return undefined;
+    };
+
+    const matched = new Set<string>();
+    for (const p of ours ?? []) {
+      const sku = norm(p.sku as string);
+      if (!sku) continue;
+      if (String(p.category ?? '') === 'bundle' || /^BUNDLE-/.test(sku) || /X2$/.test(sku) || /^EW-AIO-/.test(sku)) continue;
+      const name = String(p.name ?? sku).slice(0, 60);
+      const b = findBrand(sku, String(p.name ?? ''));
+      if (!b) {
+        findings.push({ brand_name: B.name, sku, name, issue: 'not_on_brand', ours: `$${Number(p.price).toFixed(2)}`, brand: '—' });
+        continue;
+      }
+      matched.add(b.sku);
+      const our = Number(p.price);
+      const diff = Math.round((our - b.price) * 100) / 100;
+      if (our < b.price - PRICE_TOLERANCE) {
+        findings.push({ brand_name: B.name, sku, name, issue: 'below_map', ours: `$${our.toFixed(2)}`, brand: `$${b.price.toFixed(2)} (${b.sku})`, diff });
+      } else if (our > b.price + PRICE_TOLERANCE) {
+        findings.push({ brand_name: B.name, sku, name, issue: 'above_map', ours: `$${our.toFixed(2)}`, brand: `$${b.price.toFixed(2)} (${b.sku})`, diff });
+      }
+      const ourAnchor = p.original_price != null ? Number(p.original_price) : null;
+      if (b.compare_at != null && ourAnchor != null && Math.abs(ourAnchor - b.compare_at) > PRICE_TOLERANCE) {
+        findings.push({ brand_name: B.name, sku, name, issue: 'anchor_off', ours: `antes $${ourAnchor.toFixed(2)}`, brand: `list $${b.compare_at.toFixed(2)}` });
+      }
+      const ourInStock = p.availability_status === 'in_stock';
+      if (ourInStock !== b.available) {
+        findings.push({ brand_name: B.name, sku, name, issue: 'stock_diff', ours: String(p.availability_status ?? '—'), brand: b.available ? 'in stock' : 'sold out' });
+      }
+    }
+
+    // Only PECRON's "not carried" list is actionable (their accessories fit the
+    // units we sell); the other brands have hundreds of unrelated SKUs.
+    if (B.name === 'PECRON') {
+      const bases = [...matched];
+      for (const b of brand.values()) {
+        if (matched.has(b.sku) || /[*+]/.test(b.sku) || !b.available) continue;
+        if (bases.some((base) => b.sku.startsWith(base + '-'))) continue;
+        notCarried.push({ brand: B.name, sku: b.sku, product: b.product, price: b.price, handle: b.handle });
+        if (notCarried.length >= 40) break;
+      }
+    }
+    perBrand.push({ brand: B.name, brand_skus: brand.size, ours: (ours ?? []).length, matched: matched.size });
+  }
 
   const report = {
     ran_at: new Date().toISOString(),
-    brand_skus: brand.size,
-    our_pecron_skus: (ours ?? []).length,
-    matched: matched.size,
+    brands: perBrand,
     counts: {
       below_map: findings.filter((f) => f.issue === 'below_map').length,
       above_map: findings.filter((f) => f.issue === 'above_map').length,
@@ -220,7 +254,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   // Digest only when the set of price/stock findings changed since last run.
   const signature = findings
-    .map((f) => `${f.sku}:${f.issue}:${f.ours}:${f.brand}`)
+    .map((f) => `${f.brand_name}:${f.sku}:${f.issue}:${f.ours}:${f.brand}`)
     .sort()
     .join('|');
   const { data: prev } = await sb.from('app_config').select('value').eq('key', CONFIG_KEY).maybeSingle();
@@ -240,13 +274,13 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   if (changed && findings.length > 0) {
     const line = (f: Finding) =>
-      `• ${f.sku} ${f.issue === 'below_map' ? '⬇️ bajo MAP' : f.issue === 'above_map' ? '⬆️ sobre MAP' : f.issue === 'anchor_off' ? '〰️ "antes" distinto' : f.issue === 'stock_diff' ? '📦 stock distinto' : '❓ no está en pecron.com'}: nosotros ${f.ours} · marca ${f.brand}`;
+      `• ${f.brand_name} ${f.sku} ${f.issue === 'below_map' ? '⬇️ bajo MAP' : f.issue === 'above_map' ? '⬆️ sobre MAP' : f.issue === 'anchor_off' ? '〰️ "antes" distinto' : f.issue === 'stock_diff' ? '📦 stock distinto' : '❓ no está en pecron.com'}: nosotros ${f.ours} · marca ${f.brand}`;
     const top = findings
       .sort((a, b) => (a.issue === 'below_map' ? -1 : 1) - (b.issue === 'below_map' ? -1 : 1))
       .slice(0, 14)
       .map(line);
     const text = [
-      `🏷️ Auditoría de precios vs pecron.com (${report.ran_at.slice(0, 10)})`,
+      `🏷️ Auditoría de precios vs sitios de marca (${report.ran_at.slice(0, 10)}) — ${perBrand.map((b) => `${b.brand}: ${b.matched}/${b.ours}`).join(' · ')}`,
       `${report.counts.below_map} bajo MAP · ${report.counts.above_map} sobre MAP · ${report.counts.anchor_off} "antes" distinto · ${report.counts.stock_diff} stock distinto · ${report.counts.not_on_brand} no en marca · ${report.counts.not_carried} nuevos de la marca que no vendemos`,
       '',
       ...top,
