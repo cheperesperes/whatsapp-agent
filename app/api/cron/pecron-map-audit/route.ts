@@ -171,25 +171,24 @@ export async function GET(req: NextRequest): Promise<Response> {
       continue;
     }
 
-    // Fallback index: model tokens found in brand SKUs / titles (ECO-WORTHY uses
-    // internal numeric SKUs on our side, SunGold spells variants differently).
-    const byToken = new Map<string, BrandSku>();
+    // Fallback matching, deliberately strict (a loose token match wrongly paired
+    // ECO-WORTHY batteries with a $49 accessory on the first run):
+    //   1. exact SKU
+    //   2. brand SKU = "GW-" + our SKU (ECO-WORTHY prefixes every SKU with GW-)
+    //   3. our SKU is a whole token of a brand SKU (never of titles)
+    //   4. a model number in OUR product name (letters+digits, ≥6 chars) equals a brand SKU
+    const bySkuToken = new Map<string, BrandSku>();
     for (const b of brand.values()) {
-      const tokens = new Set<string>(
-        `${b.sku} ${b.product} ${b.variant}`
-          .toUpperCase()
-          .split(/[^A-Z0-9.]+/)
-          .filter((t) => t.length >= 5 && /\d/.test(t))
-      );
-      for (const t of tokens) if (!byToken.has(t)) byToken.set(t, b);
+      for (const t of b.sku.split(/[^A-Z0-9.]+/)) {
+        if (t.length >= 6 && /\d/.test(t) && /[A-Z]/.test(t) && !bySkuToken.has(t)) bySkuToken.set(t, b);
+      }
     }
     const findBrand = (sku: string, name: string): BrandSku | undefined => {
-      const direct = brand.get(sku);
-      if (direct) return direct;
-      if (byToken.has(sku)) return byToken.get(sku);
-      // Model number inside our product name, e.g. "… SPH5048P - Inversor …"
+      if (brand.has(sku)) return brand.get(sku);
+      if (brand.has('GW-' + sku)) return brand.get('GW-' + sku);
+      if (bySkuToken.has(sku)) return bySkuToken.get(sku);
       for (const t of name.toUpperCase().split(/[^A-Z0-9.]+/)) {
-        if (t.length >= 5 && /\d/.test(t) && /[A-Z]/.test(t) && byToken.has(t)) return byToken.get(t);
+        if (t.length >= 6 && /\d/.test(t) && /[A-Z]/.test(t) && brand.has(t)) return brand.get(t);
       }
       return undefined;
     };
