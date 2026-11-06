@@ -54,7 +54,13 @@ const PRICE_TOLERANCE = 0.5; // dollars — ignore rounding noise
 // Applies ONLY to exact-SKU / GW-prefix matches (never to fuzzy model matches),
 // writes products.price AND agent_product_catalog.sell_price so the store,
 // the checkout and Sol agree, and lists every change in the digest.
-const AUTO_APPLY = (process.env.MAP_AUTO_APPLY ?? 'raise').toLowerCase();
+const AUTO_APPLY = (process.env.MAP_AUTO_APPLY ?? 'all').toLowerCase(); // owner 2026-11-06: fully automatic (raise AND lower)
+
+// Dropshipping (owner 2026-11-06): the brand ships every order, so the brand's
+// availability IS ours. On exact matches, brand "available" → in_stock and
+// brand "sold out" → out_of_stock, in products.availability_status and
+// agent_product_catalog.in_stock. STOCK_AUTO_APPLY=off disables it.
+const STOCK_AUTO_APPLY = (process.env.STOCK_AUTO_APPLY ?? 'on').toLowerCase() !== 'off';
 const MAX_AUTO_CHANGES_PER_RUN = 15; // circuit breaker against a broken feed
 
 // Our SKU → brand SKU when they differ in spelling.
@@ -162,6 +168,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   const findings: Finding[] = [];
   const pending: Array<{ brand_name: string; sku: string; from: number; to: number }> = [];
   const applied: Array<{ brand_name: string; sku: string; from: number; to: number }> = [];
+  const stockPending: Array<{ brand_name: string; sku: string; from: string; to: 'in_stock' | 'out_of_stock' }> = [];
+  const stockApplied: Array<{ brand_name: string; sku: string; from: string; to: 'in_stock' | 'out_of_stock' }> = [];
   const notCarried: Array<{ brand: string; sku: string; product: string; price: number; handle: string }> = [];
   const perBrand: Array<{ brand: string; brand_skus: number; ours: number; matched: number; error?: string }> = [];
 
@@ -240,6 +248,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       const ourInStock = p.availability_status === 'in_stock';
       if (ourInStock !== b.available) {
         findings.push({ brand_name: B.name, sku, name, issue: 'stock_diff', ours: String(p.availability_status ?? '—'), brand: b.available ? 'in stock' : 'sold out' });
+        if (exact.has(sku) && STOCK_AUTO_APPLY) {
+          stockPending.push({ brand_name: B.name, sku: String(p.sku), from: String(p.availability_status ?? '—'), to: b.available ? 'in_stock' : 'out_of_stock' });
+        }
       }
     }
 
@@ -274,9 +285,24 @@ export async function GET(req: NextRequest): Promise<Response> {
     }
   }
 
+  if (!dryRun && stockPending.length > 0 && stockPending.length <= MAX_AUTO_CHANGES_PER_RUN) {
+    for (const c of stockPending) {
+      const { error: e1 } = await sb.from('products').update({ availability_status: c.to, updated_at: new Date().toISOString() }).ilike('sku', c.sku);
+      const { error: e2 } = await sb.from('agent_product_catalog').update({ in_stock: c.to === 'in_stock' }).ilike('sku', c.sku);
+      if (e1 || e2) {
+        console.error(`[map-audit] stock apply failed for ${c.sku}:`, e1?.message ?? e2?.message);
+        continue;
+      }
+      stockApplied.push(c);
+    }
+  }
+
   const report = {
     ran_at: new Date().toISOString(),
     auto_apply: AUTO_APPLY,
+    stock_auto_apply: STOCK_AUTO_APPLY,
+    stock_pending: stockPending,
+    stock_applied: stockApplied,
     pending_changes: pending,
     applied_changes: applied,
     brands: perBrand,
@@ -312,7 +338,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .from('app_config')
     .upsert({ key: CONFIG_KEY, value: JSON.stringify({ ...report, signature }) }, { onConflict: 'key' });
 
-  if ((changed && findings.length > 0) || applied.length > 0) {
+  if ((changed && findings.length > 0) || applied.length > 0 || stockApplied.length > 0) {
     const line = (f: Finding) =>
       `• ${f.brand_name} ${f.sku} ${f.issue === 'below_map' ? '⬇️ bajo MAP' : f.issue === 'above_map' ? '⬆️ sobre MAP' : f.issue === 'anchor_off' ? '〰️ "antes" distinto' : f.issue === 'stock_diff' ? '📦 stock distinto' : '❓ no está en pecron.com'}: nosotros ${f.ours} · marca ${f.brand}`;
     const top = findings
@@ -320,15 +346,17 @@ export async function GET(req: NextRequest): Promise<Response> {
       .slice(0, 14)
       .map(line);
     const appliedLines = applied.map((c) => `✅ ${c.brand_name} ${c.sku}: $${c.from.toFixed(2)} → $${c.to.toFixed(2)} (precio de marca aplicado)`);
+    const stockLines = stockApplied.map((c) => `📦 ${c.brand_name} ${c.sku}: ${c.from} → ${c.to === 'in_stock' ? 'en stock' : 'agotado'} (según la marca)`);
     const text = [
       ...(appliedLines.length ? [`💲 Precios actualizados hoy (${appliedLines.length}):`, ...appliedLines, ''] : []),
+      ...(stockLines.length ? [`📦 Stock actualizado hoy (${stockLines.length}):`, ...stockLines, ''] : []),
       `🏷️ Auditoría de precios vs sitios de marca (${report.ran_at.slice(0, 10)}) — ${perBrand.map((b) => `${b.brand}: ${b.matched}/${b.ours}`).join(' · ')}`,
       `${report.counts.below_map} bajo MAP · ${report.counts.above_map} sobre MAP · ${report.counts.anchor_off} "antes" distinto · ${report.counts.stock_diff} stock distinto · ${report.counts.not_on_brand} no en marca · ${report.counts.not_carried} nuevos de la marca que no vendemos`,
       '',
       ...top,
       findings.length > 14 ? `… y ${findings.length - 14} más en el panel.` : '',
       '',
-      `${applied.length ? 'Solo se SUBEN precios al nivel de la marca automáticamente; bajar precios requiere MAP_AUTO_APPLY=all.' : 'No se cambió ningún precio.'} Detalle: panel → Productos → Auditoría MAP.`,
+      `${applied.length || stockApplied.length ? 'Precios y stock siguen a la marca automáticamente (dropshipping).' : 'Sin cambios hoy.'} Detalle: panel → Productos → Auditoría MAP.`,
     ]
       .filter(Boolean)
       .join('\n');
