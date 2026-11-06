@@ -54,7 +54,7 @@ const PRICE_TOLERANCE = 0.5; // dollars — ignore rounding noise
 // Applies ONLY to exact-SKU / GW-prefix matches (never to fuzzy model matches),
 // writes products.price AND agent_product_catalog.sell_price so the store,
 // the checkout and Sol agree, and lists every change in the digest.
-const AUTO_APPLY = (process.env.MAP_AUTO_APPLY ?? 'raise').toLowerCase();
+const AUTO_APPLY = (process.env.MAP_AUTO_APPLY ?? 'all').toLowerCase(); // owner 2026-11-06: fully automatic (raise AND lower)
 const MAX_AUTO_CHANGES_PER_RUN = 15; // circuit breaker against a broken feed
 
 // Our SKU → brand SKU when they differ in spelling.
