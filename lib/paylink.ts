@@ -136,7 +136,7 @@ export async function buildPayLink(
   }
 
   // Restrict coupon validation to the code(s) Sol quoted. Accept a single code
-  // OR a comma-separated list (e.g. "HURRICANE5,PECRON7") so a multi-item / mixed-
+  // OR a comma-separated list (e.g. "GOL10,WELCOME5") so a multi-item / mixed-
   // brand combo can keep the best margin-safe coupon PER item: selectBestOffer
   // picks the largest safe saving for each product from this set independently.
   // Backward-compatible — a single code behaves exactly as before. Empty → none.
