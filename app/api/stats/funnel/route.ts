@@ -78,6 +78,7 @@ export async function GET() {
     .from('conversations')
     .select('id, phone_number, ad_source, created_at')
     .eq('channel', 'whatsapp')
+    .eq('is_test', false)
     .gte('created_at', since)
     .order('created_at', { ascending: false })
     .limit(MAX_CONVERSATIONS);

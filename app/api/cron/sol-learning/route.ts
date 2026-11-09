@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
   const { data: convs, error: convErr } = await sb
     .from('conversations')
     .select('id, phone_number, customer_name, channel, updated_at')
+    .eq('is_test', false)
     .gte('updated_at', cutoff)
     .order('updated_at', { ascending: false })
     .limit(limit);

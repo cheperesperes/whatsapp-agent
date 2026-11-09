@@ -26,6 +26,8 @@ export type ConversationChannel = 'whatsapp' | 'web';
 
 export interface Conversation {
   id: string;
+  /** QA / practice conversation — excluded from dashboards, pipeline, digests and learning (2026-11-09). */
+  is_test?: boolean;
   /** WhatsApp E.164 phone for whatsapp rows; null for web rows that haven't shared a phone yet. */
   phone_number: string | null;
   customer_name: string | null;

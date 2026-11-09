@@ -79,6 +79,7 @@ export async function GET() {
       .from('conversations')
       .select('id, phone_number, customer_name, product_interest, converted_at, escalated, opted_out, created_at, updated_at')
       .eq('channel', 'whatsapp')
+      .eq('is_test', false)
       .not('phone_number', 'is', null)
       .gte('updated_at', since)
       .order('updated_at', { ascending: false })

@@ -87,6 +87,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .from('conversations')
     .select('id, phone_number, customer_name, channel, lead_quality, recommended_action, product_interest, lead_scored_at, updated_at')
     .in('lead_quality', ['hot', 'warm'])
+    .eq('is_test', false)
     .gte('lead_scored_at', since48h)
     .is('converted_at', null)
     .eq('opted_out', false)
