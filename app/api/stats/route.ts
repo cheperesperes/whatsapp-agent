@@ -20,6 +20,7 @@ export async function GET() {
     supabase
       .from('conversations')
       .select('id, status, product_interest, created_at, phone_number, escalated')
+      .eq('is_test', false)
       .order('created_at', { ascending: false })
       .limit(2000),
     supabase
