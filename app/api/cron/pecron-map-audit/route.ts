@@ -61,6 +61,18 @@ const AUTO_APPLY = (process.env.MAP_AUTO_APPLY ?? 'all').toLowerCase(); // owner
 // brand "sold out" → out_of_stock, in products.availability_status and
 // agent_product_catalog.in_stock. STOCK_AUTO_APPLY=off disables it.
 const STOCK_AUTO_APPLY = (process.env.STOCK_AUTO_APPLY ?? 'on').toLowerCase() !== 'off';
+// Owner 2026-11-16: the store database is the source of truth for stock.
+//   - A product set to pre_order by hand is never changed automatically
+//     (E3800LFP: PECRON lists it as sellable, but it ships late December).
+//   - SKUs in STOCK_LOCKED_SKUS keep the status the owner set (E3600LFP is in
+//     stock with us while PECRON.com shows it sold out).
+// Both are still reported in the digest as "stock distinto", never applied.
+const STOCK_LOCKED_SKUS = new Set(
+  (process.env.STOCK_LOCKED_SKUS ?? 'E3600LFP')
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean),
+);
 const MAX_AUTO_CHANGES_PER_RUN = 15; // circuit breaker against a broken feed
 
 // Our SKU → brand SKU when they differ in spelling.
@@ -248,7 +260,8 @@ export async function GET(req: NextRequest): Promise<Response> {
       const ourInStock = p.availability_status === 'in_stock';
       if (ourInStock !== b.available) {
         findings.push({ brand_name: B.name, sku, name, issue: 'stock_diff', ours: String(p.availability_status ?? '—'), brand: b.available ? 'in stock' : 'sold out' });
-        if (exact.has(sku) && STOCK_AUTO_APPLY) {
+        const ownerSet = p.availability_status === 'pre_order' || STOCK_LOCKED_SKUS.has(sku);
+        if (exact.has(sku) && STOCK_AUTO_APPLY && !ownerSet) {
           stockPending.push({ brand_name: B.name, sku: String(p.sku), from: String(p.availability_status ?? '—'), to: b.available ? 'in_stock' : 'out_of_stock' });
         }
       }
