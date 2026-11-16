@@ -64,11 +64,13 @@ const STOCK_AUTO_APPLY = (process.env.STOCK_AUTO_APPLY ?? 'on').toLowerCase() !=
 // Owner 2026-11-16: the store database is the source of truth for stock.
 //   - A product set to pre_order by hand is never changed automatically
 //     (E3800LFP: PECRON lists it as sellable, but it ships late December).
-//   - SKUs in STOCK_LOCKED_SKUS keep the status the owner set (E3600LFP is in
-//     stock with us while PECRON.com shows it sold out).
+//   - SKUs in STOCK_LOCKED_SKUS keep the status the owner set. Default = the
+//     units the owner gave warehouse stock for on 2026-11-16 (E3600LFP is in
+//     stock with us while PECRON.com shows it sold out; F3000LFP arrives Nov 21
+//     while PECRON.com shows it available).
 // Both are still reported in the digest as "stock distinto", never applied.
 const STOCK_LOCKED_SKUS = new Set(
-  (process.env.STOCK_LOCKED_SKUS ?? 'E3600LFP')
+  (process.env.STOCK_LOCKED_SKUS ?? 'E1000LFP,E1500LFP,E2400LFP,E3600LFP,F1000LFP,F3000LFP,E3800LFP')
     .split(',')
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),
