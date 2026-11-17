@@ -87,6 +87,7 @@ const SKU_ALIASES: Record<string, string> = {
   'TE-320': 'TF-320CART',
   'TROLLEY': 'E3000TROLLEY',
   'E300LFP': 'E300LFP-1', // brand lists the bare unit as the "-1" variant
+  'F5000LFP': 'F5000LFP-1', // same "-1" bare-unit variant; without it F5000LFP was never price-checked ($2,199 vs $2,399 MSRP, 2026-11-17)
 };
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
