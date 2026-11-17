@@ -65,12 +65,14 @@ const STOCK_AUTO_APPLY = (process.env.STOCK_AUTO_APPLY ?? 'on').toLowerCase() !=
 //   - A product set to pre_order by hand is never changed automatically
 //     (E3800LFP: PECRON lists it as sellable, but it ships late December).
 //   - SKUs in STOCK_LOCKED_SKUS keep the status the owner set. Default = the
-//     units the owner gave warehouse stock for on 2026-11-16 (E3600LFP is in
-//     stock with us while PECRON.com shows it sold out; F3000LFP arrives Nov 21
-//     while PECRON.com shows it available).
+//     PECRON units the owner set from warehouse stock on 2026-11-16 (E3600LFP
+//     is in stock with us while PECRON.com shows it sold out; F3000LFP arrives
+//     Nov 21 and E3800LFP, E500LFP, F5000LFP, EP3800-48V, FP5000-48V, WB12200
+//     are out with us while PECRON.com shows them available).
 // Both are still reported in the digest as "stock distinto", never applied.
 const STOCK_LOCKED_SKUS = new Set(
-  (process.env.STOCK_LOCKED_SKUS ?? 'E1000LFP,E1500LFP,E2400LFP,E3600LFP,F1000LFP,F3000LFP,E3800LFP')
+  (process.env.STOCK_LOCKED_SKUS ??
+    'E1000LFP,E1500LFP,E2400LFP,E3600LFP,F1000LFP,F3000LFP,E3800LFP,E500LFP,E300LFP,F5000LFP,EP3800-48V,FP5000-48V,WB12200')
     .split(',')
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),
@@ -262,7 +264,10 @@ export async function GET(req: NextRequest): Promise<Response> {
       const ourInStock = p.availability_status === 'in_stock';
       if (ourInStock !== b.available) {
         findings.push({ brand_name: B.name, sku, name, issue: 'stock_diff', ours: String(p.availability_status ?? '—'), brand: b.available ? 'in stock' : 'sold out' });
-        const ownerSet = p.availability_status === 'pre_order' || STOCK_LOCKED_SKUS.has(sku);
+        const ownerSet =
+          p.availability_status === 'pre_order' ||
+          STOCK_LOCKED_SKUS.has(sku) ||
+          STOCK_LOCKED_SKUS.has(String(p.sku).trim().toUpperCase()); // our SKU, before aliasing
         if (exact.has(sku) && STOCK_AUTO_APPLY && !ownerSet) {
           stockPending.push({ brand_name: B.name, sku: String(p.sku), from: String(p.availability_status ?? '—'), to: b.available ? 'in_stock' : 'out_of_stock' });
         }
