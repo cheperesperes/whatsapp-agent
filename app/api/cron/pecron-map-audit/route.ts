@@ -69,10 +69,12 @@ const STOCK_AUTO_APPLY = (process.env.STOCK_AUTO_APPLY ?? 'on').toLowerCase() !=
 //     is in stock with us while PECRON.com shows it sold out; F3000LFP arrives
 //     Nov 21 and E3800LFP, E500LFP, F5000LFP, EP3800-48V, FP5000-48V, WB12200
 //     are out with us while PECRON.com shows them available).
+//     2026-11-17: TROLLEY added (owner: sold out with us; PECRON's E3000TROLLEY
+//     feed would otherwise set it back to in stock).
 // Both are still reported in the digest as "stock distinto", never applied.
 const STOCK_LOCKED_SKUS = new Set(
   (process.env.STOCK_LOCKED_SKUS ??
-    'E1000LFP,E1500LFP,E2400LFP,E3600LFP,F1000LFP,F3000LFP,E3800LFP,E500LFP,E300LFP,F5000LFP,EP3800-48V,FP5000-48V,WB12200')
+    'E1000LFP,E1500LFP,E2400LFP,E3600LFP,F1000LFP,F3000LFP,E3800LFP,E500LFP,E300LFP,F5000LFP,EP3800-48V,FP5000-48V,WB12200,TROLLEY')
     .split(',')
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),
@@ -85,6 +87,7 @@ const SKU_ALIASES: Record<string, string> = {
   'TE-320': 'TF-320CART',
   'TROLLEY': 'E3000TROLLEY',
   'E300LFP': 'E300LFP-1', // brand lists the bare unit as the "-1" variant
+  'F5000LFP': 'F5000LFP-1', // same "-1" bare-unit variant; without it F5000LFP was never price-checked ($2,199 vs $2,399 MSRP, 2026-11-17)
 };
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
