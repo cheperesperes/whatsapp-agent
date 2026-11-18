@@ -72,6 +72,9 @@
     },
     "app/api/cron/pecron-map-audit/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/supplier-order-message/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -142,6 +145,10 @@
     {
       "path": "/api/cron/pecron-map-audit",
       "schedule": "15 10 * * *"
+    },
+    {
+      "path": "/api/cron/supplier-order-message",
+      "schedule": "*/10 * * * *"
     }
   ],
   "headers": [
