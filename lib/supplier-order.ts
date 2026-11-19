@@ -79,7 +79,10 @@ export function buildSupplierOrderMessage(o: SupplierOrderRow, today: Date = new
     `*Phone:* ${usPhone(a.phone || o.customer_phone)}`,
     ...(note ? ['', `*Notes:* ${note}`] : []),
     '',
-    'Please confirm you received this order and send the tracking number when it ships. Thank you.',
+    '*PAYMENT*',
+    'Please send us the PI (proforma invoice) for this order so we can make the payment. Bill to: Oiikon. Please put our order # on the PI.',
+    '',
+    'Please confirm you received this order, and send the tracking number when it ships. Thank you.',
     'Eduardo – Oiikon',
   ].join('\n');
 }
