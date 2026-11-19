@@ -315,6 +315,21 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
       const handled = await handleMarketingApproval(approvalWord !== 'no');
       if (handled) return;
     }
+
+    // The operator line is the owner, never a customer: no sales reply, no lead,
+    // no follow-ups. Anything that is not a command gets the command list.
+    await sendWhatsAppMessage(
+      senderPhone,
+      [
+        'Oiikon Sol · línea del operador',
+        '/order — texto para el proveedor del último pedido pagado',
+        '/order ORD-… — lo mismo para ese pedido',
+        '/status — estado de Sol',
+        '/bot +1… — devolver una conversación a Sol',
+        '/won +1… — marcar una venta',
+      ].join('\n'),
+    );
+    return;
   }
 
   // ── Non-text messages ───────────────────────────────────
