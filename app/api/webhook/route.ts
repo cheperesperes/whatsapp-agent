@@ -315,6 +315,21 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
       const handled = await handleMarketingApproval(approvalWord !== 'no');
       if (handled) return;
     }
+
+    // The operator line is the owner, never a customer: no sales reply, no lead,
+    // no follow-ups. Anything that is not a command gets the command list.
+    await sendWhatsAppMessage(
+      senderPhone,
+      [
+        'Oiikon Sol · línea del operador',
+        '/order — texto para el proveedor del último pedido pagado',
+        '/order ORD-… — lo mismo para ese pedido',
+        '/status — estado de Sol',
+        '/bot +1… — devolver una conversación a Sol',
+        '/won +1… — marcar una venta',
+      ].join('\n'),
+    );
+    return;
   }
 
   // ── Non-text messages ───────────────────────────────────
@@ -1195,6 +1210,26 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
         `Mensajes hoy: ${stats.messages_today}`,
       ].join('\n');
       await sendWhatsAppMessage(operatorPhone, msg);
+      break;
+    }
+
+    case 'order': {
+      // Supplier-ready text on demand (same text the supplier-order-message cron pushes).
+      const { createServiceClient: svc } = await import('@/lib/supabase');
+      const { buildSupplierOrderMessage } = await import('@/lib/supplier-order');
+      let q = svc()
+        .from('orders')
+        .select('order_number, customer_name, customer_phone, shipping_address, items')
+        .eq('payment_status', 'paid');
+      q = args ? q.eq('order_number', args) : q.order('paid_at', { ascending: false, nullsFirst: false });
+      const { data, error } = await q.limit(1);
+      const row = (data ?? [])[0];
+      if (error || !row) {
+        await sendWhatsAppMessage(operatorPhone, args ? `❌ No encontré un pedido pagado ${args}` : '❌ No hay pedidos pagados.');
+        break;
+      }
+      const text = buildSupplierOrderMessage(row as never);
+      await sendWhatsAppMessage(operatorPhone, text ?? `⚠️ Al pedido ${row.order_number} le faltan datos (producto o dirección).`);
       break;
     }
 

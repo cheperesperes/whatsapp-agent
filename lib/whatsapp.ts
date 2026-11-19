@@ -190,6 +190,13 @@ export function parseOwnerCommand(
     return { command: 'broadcast', args: broadcastMatch[1].trim() };
   }
 
+  // /order            → supplier-ready text for the latest paid order
+  // /order ORD-XXXX   → same, for that order
+  const orderMatch = trimmed.match(/^\/order(?:\s+([A-Za-z0-9-]{4,40}))?$/i);
+  if (orderMatch) {
+    return { command: 'order', args: (orderMatch[1] ?? '').toUpperCase() };
+  }
+
   const wonMatch = trimmed.match(/^\/won\s+([+\d][\d\s\-().]{5,})$/i);
   if (wonMatch) {
     return { command: 'won', args: wonMatch[1].trim() };

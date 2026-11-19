@@ -25,6 +25,7 @@ day-to-day tracker that points at those when needed.
 ## 🟢 Done
 
 <!-- Move finished cards here, newest first. Date them. -->
+- 2026-11-18 — Owner command `/order` (latest paid order) and `/order ORD-…`: Sol replies with the supplier-ready text. Added because the pushed message from the cron was accepted by WhatsApp but did not arrive; delivery reports are now recorded on order_supplier_notices.
 - 2026-11-18 — Supplier order message: /api/cron/supplier-order-message (every 10 min) sends the operator one WhatsApp per new paid store order with the supplier-ready text (order #, model/SKU, quantity, ship-to name, address, phone; never the customer's email or the price). The owner forwards it to the supplier. One message per order (table order_supplier_notices; older paid orders pre-seeded so nothing old is sent). `?dry=1` previews.
 - 2026-11-17 — Brand stock sync: TROLLEY added to the STOCK_LOCKED_SKUS default (owner set it sold out; PECRON's E3000TROLLEY feed shows it available and would flip it back). Kits (BUNDLE-*, *X2) were already skipped. Also alias F5000LFP → F5000LFP-1 (PECRON's bare-unit SKU) so its price is checked against MAP.
 - 2026-11-16 — Brand stock sync respects owner decisions: /api/cron/pecron-map-audit no longer changes a product set to pre_order (E3800LFP ships late December though PECRON lists it as sellable) or a SKU in STOCK_LOCKED_SKUS (default E3600LFP: in stock with us, sold out on PECRON.com). Both still show in the digest as "stock distinto". Owner: the store database is the source of truth for stock.
