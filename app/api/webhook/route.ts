@@ -225,6 +225,18 @@ export async function POST(request: NextRequest) {
         } else {
           console.log(`[WEBHOOK STATUS] ${st} to=${to} wamid=${wamid}`);
         }
+        // Supplier order messages: record the delivery report next to the order so a
+        // message that never arrives can be diagnosed without server logs.
+        if (wamid && typeof st === 'string') {
+          try {
+            const errs = (s?.errors || []).map((e: any) => `${e.code}:${e.title || e.message}`).join(' | ');
+            const { createServiceClient: svc } = await import('@/lib/supabase');
+            await svc()
+              .from('order_supplier_notices')
+              .update(st === 'failed' ? { delivery: 'failed', delivery_error: errs.slice(0, 300) } : { delivery: st })
+              .eq('wamid', wamid);
+          } catch { /* never block the webhook on this */ }
+        }
       }
       return ok200();
     }

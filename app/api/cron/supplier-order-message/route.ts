@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createServiceClient } from '@/lib/supabase';
-import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { sendMetaWhatsAppMessage } from '@/lib/whatsapp-meta';
 import { buildSupplierOrderMessage, type SupplierOrderRow } from '@/lib/supplier-order';
 
 export const dynamic = 'force-dynamic';
@@ -79,9 +79,18 @@ export async function GET(req: NextRequest): Promise<Response> {
       .insert({ order_number: o.order_number, status: 'sending' });
     if (claimErr) { results.push({ order: o.order_number, action: 'skip:claimed' }); continue; }
     try {
-      await sendWhatsAppMessage(OPERATOR_PHONE, text);
+      const accessToken = process.env.META_WHATSAPP_ACCESS_TOKEN ?? process.env.WHATSAPP_ACCESS_TOKEN ?? '';
+      const phoneNumberId = process.env.META_WHATSAPP_PHONE_NUMBER_ID ?? process.env.WHATSAPP_PHONE_NUMBER_ID ?? '';
+      if (!accessToken || !phoneNumberId) throw new Error('missing Meta WhatsApp env vars');
+      // Digits only: a stray space, dash or line break in the configured number must not reach Meta.
+      const to = OPERATOR_PHONE.replace(/\D/g, '');
+      const r = await sendMetaWhatsAppMessage(to, text, phoneNumberId, accessToken);
+      // Keep Meta's message id so the delivery report (webhook) can be matched to this order.
       await sb.from('order_supplier_notices')
-        .update({ status: 'sent', sent_at: new Date().toISOString() })
+        .update({
+          status: 'sent', sent_at: new Date().toISOString(), wamid: r.wamid ?? null, delivery: 'accepted',
+          detail: { to_last4: to.slice(-4), to_len: to.length, wa_id_last4: (r.waId ?? '').slice(-4), sender_id_last4: phoneNumberId.slice(-4) },
+        })
         .eq('order_number', o.order_number);
       results.push({ order: o.order_number, action: 'sent' });
       count++;

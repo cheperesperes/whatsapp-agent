@@ -16,7 +16,7 @@ export async function sendMetaWhatsAppMessage(
   body: string,
   phoneNumberId: string,
   accessToken: string,
-): Promise<void> {
+): Promise<{ wamid?: string; waId?: string }> {
   const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${phoneNumberId}/messages`;
   const payload = {
     messaging_product: 'whatsapp',
@@ -37,6 +37,12 @@ export async function sendMetaWhatsAppMessage(
     const err = await res.text();
     throw new Error(`Meta WA send failed ${res.status}: ${err}`);
   }
+  // Meta's answer names the message id and the WhatsApp account it resolved the
+  // number to; callers that need to trace delivery can keep them.
+  const data = (await res.json().catch(() => null)) as
+    | { messages?: Array<{ id?: string }>; contacts?: Array<{ wa_id?: string }> }
+    | null;
+  return { wamid: data?.messages?.[0]?.id, waId: data?.contacts?.[0]?.wa_id };
 }
 
 // ── Outbound: send image ────────────────────────────────────
