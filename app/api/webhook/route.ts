@@ -324,6 +324,7 @@ async function processWebhook(parsed: ParsedIncomingMessage) {
         'Oiikon Sol · línea del operador',
         '/order — texto para el proveedor del último pedido pagado',
         '/order ORD-… — lo mismo para ese pedido',
+        '/order nombre — último pedido pagado de ese cliente',
         '/status — estado de Sol',
         '/bot +1… — devolver una conversación a Sol',
         '/won +1… — marcar una venta',
@@ -1217,17 +1218,42 @@ async function handleOwnerCommand(command: string, args: string, operatorPhone: 
       // Supplier-ready text on demand (same text the supplier-order-message cron pushes).
       const { createServiceClient: svc } = await import('@/lib/supabase');
       const { buildSupplierOrderMessage } = await import('@/lib/supplier-order');
-      let q = svc()
-        .from('orders')
-        .select('order_number, customer_name, customer_phone, shipping_address, items')
-        .eq('payment_status', 'paid');
-      q = args ? q.eq('order_number', args) : q.order('paid_at', { ascending: false, nullsFirst: false });
-      const { data, error } = await q.limit(1);
-      const row = (data ?? [])[0];
-      if (error || !row) {
-        await sendWhatsAppMessage(operatorPhone, args ? `❌ No encontré un pedido pagado ${args}` : '❌ No hay pedidos pagados.');
+      const cols = 'order_number, customer_name, customer_phone, shipping_address, items, paid_at';
+      const isNumber = /^ORD-[A-Z0-9-]+$/i.test(args);
+      // Name search: letters, digits and spaces only, so nothing odd reaches the filter.
+      const name = args.replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
+      let q = svc().from('orders').select(cols).eq('payment_status', 'paid');
+      if (isNumber) q = q.eq('order_number', args.toUpperCase());
+      else if (args) q = q.ilike('customer_name', `%${name.split(' ').join('%')}%`);
+      const { data, error } = await q.order('paid_at', { ascending: false, nullsFirst: false }).limit(6);
+      let rows = data ?? [];
+      // Near-miss spelling ("camilla" for "Camille"): retry with the first 4 letters of the name.
+      if (!error && rows.length === 0 && args && !isNumber && name.split(' ')[0].length >= 4) {
+        const { data: near } = await svc()
+          .from('orders').select(cols).eq('payment_status', 'paid')
+          .ilike('customer_name', `%${name.split(' ')[0].slice(0, 4)}%`)
+          .order('paid_at', { ascending: false, nullsFirst: false }).limit(6);
+        rows = near ?? [];
+      }
+      if (error || rows.length === 0 || (args && !isNumber && !name)) {
+        await sendWhatsAppMessage(
+          operatorPhone,
+          args ? `❌ No encontré un pedido pagado para "${args}"` : '❌ No hay pedidos pagados.',
+        );
         break;
       }
+      // A name that matches several paid orders: list them so the owner picks one.
+      if (args && !isNumber && rows.length > 1) {
+        const list = rows.slice(0, 5).map(
+          (r) => `/order ${r.order_number} — ${r.customer_name ?? ''} · ${String(r.paid_at ?? '').slice(0, 10)}`,
+        );
+        await sendWhatsAppMessage(
+          operatorPhone,
+          [`Hay ${rows.length > 5 ? 'más de 5' : rows.length} pedidos pagados para "${args}". Envíe uno:`, ...list].join('\n'),
+        );
+        break;
+      }
+      const row = rows[0];
       const text = buildSupplierOrderMessage(row as never);
       await sendWhatsAppMessage(operatorPhone, text ?? `⚠️ Al pedido ${row.order_number} le faltan datos (producto o dirección).`);
       break;
