@@ -27,6 +27,9 @@ export async function sendMetaWhatsAppMessage(
   };
   const res = await fetch(url, {
     method: 'POST',
+    // Never let Next.js reuse a stored answer for a send: inside GET routes (crons)
+    // an identical POST was served from its data cache, so nothing reached WhatsApp.
+    cache: 'no-store',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
@@ -64,6 +67,9 @@ export async function sendMetaWhatsAppImage(
   };
   const res = await fetch(url, {
     method: 'POST',
+    // Never let Next.js reuse a stored answer for a send: inside GET routes (crons)
+    // an identical POST was served from its data cache, so nothing reached WhatsApp.
+    cache: 'no-store',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
@@ -102,6 +108,9 @@ export async function sendMetaWhatsAppTemplate(
   };
   const res = await fetch(url, {
     method: 'POST',
+    // Never let Next.js reuse a stored answer for a send: inside GET routes (crons)
+    // an identical POST was served from its data cache, so nothing reached WhatsApp.
+    cache: 'no-store',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
