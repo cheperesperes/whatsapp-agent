@@ -15,6 +15,9 @@ import { sendMetaWhatsAppMessage } from '@/lib/whatsapp-meta';
 import { buildSupplierOrderMessage, type SupplierOrderRow } from '@/lib/supplier-order';
 
 export const dynamic = 'force-dynamic';
+// Database reads here must be live: a stored answer showed a re-released order as not yet sent.
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
