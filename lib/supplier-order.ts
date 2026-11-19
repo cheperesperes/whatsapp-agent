@@ -80,7 +80,7 @@ export function buildSupplierOrderMessage(o: SupplierOrderRow, today: Date = new
     ...(note ? ['', `*Notes:* ${note}`] : []),
     '',
     '*PAYMENT*',
-    'Please send us the PI (proforma invoice) for this order so we can make the payment. Bill to: Oiikon. Please put our order # on the PI.',
+    'Please send us the PI (proforma invoice) for this order so we can make the payment. Bill to: CBE Solutions LLC (DBA Oiikon), 5550 Glades Rd, Suite 500, Boca Raton, FL 33431. Please put our order # on the PI.',
     '',
     'Please confirm you received this order, and send the tracking number when it ships. Thank you.',
     'Eduardo – Oiikon',
