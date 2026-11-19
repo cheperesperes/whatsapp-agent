@@ -192,9 +192,10 @@ export function parseOwnerCommand(
 
   // /order            → supplier-ready text for the latest paid order
   // /order ORD-XXXX   → same, for that order
-  const orderMatch = trimmed.match(/^\/order(?:\s+([A-Za-z0-9-]{4,40}))?$/i);
+  // /order camille    → latest paid order for that customer name (part of a name works)
+  const orderMatch = trimmed.match(/^\/order(?:\s+(.{2,60}))?$/i);
   if (orderMatch) {
-    return { command: 'order', args: (orderMatch[1] ?? '').toUpperCase() };
+    return { command: 'order', args: (orderMatch[1] ?? '').trim() };
   }
 
   const wonMatch = trimmed.match(/^\/won\s+([+\d][\d\s\-().]{5,})$/i);
