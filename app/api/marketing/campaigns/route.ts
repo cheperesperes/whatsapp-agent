@@ -31,6 +31,8 @@ export async function GET(req: NextRequest) {
     sb
       .from('marketing_campaigns')
       .select('id, date, language, status, daily_theme, product_sku, category, error_message, created_at, updated_at')
+      // Expired campaigns (never approved, too old) stay in the database but out of the working list.
+      .neq('status', 'expired')
       .order('date', { ascending: false })
       .limit(30),
     sb
