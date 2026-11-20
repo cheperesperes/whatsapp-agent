@@ -128,6 +128,54 @@ export async function getPendingApprovalCampaign(): Promise<MarketingCampaign | 
   return data as MarketingCampaign | null;
 }
 
+/**
+ * Queue housekeeping, run before each daily generation:
+ *  • a pending approval older than `maxPendingDays` is marked 'expired' (its prices and
+ *    stock are stale; it must not be published by a late "SI");
+ *  • a campaign left in 'publishing' (the publish step died midway) is settled from what
+ *    actually got posted: both platforms → published, one → partial, none → failed.
+ * Never throws: housekeeping must not block the day's campaign.
+ */
+export async function tidyCampaignQueue(maxPendingDays = 7): Promise<{ expired: number; settled: number }> {
+  const out = { expired: 0, settled: 0 };
+  try {
+    const sb = createServiceClient();
+    const cutoff = new Date(Date.now() - maxPendingDays * 86_400_000).toISOString().slice(0, 10);
+    const { data: exp } = await sb
+      .from('marketing_campaigns')
+      .update({ status: 'expired', error_message: `Expirada: sin aprobar por más de ${maxPendingDays} días` })
+      .eq('status', 'pending_approval')
+      .lt('date', cutoff)
+      .select('id');
+    out.expired = exp?.length ?? 0;
+
+    const stuckBefore = new Date(Date.now() - 20 * 60_000).toISOString();
+    const { data: stuck } = await sb
+      .from('marketing_campaigns')
+      .select('id')
+      .eq('status', 'publishing')
+      .lt('updated_at', stuckBefore);
+    for (const c of stuck ?? []) {
+      const { data: mc } = await sb
+        .from('marketing_content')
+        .select('facebook_post_id, instagram_post_id, youtube_video_id')
+        .eq('campaign_id', c.id)
+        .maybeSingle();
+      const posted = [mc?.facebook_post_id, mc?.instagram_post_id, mc?.youtube_video_id].filter(Boolean).length;
+      const status = posted === 0 ? 'failed' : mc?.facebook_post_id && mc?.instagram_post_id ? 'published' : 'partial';
+      const { error } = await sb
+        .from('marketing_campaigns')
+        .update({ status, error_message: 'La publicación se interrumpió; estado ajustado según lo que sí se publicó.' })
+        .eq('id', c.id)
+        .eq('status', 'publishing');
+      if (!error) out.settled++;
+    }
+  } catch (e) {
+    console.warn('[marketing] tidyCampaignQueue failed:', e instanceof Error ? e.message : e);
+  }
+  return out;
+}
+
 export async function listCampaigns(limit = 30): Promise<MarketingCampaign[]> {
   const sb = createServiceClient();
   const { data } = await sb

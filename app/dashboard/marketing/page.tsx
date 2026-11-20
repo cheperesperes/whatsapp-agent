@@ -99,8 +99,10 @@ const STATUS_EMOJI: Record<string, string> = {
   pending_approval: '⏳',
   publishing: '📤',
   published: '✅',
+  partial: '🟡',
   rejected: '❌',
   failed: '⚠️',
+  expired: '🗂️',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -110,8 +112,10 @@ const STATUS_LABEL: Record<string, string> = {
   pending_approval: 'Listo — esperando tu aprobación',
   publishing: 'Publicando...',
   published: 'Publicado',
+  partial: 'Publicado en parte',
   rejected: 'Cancelado',
   failed: 'Error',
+  expired: 'Expirada',
 };
 
 const STATUS_DETAIL: Record<string, string> = {
@@ -123,6 +127,8 @@ const STATUS_DETAIL: Record<string, string> = {
   published: 'Publicado en todas las plataformas configuradas.',
   rejected: 'Cancelaste esta campaña. Regenera para crear una nueva versión.',
   failed: 'La pipeline falló — revisa el mensaje de error.',
+  partial: 'Se publicó en al menos una plataforma y otra falló — revisa el mensaje de error.',
+  expired: 'Nunca se aprobó y ya es antigua (precios y stock pueden haber cambiado). No se publicará.',
 };
 
 const PIPELINE_STEPS: Array<{ id: string; label: string }> = [
@@ -403,7 +409,7 @@ export default function MarketingPage() {
     const id = setInterval(finalize, 8000);
     return () => clearInterval(id);
   }, [imageProcessing, reload]);
-  const history = data?.campaigns.filter((c) => c.status === 'published').slice(0, 10) ?? [];
+  const history = data?.campaigns.filter((c) => c.status === 'published' || c.status === 'partial').slice(0, 10) ?? [];
 
   async function approve(campaignId: string, approved: boolean, options: { text_only?: boolean } = {}) {
     if (!campaignId) return;
@@ -732,7 +738,7 @@ function CampaignHero({
   const [draftIg, setDraftIg] = useState<string>(content?.instagram_caption ?? '');
   const [draftYt, setDraftYt] = useState<string>(content?.youtube_title ?? '');
   const currentIdx = PIPELINE_STEPS.findIndex((s) => s.id === campaign.status);
-  const terminal = campaign.status === 'failed' || campaign.status === 'rejected';
+  const terminal = campaign.status === 'failed' || campaign.status === 'rejected' || campaign.status === 'expired';
   const readyToApprove = campaign.status === 'pending_approval';
   const categoryLabel = campaign.category
     ? CATEGORIES.find((c) => c.value === campaign.category)?.label

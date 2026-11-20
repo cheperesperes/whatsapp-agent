@@ -18,6 +18,7 @@ import {
   getCampaignById,
   upsertFacebookGroups,
   getContentLearningSignals,
+  tidyCampaignQueue,
 } from '@/lib/marketing/db';
 import { loadMemory, consolidateMemory, formatMemoryForPrompt } from '@/lib/marketing/memory';
 import { createServiceClient, getProductImages, loadActiveOffers, loadProductCosts, applyLivePricing } from '@/lib/supabase';
@@ -113,6 +114,10 @@ export async function GET(req: NextRequest) {
   //  • force=true       → regenerate a SPECIFIC existing campaign in place
   //  • neither          → scheduled-cron behavior: one idempotent post per (date,language)
   const wantNew = req.nextUrl.searchParams.get('new') === 'true';
+
+  // Keep the approval queue honest before adding to it (expire stale approvals, settle stuck publishes).
+  const tidy = await tidyCampaignQueue();
+  if (tidy.expired || tidy.settled) console.log(`[marketing-daily] queue tidy: expired=${tidy.expired} settled=${tidy.settled}`);
 
   // When regenerating a specific campaign, the dashboard passes its id so we
   // target exactly that row (instead of "today's" first match).
