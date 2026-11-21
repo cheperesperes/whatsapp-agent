@@ -16,6 +16,7 @@ import {
 import { getVideoStatus } from '@/lib/marketing/heygen';
 import { getImageStatus } from '@/lib/marketing/higgsfield';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { loadProductSlugs, prepareLinks, campaignTag } from '@/lib/marketing/links';
 import { getProductImages } from '@/lib/supabase';
 
 async function sendWhatsAppSafe(to: string, msg: string): Promise<void> {
@@ -156,6 +157,13 @@ export async function POST(req: NextRequest) {
   // explicitly chose FB text-only) and when a video is going out.
   const fbImage: string | null = !textOnly && !publishVideoUrl ? (aiImage ?? stockPhoto) : null;
 
+  // Links that work and can be measured: real product pages + campaign tags per platform.
+  const lang: 'es' | 'en' = campaign.language === 'en' ? 'en' : 'es';
+  const slugBySku = await loadProductSlugs();
+  const tag = campaignTag(campaign.date, lang);
+  const fbText = prepareLinks(content.facebook_post ?? '', slugBySku, lang, { source: 'facebook', campaign: tag, content: campaign.product_sku });
+  const igText = prepareLinks(content.instagram_caption ?? '', slugBySku, lang, { source: 'instagram', campaign: tag, content: campaign.product_sku });
+
   const results: Record<string, string | null> = {
     facebook: null,
     instagram: null,
@@ -165,7 +173,7 @@ export async function POST(req: NextRequest) {
 
   // ── Facebook ───────────────────────────────────────────────────────────────
   try {
-    const fb = await publishToFacebook(content.facebook_post ?? '', publishVideoUrl, fbImage);
+    const fb = await publishToFacebook(fbText, publishVideoUrl, fbImage);
     if (fb?.post_id) {
       results.facebook = fb.post_id;
     } else {
@@ -189,7 +197,7 @@ export async function POST(req: NextRequest) {
   // "Publicado" with no IG id.
   const igConfigured = Boolean(process.env.META_IG_ACCOUNT_ID);
   try {
-    const ig = await publishToInstagram(content.instagram_caption ?? '', publishVideoUrl, igImage);
+    const ig = await publishToInstagram(igText, publishVideoUrl, igImage);
     if (ig?.post_id) {
       results.instagram = ig.post_id;
     } else if (igConfigured) {

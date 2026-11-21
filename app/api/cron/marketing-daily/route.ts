@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { conductDailyResearch } from '@/lib/marketing/research';
 import { generateMarketingContent, validateContent } from '@/lib/marketing/content';
+import { loadProductSlugs, productPageUrl } from '@/lib/marketing/links';
 import { createProductReviewVideo } from '@/lib/marketing/heygen';
 import { createProductVideo as createHiggsfieldVideo } from '@/lib/marketing/higgsfield';
 
@@ -260,6 +261,13 @@ export async function GET(req: NextRequest) {
 
     if (products.length === 0) {
       throw new Error('No live in-stock products found');
+    }
+
+    // Give each product its REAL page address (slug URL in this post's language) —
+    // /product/<sku> does not exist on the storefront.
+    const slugBySku = await loadProductSlugs();
+    for (const p of products as Array<{ sku: string; url?: string | null }>) {
+      p.url = productPageUrl(slugBySku[p.sku.toUpperCase()], language);
     }
 
     // ── Step 5: Generate content + compliance check ────────────────────────
