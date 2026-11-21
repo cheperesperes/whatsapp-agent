@@ -75,6 +75,9 @@
     },
     "app/api/cron/supplier-order-message/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/marketing-publish/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -95,12 +98,28 @@
       "schedule": "0 14 * * *"
     },
     {
-      "path": "/api/cron/marketing-daily",
-      "schedule": "0 12 * * *"
+      "path": "/api/cron/marketing-daily?days_ahead=1&media=image",
+      "schedule": "0 12 * * 0"
     },
     {
-      "path": "/api/cron/marketing-daily?language=en&media=image",
-      "schedule": "0 13 * * 2,5"
+      "path": "/api/cron/marketing-daily?days_ahead=3&media=image",
+      "schedule": "10 12 * * 0"
+    },
+    {
+      "path": "/api/cron/marketing-daily?days_ahead=5&media=image",
+      "schedule": "20 12 * * 0"
+    },
+    {
+      "path": "/api/cron/marketing-daily?language=en&media=image&days_ahead=4",
+      "schedule": "30 12 * * 0"
+    },
+    {
+      "path": "/api/cron/marketing-publish?mode=notify",
+      "schedule": "0 13 * * 0"
+    },
+    {
+      "path": "/api/cron/marketing-publish",
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/cron/finalize-videos",

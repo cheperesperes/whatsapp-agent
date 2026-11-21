@@ -71,7 +71,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, reason: 'MARKETING_CRON_ENABLED=false' }, { status: 503 });
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  // Weekly plan: `days_ahead=N` (1–10) prepares the post FOR a future day. It lands as
+  // `pending_approval` with that date, waits on the weekly approval screen, and is
+  // published by /api/cron/marketing-publish on its day — no "reply SI" prompt.
+  const aheadRaw = Number(req.nextUrl.searchParams.get('days_ahead') ?? '0');
+  const daysAhead = Number.isInteger(aheadRaw) && aheadRaw >= 1 && aheadRaw <= 10 ? aheadRaw : 0;
+  const scheduled = daysAhead > 0;
+  // (Named `today` historically: it is the campaign's date.)
+  const today = new Date(Date.now() + daysAhead * 86_400_000).toISOString().split('T')[0];
   const runId = `marketing-${today}`;
   const startedAt = Date.now();
   const force = req.nextUrl.searchParams.get('force') === 'true';
@@ -198,7 +205,7 @@ export async function GET(req: NextRequest) {
       });
       try {
         const { sendMarketingPreview } = await import('@/lib/marketing/notify');
-        await sendMarketingPreview(campaignId, null);
+        if (!scheduled) await sendMarketingPreview(campaignId, null);
       } catch {}
       return NextResponse.json({
         ok: true,
@@ -276,6 +283,7 @@ export async function GET(req: NextRequest) {
       offers,
       costBySku,
       couponCode,
+      forDate: today,
     });
 
     const warnings = validateContent(content);
@@ -374,7 +382,7 @@ export async function GET(req: NextRequest) {
       await updateContent(campaignId, { video_status: 'skipped' });
       await updateCampaign(campaignId, { status: 'pending_approval' });
       const { sendMarketingPreview } = await import('@/lib/marketing/notify');
-      await sendMarketingPreview(campaignId, null);
+      if (!scheduled) await sendMarketingPreview(campaignId, null);
       return NextResponse.json({
         ok: true,
         run_id: runId,
@@ -428,7 +436,7 @@ export async function GET(req: NextRequest) {
 
       // Notify Eduardo even without video
       const { sendMarketingPreview } = await import('@/lib/marketing/notify');
-      await sendMarketingPreview(campaignId, null);
+      if (!scheduled) await sendMarketingPreview(campaignId, null);
 
       return NextResponse.json({
         ok: true,

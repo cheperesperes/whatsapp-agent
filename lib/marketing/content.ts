@@ -28,11 +28,13 @@ interface Product {
   ideal_for?: string | null;
 }
 
-function pickDailyProduct(products: Product[]): Product {
+function pickDailyProduct(products: Product[], forDate?: string | null): Product {
   const inStock = products.filter((p) => p.sku);
   if (inStock.length === 0) return products[0];
-  // Rotate by day-of-year so each day features a different product
-  const dayOfYear = Math.floor(Date.now() / 86400000);
+  // Rotate by the CAMPAIGN's day so each day features a different product — a week
+  // prepared in one sitting must not feature the same product four times.
+  const t = forDate ? Date.parse(`${forDate}T12:00:00Z`) : NaN;
+  const dayOfYear = Math.floor((Number.isFinite(t) ? t : Date.now()) / 86400000);
   return inStock[dayOfYear % inStock.length];
 }
 
@@ -77,6 +79,8 @@ export async function generateMarketingContent(
     // Operator-chosen coupon (the 🏷️ Oferta angle). Still passes the same
     // margin/min-order/brand gate as the auto-pick — never bypasses margin.
     couponCode?: string | null;
+    // The date the post is FOR (YYYY-MM-DD) — drives the product rotation.
+    forDate?: string | null;
   }
 ): Promise<GeneratedContent> {
   const language: ContentLanguage = options?.language ?? 'es';
@@ -84,7 +88,7 @@ export async function generateMarketingContent(
   const matched = requestedSku
     ? products.find((p) => p.sku.toUpperCase() === requestedSku)
     : null;
-  const product = matched ?? pickDailyProduct(products);
+  const product = matched ?? pickDailyProduct(products, options?.forDate);
   const categoryEntry = category ? CATEGORIES.find((c) => c.value === category) : null;
   const categoryBrief = categoryEntry
     ? `\nCATEGORÍA DE HOY: ${categoryEntry.label}\nÁngulo específico: ${categoryEntry.angle}\n`
