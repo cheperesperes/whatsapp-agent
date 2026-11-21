@@ -26,6 +26,8 @@ interface Product {
   original_price?: number | null;
   discount_percentage?: number | null;
   ideal_for?: string | null;
+  // Real product page (slug URL, in the post's language). Set by the caller.
+  url?: string | null;
 }
 
 function pickDailyProduct(products: Product[], forDate?: string | null): Product {
@@ -230,7 +232,7 @@ PRODUCTO DEL DÍA (ÚNICOS DATOS PERMITIDOS — no inventes otros):
 - Especificaciones: ${specs.length > 0 ? specs.join(', ') : 'no publicadas'}
 ${pricesBlock}
 - Ideal para: ${product.ideal_for ?? 'no especificado'}
-- URL: https://oiikon.com/product/${product.sku.toLowerCase()}
+- URL: ${product.url ?? 'https://www.oiikon.com/catalogo'}
 
 INVESTIGACIÓN DE HOY:
 ${researchBrief}
@@ -319,10 +321,10 @@ brief de investigación entran en conflicto, GANA LA REGLA.
 CTAs OBLIGATORIOS:
 • Incluye SIEMPRE dos llamadas a la acción al final del facebook_post,
   instagram_caption, y youtube_description:
-  1. Link al producto: https://oiikon.com/product/${product.sku.toLowerCase()}
+  1. Link al producto: ${product.url ?? 'https://www.oiikon.com/catalogo'}
   2. Chat por WhatsApp: https://wa.me/15616988477?text=Hola%2C%20tengo%20una%20pregunta%20sobre%20el%20${product.sku}
 • Formato sugerido:
-  "👉 Más info: https://oiikon.com/product/${product.sku.toLowerCase()}
+  "👉 Más info: ${product.url ?? 'https://www.oiikon.com/catalogo'}
    💬 O chatea con nosotros: https://wa.me/15616988477"
 • En el youtube_script, menciona verbalmente "También puedes escribirnos
   por WhatsApp para resolver tus dudas" cerca del final.
@@ -354,7 +356,7 @@ Genera el siguiente contenido de marketing en formato JSON válido. ${language =
 {
   "daily_theme": "frase corta que capture el ÁNGULO de hoy (engagement u oferta), distinta a las recientes. Ej engagement: 'Mito: el litio es peligroso', 'Checklist para temporada de huracanes', 'Así se dimensiona en 3 pasos'. Ej oferta: 'Tu casa siempre con luz'",
   "product_sku": "${product.sku}",
-  "facebook_post": "publicación de Facebook de 150-200 palabras, con emojis, en el FORMATO elegido arriba y con un gancho distinto a los posts recientes. Si es ENGAGEMENT: abre con el gancho, aporta valor o haz una pregunta concreta, e invita a comentar/compartir — NO lideres con precio (puedes omitirlo). Si es OFERTA: problema → solución → precio (SOLO el de PRODUCTO DEL DÍA) → CTA. Incluye el link https://oiikon.com/product/${product.sku.toLowerCase()} y cierra con una llamada a la acción acorde al formato",
+  "facebook_post": "publicación de Facebook de 150-200 palabras, con emojis, en el FORMATO elegido arriba y con un gancho distinto a los posts recientes. Si es ENGAGEMENT: abre con el gancho, aporta valor o haz una pregunta concreta, e invita a comentar/compartir — NO lideres con precio (puedes omitirlo). Si es OFERTA: problema → solución → precio (SOLO el de PRODUCTO DEL DÍA) → CTA. Incluye el link ${product.url ?? 'https://www.oiikon.com/catalogo'} y cierra con una llamada a la acción acorde al formato",
   "instagram_caption": "caption de Instagram de 80-120 palabras en el MISMO formato que el facebook_post (engagement vs oferta). Si es engagement, cierra con una pregunta que invite a comentar. 15-20 hashtags relevantes al final (#HurricanePrep #SolarGenerator #PortablePower #BlackoutReady #PECRON #HispanosUSA #LatinosUSA #SolarPortatil #EstacionSolar #RespaldoDeEnergia #EnergyBackup #RVLife #OffGrid #EmergencyPower #OiikonSolar #EnergiaLimpia #SolarPower #FloridaPrep)",
   "google_ad_headlines": [
     "headline 1 — máx 30 caracteres",
