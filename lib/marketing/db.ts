@@ -122,6 +122,10 @@ export async function getPendingApprovalCampaign(): Promise<MarketingCampaign | 
     .from('marketing_campaigns')
     .select('*')
     .eq('status', 'pending_approval')
+    // A WhatsApp "SI" publishes at once, so it may only pick a post dated today or
+    // earlier — never a future post from the weekly plan (those are approved on the
+    // dashboard and published on their date).
+    .lte('date', new Date().toISOString().slice(0, 10))
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
